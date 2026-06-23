@@ -1,0 +1,37 @@
+using ClientManagementSystem.Models;
+
+namespace ClientManagementSystem.Data;
+
+/// <summary>
+/// Dashboard analytics and shared read/refresh access to <c>dbo.vProject_Current</c> for home workflows.
+/// </summary>
+public interface IDashboardRepository
+{
+    Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DashboardBusinessUnitCount>> GetProjectCountByBusinessUnitAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DashboardNamedCount>> GetClientCountByBusinessClassAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBusinessClassAsync(
+        CancellationToken cancellationToken = default);
+
+    Task RefreshClientProjectListAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<string>> GetClientProjectListDistinctColumnValuesAsync(
+        string columnName,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<string>> GetDistinctClientNamesForFiltersAsync(CancellationToken cancellationToken = default);
+
+    Task<RawSqlTableResult> GetClientProjectListTableAsync(
+        string? businessUnitName,
+        string? statusName,
+        string? clientNameSearch,
+        string? businessClassName,
+        string? projectTypeName = null,
+        CancellationToken cancellationToken = default);
+}

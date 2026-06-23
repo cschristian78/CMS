@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Client Management System</title>
+    <link rel="stylesheet" href="~/css/cms.css" asp-append-version="true" />
+</head>
+<body>
+    <div class="app-frame">
+        <aside class="app-sidebar" aria-label="Main navigation">
+            <div class="app-sidebar-brand">
+                <a href="/" class="app-sidebar-brand-link" title="Client Management System">
+                    <span class="app-sidebar-brand-mark" aria-hidden="true">CMS</span>
+                </a>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/" class="sidebar-nav-item" title="Home">
+                    <span class="sidebar-nav-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9.5Z" /></svg>
+                    </span>
+                    <span class="sidebar-nav-label">Home</span>
+                </a>
+                <a href="/projects/new" class="sidebar-nav-item" title="New Project">
+                    <span class="sidebar-nav-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                    </span>
+                    <span class="sidebar-nav-label">New Project</span>
+                </a>
+                <a href="/dashboard" class="sidebar-nav-item" title="Dashboard">
+                    <span class="sidebar-nav-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+                    </span>
+                    <span class="sidebar-nav-label">Dashboard</span>
+                </a>
+                <a href="/catai" class="sidebar-nav-item" title="CatAI">
+                    <span class="sidebar-nav-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 9.5 8.5 3 9l5 4.5L6.5 21 12 17l5.5 4-1.5-7.5L21 9l-6.5-.5L12 3Z" /></svg>
+                    </span>
+                    <span class="sidebar-nav-label">CatAI</span>
+                </a>
+                <a href="/admin" class="sidebar-nav-item" title="Admin">
+                    <span class="sidebar-nav-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
+                    </span>
+                    <span class="sidebar-nav-label">Admin</span>
+                </a>
+            </nav>
+        </aside>
+
+        <div class="app-content">
+            <main class="page-shell">
+                @if (TempData["SuccessMessage"] is string successMessage)
+                {
+                    <div class="alert alert-success">@successMessage</div>
+                }
+                @if (TempData["ErrorMessage"] is string errorMessage)
+                {
+                    <div class="alert alert-error">@errorMessage</div>
+                }
+
+                @RenderBody()
+            </main>
+        </div>
+    </div>
+
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

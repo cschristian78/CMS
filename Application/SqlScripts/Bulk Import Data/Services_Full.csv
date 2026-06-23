@@ -1,0 +1,28 @@
+ServiceGroupName,ServiceCategory,ServiceName,ServiceDescription
+Advisory,Regulatory,AM Best SRQ,Collects detailed financial & operational data from insurers to support AM Best's Financial Strength Rating (FSR) process.
+Standard Reinsurance Placement,Reinsurance Placement,Cat Resurance book,Develop renewal timeline objectives messaging and negotiation approach
+Advisory,Model / Peril Advisory,Climate and Emerging Risk Analysis,Assess potential impact of climate trends and emerging hazards on portfolio risk
+Advisory,Model / Peril Advisory,Custom View of Risk Development,Adjust vendor model output to reflect client experience underwriting view or broker view of risk
+Advisory,Portfolio Strategy,Data Quality Review,Review completeness accuracy geocoding quality construction occupancy year built and limits data
+Standard Reinsurance Placement,Exposure Management,Data Rulebook, Defines the structure of the source file  and establishes rules for how data is to be mapped into the models. 
+Advisory,Regulatory,Demotech,Provides Financial Stability Ratings accepted by Fannie Mae & Freddie Mac for regional & specialty P&C carriers.
+Advisory,Model / Peril Advisory,Event Response Analytics,Provide rapid loss estimates following hurricanes earthquakes wildfires floods or other events
+Standard Reinsurance Placement,Exposure Management,Exposure Profiles,Help clients understand accumulations by geography peril line of business and key zones
+Advisory,Regulatory,FHCF,Florida Hurricane Cat Fund
+Advisory,Regulatory,FLOIR,"Regulates all aspects of insurance operations in Florida including solvency, rates, forms, and market conduct."
+Standard Reinsurance Placement,Reinsurance Placement,Market files,Approach reinsurers manage questions negotiate terms and coordinate placement execution
+Advisory,Model / Peril Advisory,Model Blending Support,Develop blended views of risk using multiple models or vendor and internal views
+Advisory,Model / Peril Advisory,Model Sensitivity Testing,Compare results across model versions assumptions demand surge storm surge vulnerability settings and secondary uncertainty
+Advisory,Model / Peril Advisory,Model Version Change Analysis,Compare results between catastrophe model versions and quantify impact by driver
+Standard Reinsurance Placement,Catastrophe Modeling,Moody's / RMS,Model client exposure against natural catastrophe perils such as hurricane earthquake flood wildfire and severe convective storm
+Advisory,Portfolio Strategy,New Business Impact Analysis,Estimate impact of adding a new account program territory or book of business
+Advisory,Portfolio Strategy,Portfolio Optimization,Identify ways to reduce concentration improve diversification and improve risk-adjusted return
+Advisory,Portfolio Strategy,Profitability Analysis,Assess profitability by client segment region line of business or underwriting cohort
+Advisory,Regulatory,RBC,Ensures insurers hold sufficient capital relative to their risk profile to protect policyholders from insolvency.
+Standard Reinsurance Placement,Catastrophe Modeling,Recast,Maintain historical event scenarios for future benchmarking and underwriting use
+Advisory,Portfolio Strategy,Reinsurance Cost Allocation,Risk-adjusted pricing is evaluating the reinsurance structure based off of current exposure and market conditions
+Standard Reinsurance Placement,Reinsurance Placement,Reinsurance Market Submission Preparation,Prepare underwriting data exposure summaries loss experience and catastrophe modeling exhibits
+Standard Reinsurance Placement,Reinsurance Placement,Reinsurance Program Design,Develop optimal treaty structures based on risk appetite capital objectives and budget
+Advisory,Portfolio Strategy,ReLoad,Provides clients a way to account for reinsurance cost at the time a policy is bound
+Standard Reinsurance Placement,Reinsurance Placement,Risk Adjusted Pricing,Evaluate appropriate attachment points limits and co-participations
+Standard Reinsurance Placement,Catastrophe Modeling,Verisk / AIR,Translate catastrophe model output into underwriting portfolio and reinsurance purchasing insights

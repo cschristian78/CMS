@@ -1,0 +1,13 @@
+@model ClientManagementSystem.Controllers.ErrorViewModel
+@{
+    ViewData["Title"] = "Error";
+}
+
+<section class="card narrow-card">
+    <h1>Something went wrong</h1>
+    <p>The application encountered an unexpected error.</p>
+    @if (Model.ShowRequestId)
+    {
+        <p><strong>Request ID:</strong> <code>@Model.RequestId</code></p>
+    }
+</section>

@@ -1,0 +1,69 @@
+FirstName,LastName,Title,Email,Phone,Department,Company,Address,City,State,PostalCode,Country
+Scott,Christian,"EVP, Castrophe Analytics & Advisory",Scott.Christian@bmsgroup.com,817-856-9797,CAT,BMS,"8000 Avalon Blvd., Suite 810",Alpharetta,GA ,30009,US
+Andrew,Siffert,"SVP, Global Head of Peril Adviosry",andrew.siffert@bmsgroup.com,952-252-0812,CAT,BMS,"7650 Edinborough Way, STE 600",Edina,MN,55435,US
+Divya,Anand,"VP, Catastrophe Analytics & Advisory",Divya.Anand@bmsgroup.com,256-836-1194,CAT,BMS,"7650 Edinborough Way, STE 600",Edina,MN,55435,US
+Ryan,Vesledahl,"SVP, Head of Cat Product",Ryan.Vesledahl@bmsgroup.com,612-479-5480,CAT,BMS,"7650 Edinborough Way, STE 600",Edina,MN,55435,US
+Jason,Chou,"VP, Catastrophe Analytics & Advisory",Jason.Chou@bmsgroup.com,781-493-2671,CAT,BMS,"8000 Avalon Blvd., Suite 810",Alpharetta,GA ,30009,US
+James,Rogers,"VP, Catastrophe Analytics & Advisory",James.Rogers@bmsgroup.com,224 291 5586,CAT,BMS,"7650 Edinborough Way, STE 600",Edina,MN,55435,US
+Mitch,Von Hoffmann,"VP, Catastrophe Analytics & Advisory",Mitch.VonHoffmann@bmsgroup.com,,CAT,BMS,"8000 Avalon Blvd., Suite 810",Alpharetta,GA ,30326,US
+Jasmine,Weekes,Analyst,Jasmine.Weekes@bmsgroup.com,,CAT,BMS,"8000 Avalon Boulevard, Suite 810",Alpharetta,GA,30009,US
+Shafaath,Qureshi,VP - Senior Principal Architect,Shafaath.Qureshi@bmsgroup.com,908-432-1609,IT,BMS,"757 3rd Ave, STE 1600",New York,NY,10017,US
+Nitesh,Singh,Team Lead,Nitesh.Singh@bmsgroup.com,,CAT,BMS,,Mumbai,,,India
+Anish,Singh,Sr. Specialist,Anish.Singh@bmsgroup.com,,CAT,BMS,,Mumbai,,,India
+Akash,Patil,Sr. Specialist,Akash.Patil@bmsgroup.com,,CAT,BMS,,Mumbai,,,India
+Kenneth,Bond,Analyst,chaz.bond@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1602",New York,NY,10017,US
+Jack,Long,Analyst,jack.long@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1603",New York,NY,10017,US
+Chaitanaya,Vij,Associate,manya.vij@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1604",New York,NY,10017,US
+Tenzing Rapden,Lama,Associate,rapden.lama@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1605",New York,NY,10017,US
+Qudus,Kassim,Capital Advisory Associate,qudus.kassim@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1606",New York,NY,10017,US
+Josh,Curry,Chief Growth Officer,josh.curry@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1607",New York,NY,10017,US
+James,Bradley,Director,james.bradley@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1608",New York,NY,10017,US
+Michael,O'Connell,Director,michael.oconnell@bmsgroup.com,,Capital Advisory,BMS,"BMS Re 757 3rd Ave, STE 1609",New York,NY,10017,US
+Nicholas,Carey,Associate Broker,nick.carey@bmsgroup.com,404-270-0362,P&C Treaty,BMS,BMS Re 8000 Avalon Boulevard Suite 816,Atlanta,GA,30009,US
+Scott,Fields,Senior Vice President,scott.fields@bmsgroup.com,404-353-7420,P&C Treaty,BMS,BMS Re 8000 Avalon Boulevard Suite 817,Atlanta,GA,30009,US
+Christopher,McCrary,"Managing Director, Branch Manager",sean.mccrary@bmsgroup.com,214-538-8040,P&C Treaty,BMS,"BMS Re 2651 North Harwood Street, Suite 428",Dallas,TX,75201,US
+Thomas,Evans,Vice President,thomas.evans@bmsgroup.com,682-712-4934,P&C Treaty,BMS,"BMS Re 2651 North Harwood Street, Suite 429",Dallas,TX,75201,US
+Cody,Sigman,Vice President,cody.sigman@bmsgroup.com,945-336-6156,P&C Treaty,BMS,"BMS Re 2651 North Harwood Street, Suite 430",Dallas,TX,75201,US
+Levi,Nelson,Broker,levi.nelson@bmsgroup.com,612-417-9883,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 603",Edina,MN,55435,US
+David,Cameron,Executive Vice President,david.cameron@bmsgroup.com,612-443-2199,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 604",Edina,MN,55435,US
+Nathan,Pelant,Broker,nathan.pelant@bmsgroup.com,612-443-7245,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 605",Edina,MN,55435,US
+Steven,Galleger,"Managing Director, Branch Manager",steve.galleger@bmsgroup.com,952-258-3936,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 606",Edina,MN,55435,US
+Matthew,Blanch,Senior Vice President,matt.blanch@bmsgroup.com,952-388-8507,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 607",Edina,MN,55435,US
+Alexander,Kracht,Senior Vice President,alex.kracht@bmsgroup.com,312-208-8243,P&C Treaty,BMS,"WeWork c/o BMS Re, 515 N. State Street, 14th Floor",Chicago,IL,60654,US
+Matthew,Cratem,Vice President,matthew.cratem@bmsgroup.com,904-742-5241,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1601",New York,NY,10017,US
+Jack,Idelson,Broker,jack.idelson@bmsgroup.com,,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1611",New York,NY,10017,US
+John,Hickey,"Managing Director, Branch Manager",jack.hickey@bmsgroup.com,203-308-6333,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1612",New York,NY,10017,US
+Colin,Curran,Assistant Vice President,colin.curran@bmsgroup.com,347-410-4513,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1613",New York,NY,10017,US
+Philip,Clementi,Broker,pj.clementi@bmsgroup.com,347-420-4100,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1614",New York,NY,10017,US
+Carter,McFadden,Associate Broker,carter.mcfadden@bmsgroup.com,347-429-4435,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1615",New York,NY,10017,US
+Hunter,Rotchford,Senior Vice President,hunter.rotchford@bmsgroup.com,347-754-0552,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1616",New York,NY,10017,US
+Gavin,Brennan,Senior Vice President,gavin.brennan@bmsgroup.com,516-528-3661,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1617",New York,NY,10017,US
+Jordi,Jefferson,Assistant Vice President,jordi.jefferson@bmsgroup.com,646-629-3087,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1618",New York,NY,10017,US
+Charles,Ill,Vice President,charles.ill@bmsgroup.com,646-830-4561,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1619",New York,NY,10017,US
+Frank,Belarge,Broker,frank.jbelarge@bmsgroup.com,718-406-3084,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1620",New York,NY,10017,US
+Anthony,Blanton,Vice President,clarke.blanton@bmsgroup.com,917-587-0479,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1621",New York,NY,10017,US
+Michael,Kearney,Broker,michael.kearney@bmsgroup.com,917-854-1315,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1622",New York,NY,10017,US
+Reagan,Phillips,Broker,reagan.phillips@bmsgroup.com,929-286-2044,P&C Treaty,BMS,"BMS Re 757 3rd Ave, STE 1623",New York,NY,10017,US
+Chase,Moresco,Vice President,chase.moresco@bmsgroup.com,445-247-5369,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1158",Philadelphia,PA,19103,US
+Jake,LaCava,Assistant Vice President,jake.lacava@bmsgroup.com,484-981-5267,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1159",Philadelphia,PA,19103,US
+Thomas,Spataro,Managing Director,thomas.spatarosr@bmsgroup.com,,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1152",Philadelphia,PA,19103,US
+Edward,Ryan,Senior Vice President,edward.ryan@bmsgroup.com,904-921-6504,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1153",Philadelphia,PA,19103,US
+Nathaniel,Robison,Broker,nate.robison@bmsgroup.com,215-796-7005,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1155",Philadelphia,PA,19103,US
+Tom,Spataro,Vice President,tom.spatarojr@bmsgroup.com,,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1160",Philadelphia,PA,19103,US
+Christa,Coletti,"Managing Director, Branch Manager",christa.coletti@bmsgroup.com,215-688-1417,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1161",Philadelphia,PA,19103,US
+Kristin,Callahan,Senior Vice President,kristin.callahan@bmsgroup.com,267-253-1550,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1162",Philadelphia,PA,19103,US
+Julie,Weiss,Assistant Vice President,julie.weiss@bmsgroup.com,267-582-4788,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1163",Philadelphia,PA,19103,US
+Denise,Fratanduono,Vice President,denise.fratanduono@bmsgroup.com,267-738-1162,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1164",Philadelphia,PA,19103,US
+John,Faustman,Assistant Vice President,john.faustmanjr@bmsgroup.com,267-825-0815,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1165",Philadelphia,PA,19103,US
+Matthew,O'Connor,Associate Broker,matt.oconnor@bmsgroup.com,367-251-4917,P&C Treaty,BMS,"BMS Re 1818 Market Street, Suite 1166",Philadelphia,PA,19103,US
+David,Galleger,Executive Vice President,dave.galleger@bmsgroup.com,469-933-4331,P&C Treaty,BMS,"BMS Re 2651 North Harwood Street, Suite 431",Dallas,TX,75201,US
+Christopher,Ervey,Executive Vice President,chris.ervey@bmsgroup.com,562-393-3628,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 600",Edina,MN,55435,US
+Nathan,Henke,Assistant Vice President,nathan.henke@bmsgroup.com,612-946-1964,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 601",Edina,MN,55435,US
+Mark,LaVoie,Senior Vice President,mark.lavoie@bmsgroup.com,320-342-8071,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 608",Edina,MN,55435,US
+Jaclyn,Clemson,Executive Vice President,micki.clemson@bmsgroup.com,612-804-6609,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 609",Edina,MN,55435,US
+Bennett,Soderberg,Associate Broker,bennett.soderberg@bmsgroup.com,952-233-1340,P&C Treaty,BMS,"BMS Re 7650 Edinborough Way, Suite 610",Edina,MN,55435,US
+William,Penn,Executive Vice President,william.penn@bmsgroup.com,630-796-5362,Prolink,BMS,"WeWork c/o BMS Re, 515 N. State Street, 14th Floor",Chicago,IL,60654,US
+John,Speckman,Head of Programs,john.speckman@bmsgroup.com,917-696-8315,Prolink,BMS,"BMS Re 757 3rd Ave, STE 1624",New York,NY,10017,US
+Brenda,Martinez-Cox,Technical Support Associate,brenda.martinez-cox@bmsgroup.com,929-618-9414,Prolink,BMS,"BMS Re 757 3rd Ave, STE 1625",New York,NY,10017,US
+Shruti,Sem,Managing Director,shruti.sem@bmsgroup.com,267-374-4438,Prolink,BMS,"BMS Re 1818 Market Street, Suite 1167",Philadelphia,PA,19103,US
+Andrew,Justice,Managing Director,andy.justice@bmsgroup.com,214-536-0089,P&C Treaty,BMS,"BMS Re 2651 North Harwood Street, Suite 433",Dallas,TX,75201,US

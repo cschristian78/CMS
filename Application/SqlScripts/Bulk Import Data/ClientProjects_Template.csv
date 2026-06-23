@@ -1,0 +1,2 @@
+ClientName,ClientShortName,ClientDescription,ClientStatus,BusinessUnit,BusinessClass,ClientType,AccountExecutiveEmail,AnalyticsLeadEmail,ProjectNumber,ProjectName,ProjectType,ProjectStatus,RenewalDate,DueDate,RevenueAmount,RevenueEffectiveDate
+Sample Insurance Co,Sample,Example row — delete before import,Active,US,Re,PIC,,,2026-001,2026 Renewal Engagement,Renewal,Active,2026-12-31,2026-06-30,150000,2026-01-01
