@@ -901,6 +901,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   // Services (tService) — CMS_PhaseI_All: ServiceCategoryID FK + N:N tags via tServiceTag
   const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [serviceForm, setServiceForm] = useState<ServiceFormState>(() => emptyServiceForm());
 
   const [serviceBulkWizardOpen, setServiceBulkWizardOpen] = useState(false);
@@ -1793,6 +1794,54 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   }, [filteredServicesForDirectory, selectedServiceId, admin]);
 
+  const allFilteredAdminServicesSelected = useMemo(() => {
+    if (filteredServicesForDirectory.length === 0) {
+      return false;
+    }
+    return filteredServicesForDirectory.every((row) => selectedServiceIds.includes(row.serviceID));
+  }, [filteredServicesForDirectory, selectedServiceIds]);
+
+  const someFilteredAdminServicesSelected = useMemo(() => {
+    if (filteredServicesForDirectory.length === 0) {
+      return false;
+    }
+    const selectedCount = filteredServicesForDirectory.filter((row) =>
+      selectedServiceIds.includes(row.serviceID),
+    ).length;
+    return selectedCount > 0 && selectedCount < filteredServicesForDirectory.length;
+  }, [filteredServicesForDirectory, selectedServiceIds]);
+
+  const handleAdminServiceToggle = (serviceID: number) => {
+    setSelectedServiceIds((ids) =>
+      ids.includes(serviceID) ? ids.filter((x) => x !== serviceID) : [...ids, serviceID],
+    );
+  };
+
+  const handleToggleAllFilteredAdminServices = () => {
+    if (filteredServicesForDirectory.length === 0) {
+      return;
+    }
+    const filteredIds = filteredServicesForDirectory.map((row) => row.serviceID);
+    if (allFilteredAdminServicesSelected) {
+      setSelectedServiceIds((ids) => ids.filter((id) => !filteredIds.includes(id)));
+      return;
+    }
+    setSelectedServiceIds((ids) => [...new Set([...ids, ...filteredIds])]);
+  };
+
+  const handleSelectAllAdminServices = () => {
+    if (!admin?.services.length) {
+      return;
+    }
+    setSelectedServiceIds((ids) => [
+      ...new Set([...ids, ...admin.services.map((row) => row.serviceID)]),
+    ]);
+  };
+
+  const handleClearAllAdminServices = () => {
+    setSelectedServiceIds([]);
+  };
+
   const filteredUsersForDirectory = useMemo(() => {
     if (!admin) {
       return [];
@@ -2615,19 +2664,27 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   };
 
   const deactivateSelectedService = async () => {
-    if (selectedServiceId === '') {
-      window.alert('Select a service to deactivate.');
+    if (selectedServiceIds.length === 0) {
+      window.alert('Select one or more services to deactivate.');
       return;
     }
-    if (!window.confirm('Deactivate the selected service (sets IsActive = 0)?')) {
+    const count = selectedServiceIds.length;
+    if (
+      !window.confirm(
+        `Deactivate ${count} selected service${count === 1 ? '' : 's'} (sets IsActive = 0)?`,
+      )
+    ) {
       return;
     }
     try {
-      await apiPostJson(`/api/admin/services/${selectedServiceId}/soft-delete`, {});
-      flash('success', 'Service soft-deleted.');
-      if (serviceForm.serviceID === selectedServiceId) {
+      for (const id of selectedServiceIds) {
+        await apiPostJson(`/api/admin/services/${id}/soft-delete`, {});
+      }
+      flash('success', count === 1 ? 'Service soft-deleted.' : `${count} services soft-deleted.`);
+      if (selectedServiceIds.includes(serviceForm.serviceID)) {
         clearServiceForm();
       }
+      setSelectedServiceIds([]);
       setSelectedServiceId('');
       await reload();
     } catch (err) {
@@ -3946,6 +4003,45 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   autoComplete="off"
                 />
               </div>
+              <div className="page-header-actions project-services-select-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!(admin?.services ?? []).length}
+                  onClick={handleSelectAllAdminServices}
+                >
+                  Select all services
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={selectedServiceIds.length === 0}
+                  onClick={handleClearAllAdminServices}
+                >
+                  Clear all
+                </button>
+              </div>
+              {filteredServicesForDirectory.length > 0 ? (
+                <div className="project-services-select-all">
+                  <label className="project-services-select-all-label">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredAdminServicesSelected}
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate = someFilteredAdminServicesSelected;
+                        }
+                      }}
+                      onChange={handleToggleAllFilteredAdminServices}
+                      aria-label="Select or clear all services shown in the list"
+                    />
+                    Select all shown
+                  </label>
+                  <span className="project-services-select-all-count">
+                    {selectedServiceIds.length} selected
+                  </span>
+                </div>
+              ) : null}
               <div
                 id="admin-service-pick-list"
                 className="admin-user-pick-list"
@@ -3966,45 +4062,53 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     const groupName = (row.serviceGroupName ?? '').trim();
                     const desc = (row.serviceDescription ?? '').trim();
                     const serviceName = formatServiceCell(row.serviceName);
+                    const isChecked = selectedServiceIds.includes(row.serviceID);
                     return (
-                      <button
-                        key={row.serviceID}
-                        id={`admin-service-row-${row.serviceID}`}
-                        type="button"
-                        role="option"
-                        aria-selected={selectedServiceId === row.serviceID}
-                        className={
-                          'admin-user-pick-row' + (selectedServiceId === row.serviceID ? ' selected' : '')
-                        }
-                        onClick={() => setSelectedServiceId(row.serviceID)}
-                        onDoubleClick={(e) => {
-                          e.preventDefault();
-                          editServiceFromSelection(row);
-                        }}
-                      >
-                        <span className="admin-user-pick-name">
-                          <span className="admin-user-pick-name-text">{serviceName}</span>
-                          <span className="admin-user-pick-badges">
-                            {!serviceIsActive(row) ? (
-                              <span
-                                className="admin-user-pick-status admin-user-pick-status--inactive"
-                                title="Inactive service"
-                              >
-                                Inactive
-                              </span>
-                            ) : null}
+                      <div key={row.serviceID} className="admin-service-pick-item">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleAdminServiceToggle(row.serviceID)}
+                          aria-label={`Select service ${serviceName}`}
+                        />
+                        <button
+                          id={`admin-service-row-${row.serviceID}`}
+                          type="button"
+                          role="option"
+                          aria-selected={selectedServiceId === row.serviceID}
+                          className={
+                            'admin-user-pick-row' + (selectedServiceId === row.serviceID ? ' selected' : '')
+                          }
+                          onClick={() => setSelectedServiceId(row.serviceID)}
+                          onDoubleClick={(e) => {
+                            e.preventDefault();
+                            editServiceFromSelection(row);
+                          }}
+                        >
+                          <span className="admin-user-pick-name">
+                            <span className="admin-user-pick-name-text">{serviceName}</span>
+                            <span className="admin-user-pick-badges">
+                              {!serviceIsActive(row) ? (
+                                <span
+                                  className="admin-user-pick-status admin-user-pick-status--inactive"
+                                  title="Inactive service"
+                                >
+                                  Inactive
+                                </span>
+                              ) : null}
+                            </span>
                           </span>
-                        </span>
-                        <span className="admin-user-pick-title admin-service-pick-desc">
-                          {desc || '\u00a0'}
-                        </span>
-                        <span className="admin-user-pick-meta">
-                          {groupName ? `Service Group: ${groupName}` : 'Service Group: —'}
-                        </span>
-                        <span className="admin-user-pick-meta">
-                          {serviceName !== '—' ? `Service Name: ${serviceName}` : 'Service Name: —'}
-                        </span>
-                      </button>
+                          <span className="admin-user-pick-title admin-service-pick-desc">
+                            {desc || '\u00a0'}
+                          </span>
+                          <span className="admin-user-pick-meta">
+                            {groupName ? `Service Group: ${groupName}` : 'Service Group: —'}
+                          </span>
+                          <span className="admin-user-pick-meta">
+                            {serviceName !== '—' ? `Service Name: ${serviceName}` : 'Service Name: —'}
+                          </span>
+                        </button>
+                      </div>
                     );
                   })
                 )}
@@ -4013,8 +4117,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
             <form className="admin-edit-card" noValidate onSubmit={(e) => void submitService(e)}>
               <p className="field-help admin-services-form-lead">
-                Select a service, choose group and category, then Save (or use Edit Service to change
-                name/description). Save writes <code>tService</code> and upserts the linked{' '}
+                Tick services for bulk actions (e.g. deactivate), or click a row to bind Save to that
+                service. Use <strong>Select all services</strong> or <strong>Select all shown</strong> to
+                select multiple at once. Choose group and category, then Save (or use Edit Service to
+                change name/description). Save writes <code>tService</code> and upserts the linked{' '}
                 <code>tServiceRef</code> row.
               </p>
               <div className="form-grid compact-grid">
@@ -4141,7 +4247,12 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 <button type="button" className="secondary-button" onClick={() => editServiceFromSelection()}>
                   Edit Service
                 </button>
-                <button type="button" className="danger-button" onClick={() => void deactivateSelectedService()}>
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={selectedServiceIds.length === 0}
+                  onClick={() => void deactivateSelectedService()}
+                >
                   Deactivate selected
                 </button>
               </div>
