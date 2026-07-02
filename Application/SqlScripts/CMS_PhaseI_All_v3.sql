@@ -2582,6 +2582,61 @@ BEGIN
 END;
 GO
 /*
+  Adds StatusID (FK -> tStatus) and UserGroupID (FK -> tUserGroup) to dbo.tProjectRef so project
+  status and user-group selection persist on save. Idempotent for existing installs.
+*/
+CREATE OR ALTER PROCEDURE usp_AlterTable_tProjectRef_AddStatusAndUserGroup
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectRef', 'U') IS NULL
+        THROW 50001, 'dbo.tProjectRef does not exist. Run usp_CreateTable_tProjectRef first.', 1;
+    IF OBJECT_ID('dbo.tStatus', 'U') IS NULL
+        THROW 50001, 'dbo.tStatus does not exist. Run usp_CreateTable_tStatus first.', 1;
+    IF OBJECT_ID('dbo.tUserGroup', 'U') IS NULL
+        THROW 50001, 'dbo.tUserGroup does not exist. Run usp_CreateTable_tUserGroup first.', 1;
+
+    IF COL_LENGTH('dbo.tProjectRef', 'StatusID') IS NULL
+    BEGIN
+        ALTER TABLE dbo.tProjectRef
+            ADD StatusID INT NOT NULL CONSTRAINT DF_tProjectRef_StatusID DEFAULT (1);
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.foreign_keys
+         WHERE name = N'FK_tProjectRef_StatusID'
+           AND parent_object_id = OBJECT_ID(N'dbo.tProjectRef')
+    )
+    BEGIN
+        ALTER TABLE dbo.tProjectRef
+            ADD CONSTRAINT FK_tProjectRef_StatusID FOREIGN KEY (StatusID) REFERENCES dbo.tStatus (StatusID);
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tProjectRef_StatusID' AND object_id = OBJECT_ID(N'dbo.tProjectRef'))
+        CREATE INDEX IX_tProjectRef_StatusID ON dbo.tProjectRef (StatusID);
+
+    IF COL_LENGTH('dbo.tProjectRef', 'UserGroupID') IS NULL
+    BEGIN
+        ALTER TABLE dbo.tProjectRef
+            ADD UserGroupID INT NULL;
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.foreign_keys
+         WHERE name = N'FK_tProjectRef_UserGroupID'
+           AND parent_object_id = OBJECT_ID(N'dbo.tProjectRef')
+    )
+    BEGIN
+        ALTER TABLE dbo.tProjectRef
+            ADD CONSTRAINT FK_tProjectRef_UserGroupID FOREIGN KEY (UserGroupID) REFERENCES dbo.tUserGroup (UserGroupID);
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tProjectRef_UserGroupID' AND object_id = OBJECT_ID(N'dbo.tProjectRef'))
+        CREATE INDEX IX_tProjectRef_UserGroupID ON dbo.tProjectRef (UserGroupID);
+END;
+GO
+/*
   Relaxes BusinessUnitID / BusinessClassID / ClientTypeID on an existing dbo.tClientRef to allow NULL,
   so a client can be partially classified (set one field, leave the rest NULL until filled in later).
   Idempotent.
@@ -2775,17 +2830,21 @@ CREATE OR ALTER PROCEDURE usp_ProjectRef_Create
     @ClientRefID                  INT,
     @ProjectTypeID                INT,
     @ActingUserID                INT,
-    @NewProjectRefID             INT OUTPUT
+    @NewProjectRefID             INT OUTPUT,
+    @StatusID                     INT = 1,
+    @UserGroupID                  INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
+    SET @StatusID = COALESCE(NULLIF(@StatusID, 0), 1);
+
     BEGIN TRY
         BEGIN TRAN;
 
-        INSERT INTO dbo.tProjectRef (ProjectID, ClientRefID, ProjectTypeID)
-        VALUES (@ProjectID, @ClientRefID, @ProjectTypeID);
+        INSERT INTO dbo.tProjectRef (ProjectID, ClientRefID, ProjectTypeID, StatusID, UserGroupID)
+        VALUES (@ProjectID, @ClientRefID, @ProjectTypeID, @StatusID, @UserGroupID);
 
         SET @NewProjectRefID = SCOPE_IDENTITY();
 
@@ -2827,6 +2886,7 @@ CREATE OR ALTER PROCEDURE usp_ProjectRef_Update
     @ClientRefID                  INT = NULL,
     @ProjectTypeID                INT = NULL,
     @StatusID                     INT = NULL,
+    @UserGroupID                  INT = NULL,
     @ActingUserID                INT
 AS
 BEGIN
@@ -2844,7 +2904,12 @@ BEGIN
         ProjectID = COALESCE(@ProjectID, ProjectID),
         ClientRefID = COALESCE(@ClientRefID, ClientRefID),
         ProjectTypeID = COALESCE(@ProjectTypeID, ProjectTypeID),
-        StatusID = COALESCE(@StatusID, StatusID),
+        StatusID = COALESCE(NULLIF(@StatusID, 0), StatusID),
+        UserGroupID = CASE
+            WHEN @UserGroupID IS NULL THEN UserGroupID
+            WHEN @UserGroupID <= 0 THEN NULL
+            ELSE @UserGroupID
+        END,
         ModifiedDate = SYSUTCDATETIME()
          WHERE ProjectRefID = @ProjectRefID;
 
@@ -5467,6 +5532,7 @@ BEGIN
     EXEC dbo.usp_AlterTable_tClientRef_AddStatus;  -- adds StatusID to existing installs (idempotent)
     EXEC dbo.usp_AlterTable_tClientRef_NullableClassification; -- allow partial BU/BC/CT (idempotent)
     EXEC dbo.usp_CreateTable_tProjectRef;          -- FK → tProject, tClientRef, tProjectType
+    EXEC dbo.usp_AlterTable_tProjectRef_AddStatusAndUserGroup; -- adds StatusID + UserGroupID (idempotent)
     EXEC dbo.usp_CreateTable_tServiceRef;          -- FK → tServiceCategory, tServiceGroup, tService
     EXEC dbo.usp_CreateTable_tProjectNote;         -- FK → tProjectRef
     EXEC dbo.usp_CreateTable_tProjectRevenue;      -- FK → tProjectRef

@@ -29,14 +29,14 @@ public sealed class ProjectRepository : IProjectRepository
             pref.ProjectTypeID,
             PTCode = pt.ProjectTypeCode,
             PTDescription = pt.ProjectTypeDescription,
-            StatusID = CAST(NULL AS INT),
-            StatusCode = CAST(NULL AS VARCHAR(10)),
-            StatusDescription = CAST(NULL AS VARCHAR(100)),
-            UGID = COALESCE(projUg.UserGroupID, 0),
-            UGName = ug.UserGroupName
+            pref.StatusID,
+            st.StatusCode,
+            st.StatusDescription,
+            UGID = COALESCE(NULLIF(pref.UserGroupID, 0), projUg.UserGroupID, 0),
+            UGName = COALESCE(ugPref.UserGroupName, ug.UserGroupName)
           FROM dbo.tProject AS p
           OUTER APPLY (
-              SELECT TOP (1) pr.ProjectRefID, pr.ClientRefID, pr.ProjectTypeID
+              SELECT TOP (1) pr.ProjectRefID, pr.ClientRefID, pr.ProjectTypeID, pr.StatusID, pr.UserGroupID
                 FROM dbo.tProjectRef AS pr
                WHERE pr.ProjectID = p.ProjectID AND pr.IsActive = 1
                ORDER BY pr.ProjectRefID
@@ -46,6 +46,8 @@ public sealed class ProjectRepository : IProjectRepository
           LEFT JOIN dbo.tBusinessUnit AS bu ON bu.BusinessUnitID = cr.BusinessUnitID
           LEFT JOIN dbo.tBusinessClass AS bc ON bc.BusinessClassID = cr.BusinessClassID
           LEFT JOIN dbo.tProjectType AS pt ON pt.ProjectTypeID = pref.ProjectTypeID
+          LEFT JOIN dbo.tStatus AS st ON st.StatusID = pref.StatusID
+          LEFT JOIN dbo.tUserGroup AS ugPref ON ugPref.UserGroupID = pref.UserGroupID
           OUTER APPLY (
               SELECT TOP (1) ugr.UserGroupID
                 FROM dbo.tProjectUser AS pu
@@ -251,13 +253,18 @@ public sealed class ProjectRepository : IProjectRepository
             }
 
             var clientRefId = await ResolveClientRefIdAsync(connection, tx, project.ClientID, cancellationToken);
+            var statusId = project.StatusID > 0 ? project.StatusID : 1;
             var projectRefId = await ResolveProjectRefIdAsync(
                 connection,
                 tx,
                 projectId,
                 clientRefId,
                 project.ProjectTypeID,
+                statusId,
+                project.UGID,
                 cancellationToken);
+
+            await SyncProjectActiveFromStatusAsync(connection, tx, projectId, statusId, cancellationToken);
 
             await ExecuteTextAsync(connection, tx,
                 "DELETE FROM dbo.tProjectService WHERE ProjectRefID = @ProjectRefID;",
@@ -467,6 +474,8 @@ public sealed class ProjectRepository : IProjectRepository
         int projectId,
         int clientRefId,
         int projectTypeId,
+        int statusId,
+        int userGroupId,
         CancellationToken cancellationToken)
     {
         var existing = await QueryScalarIntAsync(connection, tx, """
@@ -481,17 +490,15 @@ public sealed class ProjectRepository : IProjectRepository
 
         if (existing is > 0)
         {
-            await ExecuteTextAsync(connection, tx, """
-                UPDATE dbo.tProjectRef
-                   SET ClientRefID = @ClientRefID,
-                       ProjectTypeID = @ProjectTypeID,
-                       ModifiedDate = SYSUTCDATETIME()
-                 WHERE ProjectRefID = @ProjectRefID;
-                """,
+            await ExecuteProcAsync(connection, tx, "dbo.usp_ProjectRef_Update",
             [
                 SqlParameterFactory.Int("@ProjectRefID", existing.Value),
+                SqlParameterFactory.Int("@ProjectID", projectId),
                 SqlParameterFactory.Int("@ClientRefID", clientRefId),
-                SqlParameterFactory.Int("@ProjectTypeID", projectTypeId)
+                SqlParameterFactory.Int("@ProjectTypeID", projectTypeId),
+                SqlParameterFactory.Int("@StatusID", statusId),
+                SqlParameterFactory.Int("@UserGroupID", userGroupId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
             ], cancellationToken);
             return existing.Value;
         }
@@ -503,10 +510,34 @@ public sealed class ProjectRepository : IProjectRepository
             SqlParameterFactory.Int("@ClientRefID", clientRefId),
             SqlParameterFactory.Int("@ProjectTypeID", projectTypeId),
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+            SqlParameterFactory.Int("@StatusID", statusId),
+            SqlParameterFactory.Int("@UserGroupID", userGroupId > 0 ? userGroupId : null),
             output
         ], cancellationToken);
 
         return Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task SyncProjectActiveFromStatusAsync(
+        SqlConnection connection,
+        SqlTransaction tx,
+        int projectId,
+        int statusId,
+        CancellationToken cancellationToken)
+    {
+        // Seed data: StatusID 2 = Inactive ('I'). Keep dbo.tProject.IsActive aligned with status.
+        var isActive = statusId != 2;
+        await ExecuteTextAsync(connection, tx,
+            """
+            UPDATE dbo.tProject
+               SET IsActive = @IsActive,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ProjectID = @ProjectID;
+            """,
+        [
+            SqlParameterFactory.Int("@ProjectID", projectId),
+            SqlParameterFactory.Bit("@IsActive", isActive)
+        ], cancellationToken);
     }
 
     private static async Task<IReadOnlyList<(int UserId, int? UserRoleId)>> QueryMemberRowsAsync(

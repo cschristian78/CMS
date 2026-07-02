@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using ClientManagementSystem.Models;
 using Microsoft.AspNetCore.Mvc.Rendering;
 
@@ -30,6 +31,7 @@ public sealed class ProjectFormViewModel
     public int ClientID { get; set; }
 
     [Display(Name = "User Group")]
+    [JsonPropertyName("ugid")]
     public int UGID { get; set; }
 
     [Required]
