@@ -91,10 +91,10 @@ public sealed class ProjectRepository : IProjectRepository
         => GetAsync(projectId, cancellationToken);
 
     public Task<int> AddAsync(Project project, CancellationToken cancellationToken = default)
-        => SaveProjectAndReplaceServicesAsync(project, [], null, cancellationToken);
+        => SaveProjectAndReplaceServicesAsync(project, [], null, null, cancellationToken);
 
     public Task<int> UpdateAsync(Project project, CancellationToken cancellationToken = default)
-        => SaveProjectAndReplaceServicesAsync(project, [], null, cancellationToken);
+        => SaveProjectAndReplaceServicesAsync(project, [], null, null, cancellationToken);
 
     public async Task<int> SoftDeleteAsync(int projectId, CancellationToken cancellationToken = default)
     {
@@ -206,6 +206,7 @@ public sealed class ProjectRepository : IProjectRepository
         Project project,
         IReadOnlyList<int> serviceIds,
         ProjectRevenue? revenueEntry = null,
+        ProjectClientRefContext? clientRefContext = null,
         CancellationToken cancellationToken = default)
     {
         if (project.ClientID <= 0)
@@ -252,7 +253,7 @@ public sealed class ProjectRepository : IProjectRepository
                 projectId = Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
             }
 
-            var clientRefId = await ResolveClientRefIdAsync(connection, tx, project.ClientID, cancellationToken);
+            var clientRefId = await ResolveClientRefIdAsync(connection, tx, project.ClientID, clientRefContext, cancellationToken);
             var statusId = project.StatusID > 0 ? project.StatusID : 1;
             var projectRefId = await ResolveProjectRefIdAsync(
                 connection,
@@ -435,8 +436,65 @@ public sealed class ProjectRepository : IProjectRepository
         SqlConnection connection,
         SqlTransaction tx,
         int clientId,
+        ProjectClientRefContext? clientRefContext,
         CancellationToken cancellationToken)
     {
+        var businessUnitId = clientRefContext?.BusinessUnitId is > 0 ? clientRefContext.BusinessUnitId : null;
+        var businessClassId = clientRefContext?.BusinessClassId is > 0 ? clientRefContext.BusinessClassId : null;
+        var clientTypeId = clientRefContext?.ClientTypeId is > 0 ? clientRefContext.ClientTypeId : null;
+        var statusId = clientRefContext?.ClientStatusId is > 0 ? clientRefContext.ClientStatusId!.Value : 1;
+
+        if (businessUnitId is > 0)
+        {
+            var matchingRefId = await QueryScalarIntAsync(connection, tx, """
+                SELECT TOP (1) ClientRefID
+                  FROM dbo.tClientRef
+                 WHERE ClientID = @ClientID
+                   AND IsActive = 1
+                   AND BusinessUnitID = @BusinessUnitID
+                 ORDER BY ClientRefID;
+                """,
+            [
+                SqlParameterFactory.Int("@ClientID", clientId),
+                SqlParameterFactory.Int("@BusinessUnitID", businessUnitId.Value)
+            ], cancellationToken);
+
+            if (matchingRefId is > 0)
+            {
+                if (businessClassId is not null || clientTypeId is not null || clientRefContext?.ClientStatusId is > 0)
+                {
+                    await ExecuteProcAsync(connection, tx, "dbo.usp_ClientRef_Update",
+                    [
+                        SqlParameterFactory.Int("@ClientRefID", matchingRefId.Value),
+                        SqlParameterFactory.Int("@ClientID", clientId),
+                        SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
+                        SqlParameterFactory.Int("@BusinessClassID", businessClassId),
+                        SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
+                        SqlParameterFactory.Int("@ClientTypeRefID", null),
+                        SqlParameterFactory.Int("@StatusID", statusId),
+                        SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+                    ], cancellationToken);
+                }
+
+                return matchingRefId.Value;
+            }
+
+            var createOutput = SqlParameterFactory.OutputInt("@NewClientRefID");
+            await ExecuteProcAsync(connection, tx, "dbo.usp_ClientRef_Create",
+            [
+                SqlParameterFactory.Int("@ClientID", clientId),
+                SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
+                SqlParameterFactory.Int("@BusinessClassID", businessClassId),
+                SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
+                SqlParameterFactory.Int("@ClientTypeRefID", null),
+                SqlParameterFactory.Int("@StatusID", statusId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                createOutput
+            ], cancellationToken);
+
+            return Convert.ToInt32(createOutput.Value, CultureInfo.InvariantCulture);
+        }
+
         var existing = await QueryScalarIntAsync(connection, tx, """
             SELECT TOP (1) ClientRefID
               FROM dbo.tClientRef
@@ -460,7 +518,7 @@ public sealed class ProjectRepository : IProjectRepository
             SqlParameterFactory.Int("@BusinessClassID", null),
             SqlParameterFactory.Int("@ClientTypeID", null),
             SqlParameterFactory.Int("@ClientTypeRefID", null),
-            SqlParameterFactory.Int("@StatusID", 1),
+            SqlParameterFactory.Int("@StatusID", statusId),
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
             output
         ], cancellationToken);

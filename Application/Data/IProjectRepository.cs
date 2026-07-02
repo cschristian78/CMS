@@ -35,6 +35,7 @@ public interface IProjectRepository
         Project project,
         IReadOnlyList<int> serviceIds,
         ProjectRevenue? revenueEntry = null,
+        ProjectClientRefContext? clientRefContext = null,
         CancellationToken cancellationToken = default);
 
     // Notes

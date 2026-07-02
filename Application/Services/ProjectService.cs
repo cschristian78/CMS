@@ -102,8 +102,10 @@ public sealed class ProjectService : IProjectService
             RenewalDate = project.RenewalDate,
             DueDate = project.DueDate,
             StatusID = project.StatusID,
+            ClientBusinessUnitID = project.BusinessUnitID,
             ClientBusinessUnitName = project.BusinessUnitName,
-            ClientBusinessClassName = project.BusinessClassName
+            ClientBusinessClassID = project.BusinessClassID > 0 ? project.BusinessClassID : null,
+            ClientBusinessClassName = project.BusinessClassName,
         };
 
         var client = await _clients.GetAsync(project.ClientID, cancellationToken);
@@ -111,18 +113,33 @@ public sealed class ProjectService : IProjectService
         {
             model.ClientName = client.ClientName;
             model.ClientShortName = client.ClientShortName;
-            model.ClientBusinessUnitID = client.BusinessUnitID;
-            model.ClientBusinessUnitName = client.BusinessUnitName;
-            model.ClientBusinessClassID = client.BusinessClassID;
-            model.ClientBusinessClassName = BusinessClass.FormatDisplayDescription(
-                client.BusinessClassName,
-                client.BusinessClassDescription);
-            model.ClientCategoryID = client.ClientCategoryID;
-            model.ClientCategoryName = client.CCName;
-            model.ClientTypeID = client.ClientTypeID;
-            model.ClientTypeName = ClientType.FormatDisplayName(client.CTName, client.CTDescription);
-            model.ClientStatusID = client.StatusID;
-            model.ClientStatusCode = client.StatusCode;
+            if (model.ClientBusinessUnitID is null or <= 0)
+            {
+                model.ClientBusinessUnitID = client.BusinessUnitID;
+                model.ClientBusinessUnitName = client.BusinessUnitName;
+            }
+            if (model.ClientBusinessClassID is null or <= 0)
+            {
+                model.ClientBusinessClassID = client.BusinessClassID;
+                model.ClientBusinessClassName = BusinessClass.FormatDisplayDescription(
+                    client.BusinessClassName,
+                    client.BusinessClassDescription);
+            }
+            if (model.ClientCategoryID is null or <= 0)
+            {
+                model.ClientCategoryID = client.ClientCategoryID;
+                model.ClientCategoryName = client.CCName;
+            }
+            if (model.ClientTypeID is null or <= 0)
+            {
+                model.ClientTypeID = client.ClientTypeID;
+                model.ClientTypeName = ClientType.FormatDisplayName(client.CTName, client.CTDescription);
+            }
+            if (model.ClientStatusID is null or <= 0)
+            {
+                model.ClientStatusID = client.StatusID;
+                model.ClientStatusCode = client.StatusCode;
+            }
         }
 
         var services = await _projects.ListServicesAsync(projectId, cancellationToken);
@@ -174,10 +191,17 @@ public sealed class ProjectService : IProjectService
             };
         }
 
+        var clientRefContext = new ProjectClientRefContext(
+            BusinessUnitId: model.ClientBusinessUnitID,
+            BusinessClassId: model.ClientBusinessClassID,
+            ClientTypeId: model.ClientTypeID,
+            ClientStatusId: model.ClientStatusID);
+
         var projectId = await _projects.SaveProjectAndReplaceServicesAsync(
             project,
             model.SelectedServiceIds,
             revenueEntry,
+            clientRefContext,
             cancellationToken);
 
         // Explicit ActivityLog: status transitions and creation.
@@ -406,6 +430,38 @@ public sealed class ProjectService : IProjectService
             return;
         }
 
+        if (model.ClientBusinessUnitID is > 0
+            || model.ClientBusinessClassID is > 0
+            || model.ClientTypeID is > 0
+            || model.ClientStatusID is > 0)
+        {
+            row = new ClientListRow
+            {
+                ClientID = row.ClientID,
+                ClientName = row.ClientName,
+                ClientShortName = row.ClientShortName,
+                BusinessUnitID = model.ClientBusinessUnitID is > 0 ? model.ClientBusinessUnitID : row.BusinessUnitID,
+                BusinessUnitName = model.ClientBusinessUnitID is > 0
+                    ? model.ClientBusinessUnitName ?? row.BusinessUnitName
+                    : row.BusinessUnitName,
+                BusinessClassID = model.ClientBusinessClassID is > 0 ? model.ClientBusinessClassID : row.BusinessClassID,
+                BusinessClassName = model.ClientBusinessClassID is > 0
+                    ? model.ClientBusinessClassName ?? row.BusinessClassName
+                    : row.BusinessClassName,
+                BusinessClassDescription = row.BusinessClassDescription,
+                ClientCategoryID = row.ClientCategoryID,
+                CCName = row.CCName,
+                ClientTypeID = model.ClientTypeID is > 0 ? model.ClientTypeID : row.ClientTypeID,
+                CTName = model.ClientTypeID is > 0 ? model.ClientTypeName ?? row.CTName : row.CTName,
+                CTDescription = row.CTDescription,
+                StatusID = model.ClientStatusID is > 0 ? model.ClientStatusID : row.StatusID,
+                StatusCode = model.ClientStatusID is > 0 ? model.ClientStatusCode ?? row.StatusCode : row.StatusCode,
+                StatusDescription = row.StatusDescription,
+                CreatedDate = row.CreatedDate,
+                ModifiedDate = row.ModifiedDate,
+            };
+        }
+
         model.ClientDirectoryRows = [row];
         model.ClientOptions =
         [
@@ -417,18 +473,32 @@ public sealed class ProjectService : IProjectService
 
         model.ClientName = row.ClientName ?? model.ClientName;
         model.ClientShortName = row.ClientShortName ?? model.ClientShortName;
-        model.ClientBusinessUnitID = row.BusinessUnitID ?? model.ClientBusinessUnitID;
-        model.ClientBusinessUnitName = row.BusinessUnitName ?? model.ClientBusinessUnitName;
-        model.ClientBusinessClassID = row.BusinessClassID ?? model.ClientBusinessClassID;
-        model.ClientBusinessClassName = BusinessClass.FormatDisplayDescription(
-            row.BusinessClassName,
-            row.BusinessClassDescription);
+        model.ClientBusinessUnitID = model.ClientBusinessUnitID is > 0
+            ? model.ClientBusinessUnitID
+            : row.BusinessUnitID ?? model.ClientBusinessUnitID;
+        model.ClientBusinessUnitName = model.ClientBusinessUnitID is > 0
+            ? model.ClientBusinessUnitName ?? row.BusinessUnitName
+            : row.BusinessUnitName ?? model.ClientBusinessUnitName;
+        model.ClientBusinessClassID = model.ClientBusinessClassID is > 0
+            ? model.ClientBusinessClassID
+            : row.BusinessClassID ?? model.ClientBusinessClassID;
+        model.ClientBusinessClassName = model.ClientBusinessClassID is > 0
+            ? model.ClientBusinessClassName
+            : BusinessClass.FormatDisplayDescription(row.BusinessClassName, row.BusinessClassDescription);
         model.ClientCategoryID = row.ClientCategoryID ?? model.ClientCategoryID;
         model.ClientCategoryName = row.CCName ?? model.ClientCategoryName;
-        model.ClientTypeID = row.ClientTypeID ?? model.ClientTypeID;
-        model.ClientTypeName = ClientType.FormatDisplayName(row.CTName, row.CTDescription);
-        model.ClientStatusID = row.StatusID ?? model.ClientStatusID;
-        model.ClientStatusCode = row.StatusCode ?? row.StatusDescription ?? model.ClientStatusCode;
+        model.ClientTypeID = model.ClientTypeID is > 0
+            ? model.ClientTypeID
+            : row.ClientTypeID ?? model.ClientTypeID;
+        model.ClientTypeName = model.ClientTypeID is > 0
+            ? model.ClientTypeName
+            : ClientType.FormatDisplayName(row.CTName, row.CTDescription);
+        model.ClientStatusID = model.ClientStatusID is > 0
+            ? model.ClientStatusID
+            : row.StatusID ?? model.ClientStatusID;
+        model.ClientStatusCode = model.ClientStatusID is > 0
+            ? model.ClientStatusCode
+            : row.StatusCode ?? row.StatusDescription ?? model.ClientStatusCode;
     }
 
     private static ClientListRow ToClientListRow(Client client) => new()
