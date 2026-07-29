@@ -33,5 +33,6 @@ public interface IDashboardRepository
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default);
 }

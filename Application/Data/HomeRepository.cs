@@ -26,6 +26,7 @@ public sealed class HomeRepository : IHomeRepository
         string? clientNameSearch = null,
         string? businessClassName = null,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default)
     {
         var totalsSql = new StringBuilder(
@@ -39,7 +40,15 @@ public sealed class HomeRepository : IHomeRepository
         totalsSql.Append(ActiveClientProjectPredicate);
 
         var parameters = new List<SqlParameter>();
-        ClientProjectListFilterSql.AppendFilters(totalsSql, parameters, businessUnitName, statusName, clientNameSearch, businessClassName, projectTypeName);
+        ClientProjectListFilterSql.AppendFilters(
+            totalsSql,
+            parameters,
+            businessUnitName,
+            statusName,
+            clientNameSearch,
+            businessClassName,
+            projectTypeName,
+            isOnline);
 
         totalsSql.Append(
             """
@@ -101,7 +110,15 @@ public sealed class HomeRepository : IHomeRepository
         byTypeSql.Append(ActiveClientProjectPredicate);
 
         var byTypeParams = new List<SqlParameter>();
-        ClientProjectListFilterSql.AppendFilters(byTypeSql, byTypeParams, businessUnitName, statusName, clientNameSearch, businessClassName, projectTypeName);
+        ClientProjectListFilterSql.AppendFilters(
+            byTypeSql,
+            byTypeParams,
+            businessUnitName,
+            statusName,
+            clientNameSearch,
+            businessClassName,
+            projectTypeName,
+            isOnline);
 
         byTypeSql.Append(
             """

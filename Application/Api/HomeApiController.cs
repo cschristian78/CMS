@@ -26,6 +26,7 @@ public sealed class HomeApiController : ControllerBase
         [FromQuery] string? clientName = null,
         [FromQuery] string? businessClassName = null,
         [FromQuery] string? projectTypeName = null,
+        [FromQuery] string? onlineStatus = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -36,6 +37,7 @@ public sealed class HomeApiController : ControllerBase
                 clientName,
                 businessClassName,
                 projectTypeName,
+                ParseOnlineStatus(onlineStatus),
                 cancellationToken);
             return Ok(summary);
         }
@@ -79,6 +81,7 @@ public sealed class HomeApiController : ControllerBase
         [FromQuery] string? clientName = null,
         [FromQuery] string? businessClassName = null,
         [FromQuery] string? projectTypeName = null,
+        [FromQuery] string? onlineStatus = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -90,6 +93,7 @@ public sealed class HomeApiController : ControllerBase
                 clientName,
                 businessClassName,
                 projectTypeName,
+                ParseOnlineStatus(onlineStatus),
                 cancellationToken);
             return Ok(model);
         }
@@ -168,6 +172,33 @@ public sealed class HomeApiController : ControllerBase
             _logger.LogError(ex, "Home client-project bulk import commit failed.");
             return Problem(detail: "Import failed.", title: "Import failed", statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static bool? ParseOnlineStatus(string? onlineStatus)
+    {
+        if (string.IsNullOrWhiteSpace(onlineStatus))
+        {
+            return null;
+        }
+
+        var value = onlineStatus.Trim();
+        if (value.Equals("Online", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (value.Equals("Offline", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("0", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return null;
     }
 
     private static string BuildTemporaryDiagnosticDetail(Exception ex)

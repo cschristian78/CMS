@@ -239,6 +239,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const [filterBusinessClass, setFilterBusinessClass] = useState('');
   // Home opens with the Status filter pre-set to "Active" so the initial list shows only active rows.
   const [filterStatus, setFilterStatus] = useState('Active');
+  /** '' = all, 'Online', or 'Offline' — filters by dbo.tProject.IsOnline. */
+  const [filterOnline, setFilterOnline] = useState('');
   const [clientNameSearch, setClientNameSearch] = useState('');
   // ProjectType filter is sourced from unique PTDescription values in dbo.vProject_Current.
   const [filterProjectType, setFilterProjectType] = useState('');
@@ -268,10 +270,11 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       const bu = filterBusinessUnit;
       const bc = filterBusinessClass;
       const stat = filterStatus;
+      const online = filterOnline;
       const cli = clientNameSearch;
       const pt = filterProjectType;
-      const listUrl = buildHomeClientProjectListUrl(refresh, bu, bc, stat, cli, pt);
-      const summaryUrl = buildHomeSummaryUrl(bu, bc, stat, cli, pt);
+      const listUrl = buildHomeClientProjectListUrl(refresh, bu, bc, stat, cli, pt, online);
+      const summaryUrl = buildHomeSummaryUrl(bu, bc, stat, cli, pt, online);
 
       setListLoading(true);
       setListError(null);
@@ -305,7 +308,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         setListLoading(false);
       }
     },
-    [filterBusinessUnit, filterBusinessClass, filterStatus, clientNameSearch, filterProjectType, loadFilterOptions],
+    [filterBusinessUnit, filterBusinessClass, filterStatus, filterOnline, clientNameSearch, filterProjectType, loadFilterOptions],
   );
 
   useEffect(() => {
@@ -805,7 +808,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
           <div
             className="dashboard-tabular-filters"
             role="search"
-            aria-label="Client project list filters by business unit (BUName), business class (BCName), client status, client, and project type"
+            aria-label="Client project list filters by business unit (BUName), business class (BCName), client status, online status, client, and project type"
           >
             <div className="dashboard-filter-field">
               <label htmlFor="home-filter-business-unit">Business Unit</label>
@@ -853,6 +856,19 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                     {s}
                   </option>
                 ))}
+              </select>
+            </div>
+            <div className="dashboard-filter-field">
+              <label htmlFor="home-filter-online">Online</label>
+              <select
+                id="home-filter-online"
+                value={filterOnline}
+                onChange={(e) => setFilterOnline(e.target.value)}
+                disabled={listLoading}
+              >
+                <option value="">All</option>
+                <option value="Online">Online</option>
+                <option value="Offline">Offline</option>
               </select>
             </div>
             <div className="dashboard-filter-field dashboard-filter-field--grow">

@@ -292,6 +292,7 @@ public sealed class DashboardRepository : IDashboardRepository
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default)
     {
         var sql = new StringBuilder("""
@@ -310,7 +311,9 @@ public sealed class DashboardRepository : IDashboardRepository
             statusName,
             clientNameSearch,
             businessClassName,
-            projectTypeName);
+            projectTypeName,
+            isOnline,
+            projectIdColumn: "v.ProjectID");
 
         return _db.QueryTextAsTableAsync(sql.ToString(), parameters, cancellationToken);
     }

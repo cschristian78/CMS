@@ -28,6 +28,7 @@ public sealed class ClientProjectListService : IClientProjectListService
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default)
     {
         if (refresh)
@@ -41,6 +42,7 @@ public sealed class ClientProjectListService : IClientProjectListService
             clientNameSearch,
             businessClassName,
             projectTypeName,
+            isOnline,
             cancellationToken);
         return new ClientProjectListViewModel
         {

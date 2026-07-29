@@ -12,5 +12,6 @@ public interface IHomeRepository
         string? clientNameSearch = null,
         string? businessClassName = null,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default);
 }

@@ -9,12 +9,14 @@ function appendFilterParams(
   businessUnit: string,
   businessClass: string,
   status: string,
+  onlineStatus: string,
   client: string,
   projectType: string,
 ): void {
   const bu = businessUnit.trim();
   const bc = businessClass.trim();
   const stat = status.trim();
+  const online = onlineStatus.trim();
   const cli = client.trim();
   const pt = projectType.trim();
   if (bu) {
@@ -25,6 +27,9 @@ function appendFilterParams(
   }
   if (stat) {
     p.set('statusName', stat);
+  }
+  if (online) {
+    p.set('onlineStatus', online);
   }
   if (cli) {
     p.set('clientName', cli);
@@ -41,10 +46,11 @@ export function buildHomeClientProjectListUrl(
   status: string,
   client: string,
   projectType: string = '',
+  onlineStatus: string = '',
 ): string {
   const p = new URLSearchParams();
   p.set('refresh', refresh ? 'true' : 'false');
-  appendFilterParams(p, businessUnit, businessClass, status, client, projectType);
+  appendFilterParams(p, businessUnit, businessClass, status, onlineStatus, client, projectType);
   return `/api/home/client-project-list?${p.toString()}`;
 }
 
@@ -54,9 +60,10 @@ export function buildHomeSummaryUrl(
   status: string,
   client: string,
   projectType: string = '',
+  onlineStatus: string = '',
 ): string {
   const p = new URLSearchParams();
-  appendFilterParams(p, businessUnit, businessClass, status, client, projectType);
+  appendFilterParams(p, businessUnit, businessClass, status, onlineStatus, client, projectType);
   const qs = p.toString();
   return qs ? `/api/home/summary?${qs}` : '/api/home/summary';
 }

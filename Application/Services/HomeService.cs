@@ -26,8 +26,16 @@ public sealed class HomeService : IHomeService
         string? clientNameSearch = null,
         string? businessClassName = null,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default) =>
-        _home.GetHomeSummaryAsync(businessUnitName, statusName, clientNameSearch, businessClassName, projectTypeName, cancellationToken);
+        _home.GetHomeSummaryAsync(
+            businessUnitName,
+            statusName,
+            clientNameSearch,
+            businessClassName,
+            projectTypeName,
+            isOnline,
+            cancellationToken);
 
     public Task<ClientProjectListViewModel> GetHomeClientProjectListAsync(
         bool refresh,
@@ -36,6 +44,7 @@ public sealed class HomeService : IHomeService
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default) =>
         _clientProjectList.GetMaterializedListAsync(
             refresh,
@@ -44,6 +53,7 @@ public sealed class HomeService : IHomeService
             clientNameSearch,
             businessClassName,
             projectTypeName,
+            isOnline,
             cancellationToken);
 
     public Task<ClientProjectListFilterOptionsViewModel> GetHomeClientProjectListFilterOptionsAsync(
