@@ -88,6 +88,26 @@ public sealed class ProjectsApiController : ControllerBase
         return Ok(new { message = "Project restored." });
     }
 
+    public sealed class SetOnlineRequest
+    {
+        public bool IsOnline { get; set; }
+    }
+
+    [HttpPost("{id:int}/online")]
+    public async Task<ActionResult<object>> SetOnlineAsync(
+        int id,
+        [FromBody] SetOnlineRequest body,
+        CancellationToken cancellationToken)
+    {
+        await _projectService.SetOnlineAsync(id, body.IsOnline, cancellationToken);
+        return Ok(new
+        {
+            projectId = id,
+            isOnline = body.IsOnline,
+            message = body.IsOnline ? "Project is now Online." : "Project is now Offline."
+        });
+    }
+
     // ---- Sub-resources --------------------------------------------------
 
     [HttpGet("{id:int}/revenue")]

@@ -34,6 +34,9 @@ public sealed class Project
     public string? StatusCode { get; set; }
     public string? StatusDescription { get; set; }
 
+    /// <summary>When true, the project is marked Online / currently in progress (green-dot on Home).</summary>
+    public bool IsOnline { get; set; }
+
     /// <summary>Latest <c>tProjectRevenue</c> row surfaced by <c>vProject_Current</c>.</summary>
     public decimal? LatestRevenue { get; set; }
     public DateTime? LatestRevenueEffectiveDate { get; set; }

@@ -2188,6 +2188,59 @@ textarea {
     background: rgba(24, 54, 89, 0.16) !important;
 }
 
+/* Online / in-progress indicator (far-left column on the home grid) */
+.home-online-col {
+    width: 2.1rem;
+    min-width: 2.1rem;
+    max-width: 2.1rem;
+    text-align: center;
+    padding-left: 0.45rem !important;
+    padding-right: 0.35rem !important;
+    vertical-align: middle;
+}
+
+.home-online-dot {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    border: 1px solid #9aabbc;
+    background: #c8d2dc;
+    padding: 0;
+    margin: 0;
+    vertical-align: middle;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+button.home-online-dot {
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.home-online-dot--on {
+    background: #22a045;
+    border-color: #1a7a34;
+    box-shadow: 0 0 0 2px rgba(34, 160, 69, 0.28);
+}
+
+.home-online-dot:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.project-online-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2rem;
+}
+
+.project-online-toggle .home-online-dot {
+    cursor: default;
+    pointer-events: none;
+}
+
 /* Home client/project grid: keep cell values on one line; scroll horizontally in the wrap */
 .home-client-project-table .home-client-project-table__cell {
     white-space: nowrap;

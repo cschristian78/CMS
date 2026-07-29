@@ -70,6 +70,8 @@ interface ProjectFormModel {
   renewalDate?: string | null;
   dueDate?: string | null;
   statusID: number;
+  /** When true, project is Online / currently in progress (green-dot on Home). */
+  isOnline?: boolean;
 
   // Revenue entry (writes a row to dbo.tProjectRevenue)
   revenueAmount?: number | null;
@@ -1181,6 +1183,41 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   </option>
                 ))}
               </select>
+
+              <label htmlFor="isOnline">Online</label>
+              <span className="project-online-toggle">
+                <input
+                  id="isOnline"
+                  type="checkbox"
+                  checked={!!model.isOnline}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setModel({ ...model, isOnline: next });
+                    if (isEdit && projectId !== undefined) {
+                      void (async () => {
+                        try {
+                          const r = await apiPostJson<{ message: string }>(
+                            `/api/projects/${projectId}/online`,
+                            { isOnline: next },
+                          );
+                          flash('success', r.message ?? (next ? 'Project is now Online.' : 'Project is now Offline.'));
+                        } catch (err) {
+                          setModel({ ...model, isOnline: !next });
+                          flash(
+                            'error',
+                            err instanceof ApiError ? err.message : 'Could not update online status.',
+                          );
+                        }
+                      })();
+                    }
+                  }}
+                />{' '}
+                <span
+                  className={'home-online-dot' + (model.isOnline ? ' home-online-dot--on' : '')}
+                  aria-hidden="true"
+                />{' '}
+                {model.isOnline ? 'Online (in progress)' : 'Offline'}
+              </span>
 
               <label htmlFor="revenueAmount">Revenue</label>
               <input

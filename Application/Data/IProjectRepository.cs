@@ -43,4 +43,7 @@ public interface IProjectRepository
     Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
+    Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
 }

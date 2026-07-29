@@ -1892,12 +1892,32 @@ BEGIN
         CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProject_CreatedDate  DEFAULT (SYSUTCDATETIME()),
         ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProject_ModifiedDate DEFAULT (SYSUTCDATETIME()),
         IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProject_IsActive DEFAULT (1),
+        IsOnline                     BIT                  NOT NULL CONSTRAINT DF_tProject_IsOnline DEFAULT (0),
         CONSTRAINT PK_tProject PRIMARY KEY CLUSTERED (ProjectID)
         );
 
         CREATE UNIQUE INDEX UX_tProject_Number_Active ON dbo.tProject (ProjectNumber) WHERE IsActive = 1;
 
         
+    END;
+END;
+GO
+/*
+  Adds IsOnline (BIT) to dbo.tProject so users can mark a project as currently
+  in progress / online. Idempotent for existing installs.
+*/
+CREATE OR ALTER PROCEDURE usp_AlterTable_tProject_AddIsOnline
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProject', 'U') IS NULL
+        THROW 50001, 'dbo.tProject does not exist. Run usp_CreateTable_tProject first.', 1;
+
+    IF COL_LENGTH('dbo.tProject', 'IsOnline') IS NULL
+    BEGIN
+        ALTER TABLE dbo.tProject
+            ADD IsOnline BIT NOT NULL CONSTRAINT DF_tProject_IsOnline DEFAULT (0);
     END;
 END;
 GO
@@ -4711,6 +4731,7 @@ SELECT
     p.ProjectID,
     p.ProjectNumber,
     p.ProjectName,
+    p.IsOnline,
     PTDescription = pt.ProjectTypeDescription,
     p.RenewalDate,
     p.DueDate,
@@ -5524,6 +5545,7 @@ BEGIN
     EXEC dbo.usp_CreateTable_tAddress;
     EXEC dbo.usp_CreateTable_tService;
     EXEC dbo.usp_CreateTable_tProject;
+    EXEC dbo.usp_AlterTable_tProject_AddIsOnline;  -- adds IsOnline for in-progress indicator (idempotent)
 
     ------------------------------------------------------------------
     -- 4. Ref / detail tables (depend on entities above)

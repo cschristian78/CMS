@@ -51,6 +51,24 @@ function findClientIdColumnIndex(columns: string[]): number {
   return findGridColumnIndex(columns, 'ClientID');
 }
 
+function findIsOnlineColumnIndex(columns: string[]): number {
+  return findGridColumnIndex(columns, 'IsOnline');
+}
+
+function cellIsTruthy(raw: string | number | boolean | null | undefined): boolean {
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  if (typeof raw === 'number') {
+    return raw !== 0;
+  }
+  if (typeof raw === 'string') {
+    const t = raw.trim().toLowerCase();
+    return t === '1' || t === 'true' || t === 'yes' || t === 'online';
+  }
+  return false;
+}
+
 /** Widen key text columns so values stay on one line (table scrolls horizontally). */
 function homeProjectListCellClass(columnName: string): string {
   const base = 'home-client-project-table__cell';
@@ -328,6 +346,23 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     return findClientIdColumnIndex(list.columns);
   }, [list?.columns]);
 
+  const isOnlineColumnIndex = useMemo(() => {
+    if (!list?.columns?.length) {
+      return -1;
+    }
+    return findIsOnlineColumnIndex(list.columns);
+  }, [list?.columns]);
+
+  /** Data columns shown in the grid (IsOnline is rendered as the leading green-dot column). */
+  const visibleColumnIndexes = useMemo(() => {
+    if (!list?.columns?.length) {
+      return [] as number[];
+    }
+    return list.columns
+      .map((_, i) => i)
+      .filter((i) => i !== isOnlineColumnIndex);
+  }, [list?.columns, isOnlineColumnIndex]);
+
   const displayRows = useMemo((): (string | number | boolean | null)[][] => {
     if (!list?.rows?.length) {
       return [];
@@ -471,6 +506,46 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     const row = displayRows[selectedRowIndex];
     openEditForRow(row);
   }, [displayRows, openEditForRow, selectedRowIndex]);
+
+  const handleToggleOnline = useCallback(
+    async (e: MouseEvent, projectId: number, currentlyOnline: boolean) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (projectId <= 0) {
+        return;
+      }
+      const nextOnline = !currentlyOnline;
+      try {
+        const result = await apiPostJson<{ message: string; isOnline: boolean }>(
+          `/api/projects/${projectId}/online`,
+          { isOnline: nextOnline },
+        );
+        setList((prev) => {
+          if (!prev || isOnlineColumnIndex < 0) {
+            return prev;
+          }
+          const rows = prev.rows.map((row) => {
+            if (!Array.isArray(row)) {
+              return row;
+            }
+            const id =
+              projectIdColumnIndex >= 0 ? parseProjectIdFromRow(row, projectIdColumnIndex) : null;
+            if (id !== projectId) {
+              return row;
+            }
+            const next = [...row];
+            next[isOnlineColumnIndex] = nextOnline;
+            return next;
+          });
+          return { ...prev, rows };
+        });
+        flash('success', result.message ?? (nextOnline ? 'Project is now Online.' : 'Project is now Offline.'));
+      } catch (err) {
+        flash('error', err instanceof ApiError ? err.message : 'Could not update online status.');
+      }
+    },
+    [flash, isOnlineColumnIndex, projectIdColumnIndex],
+  );
 
   const resetBulkWizard = () => {
     setBulkWizardOpen(false);
@@ -839,7 +914,12 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               <table className="dashboard-data-table dashboard-data-table--full home-client-project-table">
                 <thead>
                   <tr>
-                    {list.columns.map((c, ci) => (
+                    <th className="home-online-col" scope="col" title="Online / in progress">
+                      <span className="sr-only">Online</span>
+                    </th>
+                    {visibleColumnIndexes.map((ci) => {
+                      const c = list.columns[ci] ?? '';
+                      return (
                       <th key={`${c}-${ci}`} className={homeProjectListCellClass(c)}>
                         <button
                           type="button"
@@ -863,13 +943,18 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                           </span>
                         </button>
                       </th>
-                    ))}
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
                   {displayRows.map((row, ri) => {
                     const rowProjectId =
                       projectIdColumnIndex >= 0 ? parseProjectIdFromRow(row, projectIdColumnIndex) : null;
+                    const isOnline =
+                      isOnlineColumnIndex >= 0 && isOnlineColumnIndex < row.length ?
+                        cellIsTruthy(row[isOnlineColumnIndex])
+                      : false;
                     const rowKey =
                       rowProjectId !== null ? `project-${rowProjectId}` : `row-${ri}-${String(row[0] ?? '')}`;
                     return (
@@ -880,9 +965,35 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                       onDoubleClick={(e) => handleRowDoubleClick(e, row)}
                       title="Click to select; double-click to edit project with grid context"
                     >
-                      {row.map((cell, ci) => (
+                      <td className="home-online-col">
+                        <button
+                          type="button"
+                          className={
+                            'home-online-dot' + (isOnline ? ' home-online-dot--on' : '')
+                          }
+                          disabled={rowProjectId === null}
+                          aria-pressed={isOnline}
+                          aria-label={
+                            isOnline ?
+                              'Online — click to set Offline'
+                            : 'Offline — click to set online'
+                          }
+                          title={
+                            isOnline ?
+                              'Online (in progress) — click to set Offline'
+                            : 'Offline — click to set online'
+                          }
+                          onClick={(e) => {
+                            if (rowProjectId === null) {
+                              return;
+                            }
+                            void handleToggleOnline(e, rowProjectId, isOnline);
+                          }}
+                        />
+                      </td>
+                      {visibleColumnIndexes.map((ci) => (
                         <td key={ci} className={homeProjectListCellClass(list.columns[ci] ?? '')}>
-                          {formatTableCell(cell)}
+                          {formatTableCell(row[ci])}
                         </td>
                       ))}
                     </tr>

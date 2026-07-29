@@ -51,6 +51,10 @@ public sealed class ProjectFormViewModel
     [Display(Name = "Status")]
     public int StatusID { get; set; }
 
+    /// <summary>When true, the project is Online / currently in progress (green-dot on Home).</summary>
+    [Display(Name = "Online")]
+    public bool IsOnline { get; set; }
+
     /* ---- Revenue entry (writes a row to dbo.tProjectRevenue) ---- */
 
     [Display(Name = "Revenue")]

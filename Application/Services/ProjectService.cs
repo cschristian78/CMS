@@ -102,6 +102,7 @@ public sealed class ProjectService : IProjectService
             RenewalDate = project.RenewalDate,
             DueDate = project.DueDate,
             StatusID = project.StatusID,
+            IsOnline = project.IsOnline,
             ClientBusinessUnitID = project.BusinessUnitID,
             ClientBusinessUnitName = project.BusinessUnitName,
             ClientBusinessClassID = project.BusinessClassID > 0 ? project.BusinessClassID : null,
@@ -171,7 +172,8 @@ public sealed class ProjectService : IProjectService
             ProjectTypeID = model.ProjectTypeID,
             RenewalDate = model.RenewalDate,
             DueDate = model.DueDate,
-            StatusID = model.StatusID > 0 ? model.StatusID : 1
+            StatusID = model.StatusID > 0 ? model.StatusID : 1,
+            IsOnline = model.IsOnline
         };
 
         var existing = project.ProjectID > 0
@@ -242,6 +244,28 @@ public sealed class ProjectService : IProjectService
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Activity log write failed for SoftDelete of ProjectID {ProjectID}.", projectId);
+        }
+
+        await RefreshHomeListAsync(cancellationToken);
+    }
+
+    public async Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default)
+    {
+        await _projects.SetOnlineAsync(projectId, isOnline, cancellationToken);
+        try
+        {
+            await _admin.LogActivityAsync(
+                ProjectEntityType,
+                projectId,
+                "OnlineChange",
+                nameof(Project.IsOnline),
+                (!isOnline).ToString(),
+                isOnline.ToString(),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Activity log write failed for OnlineChange of ProjectID {ProjectID}.", projectId);
         }
 
         await RefreshHomeListAsync(cancellationToken);

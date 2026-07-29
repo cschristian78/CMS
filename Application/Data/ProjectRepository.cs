@@ -18,6 +18,7 @@ public sealed class ProjectRepository : IProjectRepository
             p.CreatedDate,
             p.ModifiedDate,
             IsDeleted = CAST(CASE WHEN p.IsActive = 0 THEN 1 ELSE 0 END AS BIT),
+            IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
             c.ClientID,
             c.ClientName,
             cr.BusinessClassID,
@@ -117,6 +118,22 @@ public sealed class ProjectRepository : IProjectRepository
 
         await _db.ExecuteTextAsync(sql, [SqlParameterFactory.Int("@ProjectID", projectId)], cancellationToken);
         return projectId;
+    }
+
+    public async Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            UPDATE dbo.tProject
+               SET IsOnline = @IsOnline,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ProjectID = @ProjectID;
+            """;
+
+        await _db.ExecuteTextAsync(sql,
+        [
+            SqlParameterFactory.Int("@ProjectID", projectId),
+            SqlParameterFactory.Bit("@IsOnline", isOnline)
+        ], cancellationToken);
     }
 
     public Task<IReadOnlyList<ProjectRevenue>> GetRevenueHistoryAsync(int projectId, CancellationToken cancellationToken = default)
@@ -266,6 +283,7 @@ public sealed class ProjectRepository : IProjectRepository
                 cancellationToken);
 
             await SyncProjectActiveFromStatusAsync(connection, tx, projectId, statusId, cancellationToken);
+            await SyncProjectOnlineAsync(connection, tx, projectId, project.IsOnline, cancellationToken);
 
             await ExecuteTextAsync(connection, tx,
                 "DELETE FROM dbo.tProjectService WHERE ProjectRefID = @ProjectRefID;",
@@ -576,6 +594,26 @@ public sealed class ProjectRepository : IProjectRepository
         return Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
     }
 
+    private static async Task SyncProjectOnlineAsync(
+        SqlConnection connection,
+        SqlTransaction tx,
+        int projectId,
+        bool isOnline,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteTextAsync(connection, tx,
+            """
+            UPDATE dbo.tProject
+               SET IsOnline = @IsOnline,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ProjectID = @ProjectID;
+            """,
+        [
+            SqlParameterFactory.Int("@ProjectID", projectId),
+            SqlParameterFactory.Bit("@IsOnline", isOnline)
+        ], cancellationToken);
+    }
+
     private static async Task SyncProjectActiveFromStatusAsync(
         SqlConnection connection,
         SqlTransaction tx,
@@ -785,6 +823,7 @@ public sealed class ProjectRepository : IProjectRepository
         StatusID = r.GetInt32OrDefault("StatusID"),
         StatusCode = r.TryGetNullableString("StatusCode"),
         StatusDescription = r.TryGetNullableString("StatusDescription"),
+        IsOnline = r.TryGetNullableBoolean("IsOnline") ?? false,
         IsDeleted = r.TryGetNullableBoolean("IsDeleted") ?? false,
         CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")

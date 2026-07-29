@@ -20,6 +20,9 @@ public interface IProjectService
     Task SoftDeleteAsync(int projectId, CancellationToken cancellationToken = default);
     Task RestoreAsync(int projectId, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets whether the project is Online / currently in progress.</summary>
+    Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<SelectListItem>> GetUserGroupSelectListForClientAsync(int clientId, CancellationToken cancellationToken = default);
 
     /// <summary>Active services from <c>dbo.tService</c> joined to <c>dbo.tServiceCategory</c>
