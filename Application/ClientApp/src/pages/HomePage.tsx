@@ -806,11 +806,11 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
           {filterOptionsError ? <div className="alert alert-error">{filterOptionsError}</div> : null}
 
           <div
-            className="dashboard-tabular-filters"
+            className="dashboard-tabular-filters dashboard-tabular-filters--home"
             role="search"
             aria-label="Client project list filters by business unit (BUName), business class (BCName), client status, online status, client, and project type"
           >
-            <div className="dashboard-filter-field">
+            <div className="dashboard-filter-field dashboard-filter-field--bu">
               <label htmlFor="home-filter-business-unit">Business Unit</label>
               <select
                 id="home-filter-business-unit"
@@ -826,7 +826,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 ))}
               </select>
             </div>
-            <div className="dashboard-filter-field">
+            <div className="dashboard-filter-field dashboard-filter-field--bc">
               <label htmlFor="home-filter-business-class">Business Class</label>
               <select
                 id="home-filter-business-class"
@@ -842,7 +842,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 ))}
               </select>
             </div>
-            <div className="dashboard-filter-field">
+            <div className="dashboard-filter-field dashboard-filter-field--status">
               <label htmlFor="home-filter-status">Status</label>
               <select
                 id="home-filter-status"
@@ -858,7 +858,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 ))}
               </select>
             </div>
-            <div className="dashboard-filter-field">
+            <div className="dashboard-filter-field dashboard-filter-field--online">
               <label htmlFor="home-filter-online">Online</label>
               <select
                 id="home-filter-online"
@@ -871,23 +871,24 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 <option value="Offline">Offline</option>
               </select>
             </div>
-            <div className="dashboard-filter-field dashboard-filter-field--grow">
+            <div className="dashboard-filter-field dashboard-filter-field--grow dashboard-filter-field--client">
               <label htmlFor="home-filter-client">Client</label>
               <select
                 id="home-filter-client"
                 value={clientNameSearch}
                 onChange={(e) => setClientNameSearch(e.target.value)}
                 disabled={listLoading}
+                title={clientNameSearch || 'All clients'}
               >
                 <option value="">All clients</option>
                 {(filterOptions?.clientNames ?? []).map((s) => (
-                  <option key={s} value={s}>
+                  <option key={s} value={s} title={s}>
                     {s}
                   </option>
                 ))}
               </select>
             </div>
-            <div className="dashboard-filter-field">
+            <div className="dashboard-filter-field dashboard-filter-field--project-type">
               <label htmlFor="home-filter-project-type">Project Type</label>
               <select
                 id="home-filter-project-type"
@@ -1004,7 +1005,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                         <button
                           type="button"
                           className={
-                            'home-online-dot' + (isOnline ? ' home-online-dot--on' : '')
+                            'home-online-dot' +
+                            (isOnline ? ' home-online-dot--on' : ' home-online-dot--off')
                           }
                           disabled={rowProjectId === null}
                           aria-pressed={isOnline}

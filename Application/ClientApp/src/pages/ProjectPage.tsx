@@ -1213,7 +1213,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   }}
                 />{' '}
                 <span
-                  className={'home-online-dot' + (model.isOnline ? ' home-online-dot--on' : '')}
+                  className={'home-online-dot' + (model.isOnline ? ' home-online-dot--on' : ' home-online-dot--off')}
                   aria-hidden="true"
                 />{' '}
                 {model.isOnline ? 'Online (in progress)' : 'Offline'}

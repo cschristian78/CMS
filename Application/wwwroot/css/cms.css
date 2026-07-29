@@ -2028,6 +2028,79 @@ textarea {
     margin-bottom: 0.75rem;
 }
 
+/* Home: keep every filter + actions on one row; Online matches Status width. */
+.dashboard-tabular-filters--home {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: end;
+    gap: 0.55rem 0.65rem;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    --home-filter-status-width: 7.5rem;
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-field {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-field--bu,
+.dashboard-tabular-filters--home .dashboard-filter-field--bc,
+.dashboard-tabular-filters--home .dashboard-filter-field--project-type {
+    flex: 0 1 9.5rem;
+    width: 9.5rem;
+    max-width: 9.5rem;
+}
+
+/* Status: fixed compact width. */
+.dashboard-tabular-filters--home .dashboard-filter-field--status {
+    flex: 0 0 var(--home-filter-status-width);
+    width: var(--home-filter-status-width);
+    max-width: var(--home-filter-status-width);
+}
+
+/* Online: never wider than Status (same token). */
+.dashboard-tabular-filters--home .dashboard-filter-field--online {
+    flex: 0 0 var(--home-filter-status-width);
+    width: var(--home-filter-status-width);
+    max-width: var(--home-filter-status-width);
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-field--status select,
+.dashboard-tabular-filters--home .dashboard-filter-field--online select {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/*
+ * Client: wide enough for full names in the closed control and open list
+ * (longest current names ~45–50 characters, e.g. Leatherstocking…).
+ */
+.dashboard-tabular-filters--home .dashboard-filter-field--client {
+    flex: 1 1 32rem;
+    min-width: 32rem;
+    width: auto;
+    max-width: none;
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-field--client select {
+    width: 100%;
+    min-width: 32rem;
+    max-width: none;
+    box-sizing: border-box;
+    text-overflow: clip;
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-actions {
+    grid-column: auto;
+    flex: 0 0 auto;
+    margin-left: 0.15rem;
+    overflow-x: visible;
+}
+
 .dashboard-filter-field {
     display: flex;
     flex-direction: column;
@@ -2076,8 +2149,12 @@ textarea {
         justify-items: center;
     }
 
-    .dashboard-tabular-filters {
+    .dashboard-tabular-filters:not(.dashboard-tabular-filters--home) {
         grid-template-columns: 1fr;
+    }
+
+    .dashboard-tabular-filters--home {
+        flex-wrap: nowrap;
     }
 
     .dashboard-filter-actions {
@@ -2201,24 +2278,35 @@ textarea {
 
 .home-online-dot {
     display: inline-block;
-    width: 0.7rem;
-    height: 0.7rem;
+    width: 0.75rem;
+    height: 0.75rem;
     border-radius: 50%;
-    border: 1px solid #9aabbc;
-    background: #c8d2dc;
+    border: 1px solid #8a97a5;
+    background: #9aa6b2;
     padding: 0;
     margin: 0;
     vertical-align: middle;
     cursor: pointer;
     box-sizing: border-box;
+    box-shadow: none;
 }
 
 button.home-online-dot {
     appearance: none;
     -webkit-appearance: none;
-    background-color: #c8d2dc;
+    background-image: none;
 }
 
+/* Offline = gray dot */
+.home-online-dot--off,
+button.home-online-dot.home-online-dot--off {
+    background: #9aa6b2 !important;
+    background-color: #9aa6b2 !important;
+    border-color: #7d8a97 !important;
+    box-shadow: none !important;
+}
+
+/* Online = green dot */
 .home-online-dot--on,
 button.home-online-dot.home-online-dot--on {
     background: #22a045 !important;
