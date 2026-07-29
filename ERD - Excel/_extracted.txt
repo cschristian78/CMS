@@ -1,0 +1,4567 @@
+================================================================================
+SHEET: Handoff
+================================================================================
+R2: CMS Database — Stored Procedure Generation Handoff
+R4: Purpose
+R5: Read this first | This workbook is the complete schema specification for a CMS database. The receiving agent should produce SQL Server CREATE TABLE scripts and the full set of stored procedures listed in 'Required SPs'. Test all output against the scenarios in 'Test Scenarios'.
+R6: Target dialect | Microsoft SQL Server 2019+. Use NVARCHAR for any string with international content; VARCHAR is acceptable elsewhere. DATETIME2 preferred over DATETIME where new.
+R8: Sheet Index
+R9: Handoff | This sheet — conventions, glossary, what to produce.
+R10: ERD v2 | Authoritative schema. 20+ tables across lookups (blue), core entities (green), junctions (red), tags (purple). Change log in column R.
+R11: Stored Procedures | Worked example of the Add-New-Client SP flow (usp_Client_Add orchestrator + 6 child SPs). Use as the style template for all other SPs.
+R12: Required SPs | Definitive checklist of every stored procedure to produce, grouped by entity.
+R13: Seed Data | Initial rows for lookup tables (tStatus, tStatusType, tStatusAppliesTo). Load these before testing.
+R14: Delete Policy | Per-FK cascade rules + soft-delete implementation checklist. Pattern 4 (Hybrid).
+R15: Test Scenarios | End-to-end test cases (happy path, edge cases, integrity checks) to validate the generated SPs.
+R16: Sheet1 | ORIGINAL v1 schema for reference only. DO NOT use — superseded by ERD v2.
+R17: T-SQL Templates | Reference implementations for each SP shape (lookup GetOrCreate, entity Add, partial Update, soft-delete, restore, junction add, history insert, paged list, activity log helper, status validator). Use as copy-paste templates.
+R18: Conventions
+R19: Symbol legend | 🔑 = Primary Key   🔗 = Foreign Key   ⭐ = UNIQUE constraint   🆕 = New in v2 (vs Sheet1)   🔄 = Renamed/Changed in v2
+R20: Table naming | All tables prefixed with 't' (singular). Junctions also use 't' prefix (e.g. tUserGroupUser). Views prefixed 'v' (e.g. vClient).
+R21: PK naming | Full entity name + ID (BusinessUnitID, ClientID, ProjectID). Exception: legacy abbreviations preserved where shown (UGID, etc.) — use what the ERD specifies, do not rename.
+R22: SP naming | usp_<Entity>_<Action>. Examples: usp_Client_Add, usp_Client_Get, usp_Client_Update, usp_Client_SoftDelete, usp_Client_Restore, usp_Client_List, usp_Project_AddService, usp_Project_AddRevenue.
+R23: Audit columns | Every transactional table has CreatedDate, ModifiedDate. SPs must set these (CreatedDate on Insert, ModifiedDate on Update). Use GETDATE() / SYSDATETIME().
+R24: Soft-delete pattern | tClient, tProject, tUser, tUserGroup, tService have IsDeleted BIT + DeletedDate. Reads go through views (vClient etc.) that filter IsDeleted=0. SoftDelete SPs flip the flag; Restore SPs flip it back. Hard DELETE never occurs on these tables.
+R25: Transactions | Every multi-statement SP must wrap work in BEGIN TRAN / COMMIT TRAN with TRY/CATCH and ROLLBACK on error. Return error info via THROW (not RAISERROR).
+R26: Activity log | Every Insert/Update/SoftDelete/Restore must write a row to tActivityLog (EntityType, EntityID, UserID, Action, FieldName/OldValue/NewValue when applicable).
+R27: Error handling | SPs validate inputs and THROW 50000+ custom errors on business rule violations (e.g. 'Project number already exists'). FK and UNIQUE violations from the DB are allowed to propagate.
+R28: Parameters | Use @PascalCase parameter names matching column names. Nullable parameters default NULL. Output parameters for new IDs (@NewClientID INT OUTPUT).
+R29: Indexes | In addition to PKs and FK indexes, the agent should propose indexes for: (a) filtered UNIQUE on natural keys where IsDeleted=0, (b) (EntityType, EntityID, ActionDate DESC) on tActivityLog, (c) composite covering indexes for any List SP with filtering.
+R31: Deliverables
+R32: 1. DDL | CREATE TABLE scripts for every table in ERD v2. Include PKs, FKs (with ON DELETE rules per Delete Policy sheet), CHECK constraints (e.g. tUser.UserType IN ('Internal','External') + the BU/Client XOR rule), filtered UNIQUE indexes, computed columns if useful.
+R33: 2. Views | vClient, vProject, vUser, vUserGroup, vService — each SELECT * WHERE IsDeleted=0. Plus convenience views: vProject_Current (with latest Revenue), vClient_WithBU (with BU resolved through BusinessClass).
+R34: 3. Stored procedures | Every SP listed in the 'Required SPs' sheet. Follow the conventions above and use the 'Stored Procedures' sheet's usp_Client_Add example as the style template.
+R35: 4. Seed data | INSERT statements for tStatus, tStatusType, tStatusAppliesTo from the 'Seed Data' sheet. Plus a minimum set of tBusinessUnit, tClientCategory, tClientType, tProjectType, tUserRole rows so tests have data to work with.
+R36: 5. Test harness | Optional but recommended: t-SQL scripts that execute each scenario in the 'Test Scenarios' sheet and assert expected outcomes.
+R38: Open Decisions
+R39: tUserRole tags | tUserRole has Tag1/Tag2/Tag3 columns — inconsistent with the tTag pattern used elsewhere (tServiceTag, tBusinessClassTag). Either keep as-is (user's explicit choice) or normalize to a tUserRoleTag junction. Default: keep as-is.
+R40: Two UserRoleIDs | tUserGroup.UserRoleID (group's default role) and tUserGroupUser.UserRoleID (member-specific role). Application logic decides which wins when both are set; the DB does not enforce.
+R41: BC → BU immutability | tBusinessClass.BusinessUnitID is the sole path from a Client to its BU. Consider whether changing this column after Clients are attached should be allowed (currently unrestricted). Recommend: enforce in SP layer (usp_BusinessClass_Update blocks change if any Clients reference it).
+================================================================================
+SHEET: ERD v2
+================================================================================
+R1: CMS ERD — v2 (Normalized) | CORE ENTITIES are in Green | A1
+R2: Legend:  🔑 PK   🔗 FK   ⭐ UNIQUE   🆕 new in v2 | LOOKUPS / REFERENCEare in Blue
+R3: DETAIL / HISTORY / LOG in Red
+R5: tClient | tProject | tUserGroup
+R6: 🔑 ClientID | INT (PK) | 🔑 ProjectID | INT (PK) | 🔑 UserGroupID | INT (PK)
+R7: 🔗 AccountExecutiveUserID 🆕 | INT (FK) | ProjectNumber ⭐ | VARCHAR(50) | UserGroupNumber ⭐ | VARCHAR(50)
+R8: 🔗 AnalyticsLeadUserID 🆕 | INT (FK) | ProjectName | VARCHAR(200) | UserGroupName | VARCHAR(100)
+R9: ClientName | VARCHAR(150) | RenewalDate | DATE | IsActive 🆕 | BIT | tServiceGroup 🆕
+R10: ClientDescription | VARCHAR(500) | DueDate | DATE | 🔑 ServiceGroupID | INT (PK)
+R11: ClientShortName | VARCHAR(50) | CreatedDate | DATETIME | ServiceGroupNumber ⭐ | VARCHAR(50)
+R12: IsActive 🆕 | BIT | ModifiedDate 🆕 | DATETIME | tUser | ServiceGroupName | VARCHAR(100)
+R13: IsActive 🆕 | BIT | 🔑 UserID | INT (PK) | IsActive 🆕 | BIT
+R14: tBusinessUnit | FirstName | VARCHAR(50)
+R15: 🔑 BusinessUnitID | INT (PK) | LastName | VARCHAR(50) | tService 🔄
+R16: BusinessUnitName ⭐ | VARCHAR(100) | tProjectType | Title | VARCHAR(100) | 🔑 ServiceID | INT (PK)
+R17: BusinessUnitDescription | VARCHAR(255) | 🔑 ProjectTypeID | INT (PK) | Email ⭐ | VARCHAR(150) | ServiceName ⭐ | VARCHAR(150)
+R18: IsActive 🆕 | BIT | ProjectTypeCode ⭐ | VARCHAR(20) | Phone | VARCHAR(30) | ServiceDescription | VARCHAR(255)
+R19: tBusinessClassTag 🆕 | ProjectTypeDescription | VARCHAR(255) | Company | VARCHAR(150) | IsActive 🆕 | BIT
+R20: 🔑🔗 BusinessClassID | INT (PK,FK) | tBusinessClass | IsActive 🆕 | BIT | Department | VARCHAR(100)
+R21: 🔑🔗 TagID | INT (PK,FK) | 🔑 BusinessClassID | INT (PK) | UserType 🆕 | VARCHAR(20)
+R22: BusinessClassName ⭐ | VARCHAR(100) | IsActive 🆕 | BIT | tServiceCategory 🆕
+R23: BusinessClassDescription | VARCHAR(255) | tProjectRef 🆕 | 🔑 ServiceCategoryID | INT (PK)
+R24: tTag 🆕 | IsActive 🆕 | BIT | 🔑 ProjectRefID | INT (PK) | CategoryName ⭐ | VARCHAR(100)
+R25: 🔑 TagID | INT (PK) | 🔗 ProjectID | INT (FK) | tUserRole 🆕 | CatFunction | VARCHAR(100) | Change Log (v1 → v2)
+R26: TagName ⭐ | VARCHAR(50) | tClientCategory | 🔗 ClientRefID | INT (FK) | 🔑 UserRoleID | INT (PK) | IsActive 🆕 | BIT | Fix | Description
+R27: TagScope | VARCHAR(30) | 🔑 ClientCategoryID | INT (PK) | 🔗 ProjectTypeID | INT (FK) | UserRoleName 🔄 ⭐ | VARCHAR(100) | tUserGroup design | One row per group (UGID = PK). Group metadata lives here only — no duplication.
+R28: ClientCategoryCode ⭐ | VARCHAR(100) | IsActive 🆕 | BIT | RoleDescription | VARCHAR(255) | tUserGroup PK rename | UGID → UserGroupID for naming consistency; UGNumber kept as UNIQUE natural key
+R29: tActivityLog 🆕 | ClientCategoryName | VARCHAR(255) | IsActive | BIT | tServiceRef 🆕 | Users↔Groups | tUserGroupUser junction (UGID + UserID composite PK). tProject → tUserGroup (on UGID) → tUserGroupUser → tUser.
+R30: 🔑 LogID | BIGINT (PK) | IsActive 🆕 | BIT | 🔑 ServiceRefID | INT (PK) | tUserRole added | Materialized the implied lookup table
+R31: 🔗 UserID | INT (FK) | 🔗 ServiceCategoryID | INT (FK) | tStatus discriminator | Added StatusType column; UNIQUE on (StatusType, StatusCode)
+R32: EntityType | VARCHAR(50) | tClientType | tProjectNote 🆕 | tUserGroupRef 🔄 | 🔗 ServiceGroupID | INT (FK) | tServices normalization | ServiceCategory/CatFunction → FK to new tServiceCategory; Tag1/2/3 → tServiceTag junction
+R33: EntityID | INT | 🔑 ClientTypeID | INT (PK) | 🔑 NoteID | INT (PK) | 🔑🔗 UserGroupID | INT (PK,FK) | 🔗 ServiceID | INT (FK) | tBusinessClass tags | BCTag1 → tBusinessClassTag junction (same tTag dictionary)
+R34: ActionDate | DATETIME | ClientTypeName ⭐ | VARCHAR(100) | 🔗 ProjectRefID | INT (FK) | 🔑🔗 UserID | INT (PK,FK) | IsActive 🆕 | BIT | tUser address | Address/City/State/Country moved to tUserAddress (supports multiple addresses)
+R35: Action | VARCHAR(30) | ClientTypeDescription | VARCHAR(255) | NoteDate | DATETIME | 🔗 UserRoleID | INT (FK) | tUser company | Company and Department kept as free-text fields on tUser (distinct from tBusinessUnit)
+R36: FieldName | VARCHAR(100) NULL | IsActive 🆕 | BIT | NoteType | VARCHAR(30) | JoinedDate | DATETIME | Audit columns | Added CreatedDate/ModifiedDate to all transactional tables
+R37: OldValue | NVARCHAR(MAX) NULL | NoteText | NVARCHAR(MAX) | tProjectService 🆕 | tProjectService | Added Quantity, Rate, StartDate, EndDate, CreatedDate
+R38: NewValue | NVARCHAR(MAX) NULL | tClientTypeRef 🆕 | IsPinned | BIT | 🔑 ProjectServiceID | INT (PK) | UNIQUE constraints | Added on ProjectNumber, UGNumber, Email, all lookup Name/Code fields
+R39: 🔑 ClientTypeRefID | INT (PK) | CreatedDate | DATETIME | tAddress 🔄 | 🔗 ProjectRefID | INT (FK) | Naming | All PKs now use full entity name (BusinessUnitID, ClientID, …)
+R40: ClientTypeRefName ⭐ | VARCHAR(100) | ModifiedDate | DATETIME | 🔑 AddressID | INT (PK) | 🔗 ServiceRefID | INT (FK) | tUser discriminator | Added UserType ('Internal'|'External') + nullable BusinessUnitID and ClientID FKs. CHECK constraint enforces exactly one is populated based on UserType.
+R41: IsActive 🆕 | BIT | Address1 | VARCHAR(200) | Frequency | VARCHAR(20) | tUserRole expanded | Added StatusID and renamed RoleName→UserRoleName. Tag1/2/3 NOT added — tags handled via tUserRoleTag junction to tTag (consistent with tServiceTag / tBusinessClassTag pattern).
+R42: Address2 | VARCHAR(200) | StartDate | DATE | tUserGroup.UserRoleID | Added FK to tUserRole. Group-level role (category). tUserGroupUser.UserRoleID remains for per-member role override.
+R43: tProjectRevenue 🆕 | City | VARCHAR(100) | EndDate | DATE | tStatus normalized (Option B) | StatusType VARCHAR → StatusTypeID FK to new tStatusType lookup. Added tStatusAppliesTo junction to declare which codes are valid for which entity (e.g. P→Client, S/C→Project, A/I/U→Universal). Composite UNIQUE on (StatusTypeID, StatusCode).
+R44: tClientRef 🆕 | 🔑 RevenueID | INT (PK) | State | VARCHAR(50) | IsActive 🆕 | BIT | Delete policy (Pattern 4) | Soft delete on tClient, tProject, tUser, tUserGroup, tService (IsDeleted + DeletedDate). CASCADE on owned children. NO ACTION on lookups. Full rules on 'Delete Policy' sheet.
+R45: 🔑 ClientRefID | INT (PK) | 🔗 ProjectRefID | INT (FK) | PostalCode | VARCHAR(20) | tClient.BusinessUnitID dropped | BU now derived via JOIN tBusinessClass. Single source of truth. Issue #9 resolved.
+R46: 🔗 ClientID | INT (FK) | EffectiveDate | DATE | Country | VARCHAR(50) | tServiceTag 🆕 | tProject.Revenue → tProjectRevenue | Revenue history table with EffectiveDate. Current revenue = latest row per ProjectID. Issue #10 resolved.
+R47: 🔗 BusinessUnitID | INT (FK) | Revenue | DECIMAL(18,2) | IsActive 🆕 | BIT | 🔑🔗 ServiceRefID | INT (PK,FK) | tProjectNote added | User-authored notes on projects (calls, meetings, internal comments). Issue #11.
+R48: 🔗 BusinessClassID | INT (FK) | ChangeReason | VARCHAR(255) | 🔑🔗 TagID | INT (PK,FK) | tActivityLog added | Generic system-captured change log across all entities. Polymorphic (EntityType, EntityID). Issue #11.
+R49: 🔗 ClientCategoryID | INT (FK) | 🔗 RecordedBy | INT (FK) | tUserAddressRef 🆕 | tBusinessUnit rename | BUName/BUDescription → BusinessUnitName/BusinessUnitDescription. Issue tracked.
+R50: 🔗 ClientTypeID | INT (FK) | CreatedDate | DATETIME | 🔑 UserAddressID | INT (PK) | tBusinessClass rename + FK | BCName/BCDescription → BusinessClassName/BusinessClassDescription. BusinessUnitID FK confirmed → tBusinessUnit.
+R51: 🔗 ClientTypeRefID | INT (FK) | 🔑🔗 UserID | INT (PK,FK) | tClient.ClientDescription added | New free-text description column on tClient. Other columns unchanged.
+R52: IsActive 🆕 | BIT | tProjectTag 🆕 | 🔑🔗 AddressID | INT (PK,FK) | tClientType rename | CTName/CTDescription → ClientTypeName/ClientTypeDescription. IsActive retained.
+R53: 🔑🔗 ProjectRefID | INT (PK,FK) | 🔑 AddressType | VARCHAR(20) | tClientRef 🆕 | New junction: ClientRefID PK, ClientID FK → tClient, ClientTypeID FK → tClientType, ClientTypeRefID FK → tClientTypeRef.
+R54: 🔑🔗 TagID | INT (PK,FK) | IsPrimary | BIT | tClientTypeRef 🆕 | New lookup: ClientTypeRefID PK, ClientTypeRefName.
+R55: tClientTag 🆕 | BIT | IsActive 🆕 | BIT | tClient cleanup | Removed ClientCategoryID, ClientTypeID, StatusID from tClient. Client type now modeled via tClientRef → tClientType / tClientTypeRef.
+R56: 🔑🔗 ClientID | INT (PK,FK) | StatusID removed from non-project tables | Dropped StatusID from tUserRole, tUserGroup, tUser, tService. tStatus / tStatusType now scoped to project-related entities only.
+R57: 🔑🔗 TagID | INT (PK,FK) | IsActive standardized | Added IsActive (BIT) as last column on tBusinessClass, tClient, tProject, tUserGroup, tUser, tService, tClientRef, tClientTypeRef. All non-junction tables now carry IsActive.
+R58: tUserRoleTag 🆕 | StatusID removed from tUserGroupUser | Junction membership table no longer carries StatusID. Status scope is now project-related entities only.
+R59: 🔑🔗 UserRoleID | INT (PK,FK) | UGID → UserGroupID rename | PK on tUserGroup, FK on tProject and tUserGroupUser all renamed UGID → UserGroupID for consistency.
+R60: 🔑🔗 TagID | INT (PK,FK) | tStatusType scope trimmed | TypeName discriminator list reduced to 'Project','Universal' — dropped UserGroup/User/Service/Client/Service per new status scope.
+R61: IsDeleted / DeletedDate removed | Dropped IsDeleted and DeletedDate from tClient, tProject, tUserGroup, tUser, tService. Deactivation handled by IsActive; lifecycle/state handled by tStatus on project entities.
+R62: tClientCategory removed | Dropped orphaned lookup table tClientCategory (B10:C14). No remaining FK references after tClient.ClientCategoryID was removed in the tClient cleanup pass.
+R63: tUserRoleTag 🆕 | New junction (UserRoleID + TagID composite PK) → tTag. Replaces the Tag1/Tag2/Tag3 columns previously proposed on tUserRole. All tag-bearing entities (tService, tBusinessClass, tUserRole) now use the same normalized tTag dictionary.
+R64: tProjectUser 🆕
+R65: 🔑 ProjectUserID | INT (PK) | tUserAddress → tAddress + tUserAddressRef | Normalized addresses: dropped UserID/AddressType from tUserAddress and renamed to tAddress (one row per physical address). Added tUserAddressRef junction (UserID + AddressID + AddressType composite PK, plus IsPrimary) so multiple users can share an address and one user can have multiple. Supports BMS office-sharing pattern.
+R66: 🔗 ProjectRefID | INT (FK) | tUserRef → tUserGroupRef rename | Renamed the user-group membership junction from tUserRef to tUserGroupRef for clarity (name now reflects which entities it joins: tUserGroup ↔ tUser). Affects ERD header N51, catalog SPs #145-148, and SP bodies. No schema/column changes; PK still (UserGroupID, UserID).
+R67: 🔗 UserID | INT (FK) | Home screen views | Added 3 tile views (v_HomeTile_ActiveClientCount, v_HomeTile_ActiveProjectCount, v_HomeTile_ActiveProjectRevenue — latest revenue per active project) and vProjectList (wide unfiltered UNION ALL view: Client/Project/User/Service rows with RowType discriminator, BU/BC/ProjectType columns for client-side filtering, Tags via STRING_AGG for User roles and Service tags). SPs #177-180.
+R68: 🔗 UserRoleID 🆕 | INT (FK)
+R69: StartDate | DATE
+R70: EndDate | DATE
+R71: IsActive 🆕 | BIT
+================================================================================
+SHEET: Stored Procedures
+================================================================================
+R2: Stored Procedures Catalog
+R3: Complete list of stored procedures backing the CMS data model. Generated from ERD v2. Each table has CreateTable + standard CRUD (Create, Get, List, Update, SoftDelete). Junctions use Add/Remove instead of Update/SoftDelete. Full T-SQL bodies are on the SP Bodies tab.
+R5: # | Procedure Name | Table | Op | Description
+R6: 1 | usp_CreateTable_tBusinessUnit | tBusinessUnit | DDL | Create tBusinessUnit table (idempotent). Includes seed inserts.
+R7: 2 | usp_BusinessUnit_Create | tBusinessUnit | INSERT | Insert a new BusinessUnit.
+R8: 3 | usp_BusinessUnit_Get | tBusinessUnit | SELECT | Get one BusinessUnit by ID.
+R9: 4 | usp_BusinessUnit_List | tBusinessUnit | SELECT | List BusinessUnits. Optional @ActiveOnly filter (default 1).
+R10: 5 | usp_BusinessUnit_Update | tBusinessUnit | UPDATE | Partial update of a BusinessUnit (NULL params = no change).
+R11: 6 | usp_BusinessUnit_SoftDelete | tBusinessUnit | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R12: 7 | usp_CreateTable_tBusinessClass | tBusinessClass | DDL | Create tBusinessClass table (idempotent). Includes seed inserts.
+R13: 8 | usp_BusinessClass_Create | tBusinessClass | INSERT | Insert a new BusinessClass.
+R14: 9 | usp_BusinessClass_Get | tBusinessClass | SELECT | Get one BusinessClass by ID.
+R15: 10 | usp_BusinessClass_List | tBusinessClass | SELECT | List BusinessClasss. Optional @ActiveOnly filter (default 1).
+R16: 11 | usp_BusinessClass_Update | tBusinessClass | UPDATE | Partial update of a BusinessClass (NULL params = no change).
+R17: 12 | usp_BusinessClass_SoftDelete | tBusinessClass | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R18: 13 | usp_CreateTable_tClientType | tClientType | DDL | Create tClientType table (idempotent). Includes seed inserts.
+R19: 14 | usp_ClientType_Create | tClientType | INSERT | Insert a new ClientType.
+R20: 15 | usp_ClientType_Get | tClientType | SELECT | Get one ClientType by ID.
+R21: 16 | usp_ClientType_List | tClientType | SELECT | List ClientTypes. Optional @ActiveOnly filter (default 1).
+R22: 17 | usp_ClientType_Update | tClientType | UPDATE | Partial update of a ClientType (NULL params = no change).
+R23: 18 | usp_ClientType_SoftDelete | tClientType | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R24: 19 | usp_CreateTable_tClientTypeRef | tClientTypeRef | DDL | Create tClientTypeRef table (idempotent). Includes seed inserts.
+R25: 20 | usp_ClientTypeRef_Create | tClientTypeRef | INSERT | Insert a new ClientTypeRef.
+R26: 21 | usp_ClientTypeRef_Get | tClientTypeRef | SELECT | Get one ClientTypeRef by ID.
+R27: 22 | usp_ClientTypeRef_List | tClientTypeRef | SELECT | List ClientTypeRefs. Optional @ActiveOnly filter (default 1).
+R28: 23 | usp_ClientTypeRef_Update | tClientTypeRef | UPDATE | Partial update of a ClientTypeRef (NULL params = no change).
+R29: 24 | usp_ClientTypeRef_SoftDelete | tClientTypeRef | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R30: 25 | usp_CreateTable_tTag | tTag | DDL | Create tTag table (idempotent). Includes seed inserts.
+R31: 26 | usp_Tag_Create | tTag | INSERT | Insert a new Tag.
+R32: 27 | usp_Tag_Get | tTag | SELECT | Get one Tag by ID.
+R33: 28 | usp_Tag_List | tTag | SELECT | List Tags. Optional @ActiveOnly filter (default 1).
+R34: 29 | usp_Tag_Update | tTag | UPDATE | Partial update of a Tag (NULL params = no change).
+R35: 30 | usp_Tag_SoftDelete | tTag | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R36: 43 | usp_CreateTable_tProjectType | tProjectType | DDL | Create tProjectType table (idempotent). Includes seed inserts.
+R37: 44 | usp_ProjectType_Create | tProjectType | INSERT | Insert a new ProjectType.
+R38: 45 | usp_ProjectType_Get | tProjectType | SELECT | Get one ProjectType by ID.
+R39: 46 | usp_ProjectType_List | tProjectType | SELECT | List ProjectTypes. Optional @ActiveOnly filter (default 1).
+R40: 47 | usp_ProjectType_Update | tProjectType | UPDATE | Partial update of a ProjectType (NULL params = no change).
+R41: 48 | usp_ProjectType_SoftDelete | tProjectType | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R42: 49 | usp_CreateTable_tUserRole | tUserRole | DDL | Create tUserRole table (idempotent). Includes seed inserts.
+R43: 50 | usp_UserRole_Create | tUserRole | INSERT | Insert a new UserRole.
+R44: 51 | usp_UserRole_Get | tUserRole | SELECT | Get one UserRole by ID.
+R45: 52 | usp_UserRole_List | tUserRole | SELECT | List UserRoles. Optional @ActiveOnly filter (default 1).
+R46: 53 | usp_UserRole_Update | tUserRole | UPDATE | Partial update of a UserRole (NULL params = no change).
+R47: 54 | usp_UserRole_SoftDelete | tUserRole | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R48: 55 | usp_CreateTable_tUserGroup | tUserGroup | DDL | Create tUserGroup table (idempotent). Includes seed inserts.
+R49: 56 | usp_UserGroup_Create | tUserGroup | INSERT | Insert a new UserGroup.
+R50: 57 | usp_UserGroup_Get | tUserGroup | SELECT | Get one UserGroup by ID.
+R51: 58 | usp_UserGroup_List | tUserGroup | SELECT | List UserGroups. Optional @ActiveOnly filter (default 1).
+R52: 59 | usp_UserGroup_Update | tUserGroup | UPDATE | Partial update of a UserGroup (NULL params = no change).
+R53: 60 | usp_UserGroup_SoftDelete | tUserGroup | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R54: 61 | usp_CreateTable_tServiceGroup | tServiceGroup | DDL | Create tServiceGroup table (idempotent). Includes seed inserts.
+R55: 62 | usp_ServiceGroup_Create | tServiceGroup | INSERT | Insert a new ServiceGroup.
+R56: 63 | usp_ServiceGroup_Get | tServiceGroup | SELECT | Get one ServiceGroup by ID.
+R57: 64 | usp_ServiceGroup_List | tServiceGroup | SELECT | List ServiceGroups. Optional @ActiveOnly filter (default 1).
+R58: 65 | usp_ServiceGroup_Update | tServiceGroup | UPDATE | Partial update of a ServiceGroup (NULL params = no change).
+R59: 66 | usp_ServiceGroup_SoftDelete | tServiceGroup | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R60: 67 | usp_CreateTable_tServiceCategory | tServiceCategory | DDL | Create tServiceCategory table (idempotent). Includes seed inserts.
+R61: 68 | usp_ServiceCategory_Create | tServiceCategory | INSERT | Insert a new ServiceCategory.
+R62: 69 | usp_ServiceCategory_Get | tServiceCategory | SELECT | Get one ServiceCategory by ID.
+R63: 70 | usp_ServiceCategory_List | tServiceCategory | SELECT | List ServiceCategorys. Optional @ActiveOnly filter (default 1).
+R64: 71 | usp_ServiceCategory_Update | tServiceCategory | UPDATE | Partial update of a ServiceCategory (NULL params = no change).
+R65: 72 | usp_ServiceCategory_SoftDelete | tServiceCategory | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R66: 73 | usp_CreateTable_tService | tService | DDL | Create tService table (idempotent). Includes seed inserts.
+R67: 74 | usp_Service_Create | tService | INSERT | Insert a new Service.
+R68: 75 | usp_Service_Get | tService | SELECT | Get one Service by ID.
+R69: 76 | usp_Service_List | tService | SELECT | List Services. Optional @ActiveOnly filter (default 1).
+R70: 77 | usp_Service_Update | tService | UPDATE | Partial update of a Service (NULL params = no change).
+R71: 78 | usp_Service_SoftDelete | tService | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R72: 79 | usp_CreateTable_tClient | tClient | DDL | Create tClient table (idempotent). 
+R73: 80 | usp_Client_Create | tClient | INSERT | Insert a new Client.
+R74: 81 | usp_Client_Get | tClient | SELECT | Get one Client by ID.
+R75: 82 | usp_Client_List | tClient | SELECT | List Clients. Optional @ActiveOnly filter (default 1).
+R76: 83 | usp_Client_Update | tClient | UPDATE | Partial update of a Client (NULL params = no change).
+R77: 84 | usp_Client_SoftDelete | tClient | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R78: 85 | usp_CreateTable_tProject | tProject | DDL | Create tProject table (idempotent). 
+R79: 86 | usp_Project_Create | tProject | INSERT | Insert a new Project.
+R80: 87 | usp_Project_Get | tProject | SELECT | Get one Project by ID.
+R81: 88 | usp_Project_List | tProject | SELECT | List Projects. Optional @ActiveOnly filter (default 1).
+R82: 89 | usp_Project_Update | tProject | UPDATE | Partial update of a Project (NULL params = no change).
+R83: 90 | usp_Project_SoftDelete | tProject | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R84: 91 | usp_CreateTable_tUser | tUser | DDL | Create tUser table (idempotent). 
+R85: 92 | usp_User_Create | tUser | INSERT | Insert a new User.
+R86: 93 | usp_User_Get | tUser | SELECT | Get one User by ID.
+R87: 94 | usp_User_List | tUser | SELECT | List Users. Optional @ActiveOnly filter (default 1).
+R88: 95 | usp_User_Update | tUser | UPDATE | Partial update of a User (NULL params = no change).
+R89: 96 | usp_User_SoftDelete | tUser | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R90: 97 | usp_CreateTable_tAddress | tAddress | DDL | Create tAddress table (idempotent). Normalized address store — one row per physical address.
+R91: 98 | usp_Address_Create | tAddress | INSERT | Insert a new Address. Returns @NewAddressID.
+R92: 99 | usp_Address_Get | tAddress | SELECT | Get one Address by ID.
+R93: 100 | usp_Address_List | tAddress | SELECT | List Addresses. Optional @ActiveOnly filter (default 1).
+R94: 101 | usp_Address_Update | tAddress | UPDATE | Partial update of an Address (NULL params = no change).
+R95: 102 | usp_Address_SoftDelete | tAddress | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R96: 103 | usp_CreateTable_tClientRef | tClientRef | DDL | Create tClientRef table (idempotent). 
+R97: 104 | usp_ClientRef_Create | tClientRef | INSERT | Insert a new ClientRef.
+R98: 105 | usp_ClientRef_Get | tClientRef | SELECT | Get one ClientRef by ID.
+R99: 106 | usp_ClientRef_List | tClientRef | SELECT | List ClientRefs. Optional @ActiveOnly filter (default 1).
+R100: 107 | usp_ClientRef_Update | tClientRef | UPDATE | Partial update of a ClientRef (NULL params = no change).
+R101: 108 | usp_ClientRef_SoftDelete | tClientRef | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R102: 109 | usp_CreateTable_tProjectRef | tProjectRef | DDL | Create tProjectRef table (idempotent). 
+R103: 110 | usp_ProjectRef_Create | tProjectRef | INSERT | Insert a new ProjectRef.
+R104: 111 | usp_ProjectRef_Get | tProjectRef | SELECT | Get one ProjectRef by ID.
+R105: 112 | usp_ProjectRef_List | tProjectRef | SELECT | List ProjectRefs. Optional @ActiveOnly filter (default 1).
+R106: 113 | usp_ProjectRef_Update | tProjectRef | UPDATE | Partial update of a ProjectRef (NULL params = no change).
+R107: 114 | usp_ProjectRef_SoftDelete | tProjectRef | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R108: 115 | usp_CreateTable_tServiceRef | tServiceRef | DDL | Create tServiceRef table (idempotent). 
+R109: 116 | usp_ServiceRef_Create | tServiceRef | INSERT | Insert a new ServiceRef.
+R110: 117 | usp_ServiceRef_Get | tServiceRef | SELECT | Get one ServiceRef by ID.
+R111: 118 | usp_ServiceRef_List | tServiceRef | SELECT | List ServiceRefs. Optional @ActiveOnly filter (default 1).
+R112: 119 | usp_ServiceRef_Update | tServiceRef | UPDATE | Partial update of a ServiceRef (NULL params = no change).
+R113: 120 | usp_ServiceRef_SoftDelete | tServiceRef | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R114: 121 | usp_CreateTable_tProjectNote | tProjectNote | DDL | Create tProjectNote table (idempotent). 
+R115: 122 | usp_ProjectNote_Create | tProjectNote | INSERT | Insert a new ProjectNote.
+R116: 123 | usp_ProjectNote_Get | tProjectNote | SELECT | Get one ProjectNote by ID.
+R117: 124 | usp_ProjectNote_List | tProjectNote | SELECT | List ProjectNotes. Optional @ActiveOnly filter (default 1).
+R118: 125 | usp_ProjectNote_Update | tProjectNote | UPDATE | Partial update of a ProjectNote (NULL params = no change).
+R119: 126 | usp_ProjectNote_SoftDelete | tProjectNote | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R120: 127 | usp_CreateTable_tProjectRevenue | tProjectRevenue | DDL | Create tProjectRevenue table (idempotent). 
+R121: 128 | usp_ProjectRevenue_Create | tProjectRevenue | INSERT | Insert a new ProjectRevenue.
+R122: 129 | usp_ProjectRevenue_Get | tProjectRevenue | SELECT | Get one ProjectRevenue by ID.
+R123: 130 | usp_ProjectRevenue_List | tProjectRevenue | SELECT | List ProjectRevenues. Optional @ActiveOnly filter (default 1).
+R124: 131 | usp_ProjectRevenue_Update | tProjectRevenue | UPDATE | Partial update of a ProjectRevenue (NULL params = no change).
+R125: 132 | usp_ProjectRevenue_SoftDelete | tProjectRevenue | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R126: 133 | usp_CreateTable_tProjectService | tProjectService | DDL | Create tProjectService table (idempotent). 
+R127: 134 | usp_ProjectService_Create | tProjectService | INSERT | Insert a new ProjectService.
+R128: 135 | usp_ProjectService_Get | tProjectService | SELECT | Get one ProjectService by ID.
+R129: 136 | usp_ProjectService_List | tProjectService | SELECT | List ProjectServices. Optional @ActiveOnly filter (default 1).
+R130: 137 | usp_ProjectService_Update | tProjectService | UPDATE | Partial update of a ProjectService (NULL params = no change).
+R131: 138 | usp_ProjectService_SoftDelete | tProjectService | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R132: 139 | usp_CreateTable_tProjectUser | tProjectUser | DDL | Create tProjectUser table (idempotent). 
+R133: 140 | usp_ProjectUser_Create | tProjectUser | INSERT | Insert a new ProjectUser.
+R134: 141 | usp_ProjectUser_Get | tProjectUser | SELECT | Get one ProjectUser by ID.
+R135: 142 | usp_ProjectUser_List | tProjectUser | SELECT | List ProjectUsers. Optional @ActiveOnly filter (default 1).
+R136: 143 | usp_ProjectUser_Update | tProjectUser | UPDATE | Partial update of a ProjectUser (NULL params = no change).
+R137: 144 | usp_ProjectUser_SoftDelete | tProjectUser | UPDATE | Set IsActive=0. Logs to tActivityLog.
+R138: 145 | usp_CreateTable_tUserGroupRef | tUserGroupRef | DDL | Create tUserGroupRef junction table (idempotent).
+R139: 146 | usp_UserGroupRef_Add | tUserGroupRef | INSERT | Add a row to tUserGroupRef. Idempotent if (UserGroupID, UserID) already exists.
+R140: 147 | usp_UserGroupRef_Remove | tUserGroupRef | DELETE | Hard-delete a row from tUserGroupRef.
+R141: 148 | usp_UserGroupRef_List | tUserGroupRef | SELECT | List members of a given UserGroupID.
+R142: 149 | usp_CreateTable_tBusinessClassTag | tBusinessClassTag | DDL | Create tBusinessClassTag junction table (idempotent).
+R143: 150 | usp_BusinessClassTag_Add | tBusinessClassTag | INSERT | Add a row to tBusinessClassTag. Idempotent if pair already exists.
+R144: 151 | usp_BusinessClassTag_Remove | tBusinessClassTag | DELETE | Hard-delete a row from tBusinessClassTag.
+R145: 152 | usp_BusinessClassTag_List | tBusinessClassTag | SELECT | List rows for a given parent ID.
+R146: 153 | usp_CreateTable_tUserRoleTag | tUserRoleTag | DDL | Create tUserRoleTag junction table (idempotent).
+R147: 154 | usp_UserRoleTag_Add | tUserRoleTag | INSERT | Add a row to tUserRoleTag. Idempotent if pair already exists.
+R148: 155 | usp_UserRoleTag_Remove | tUserRoleTag | DELETE | Hard-delete a row from tUserRoleTag.
+R149: 156 | usp_UserRoleTag_List | tUserRoleTag | SELECT | List rows for a given parent ID.
+R150: 157 | usp_CreateTable_tClientTag | tClientTag | DDL | Create tClientTag junction table (idempotent).
+R151: 158 | usp_ClientTag_Add | tClientTag | INSERT | Add a row to tClientTag. Idempotent if pair already exists.
+R152: 159 | usp_ClientTag_Remove | tClientTag | DELETE | Hard-delete a row from tClientTag.
+R153: 160 | usp_ClientTag_List | tClientTag | SELECT | List rows for a given parent ID.
+R154: 161 | usp_CreateTable_tProjectTag | tProjectTag | DDL | Create tProjectTag junction table (idempotent).
+R155: 162 | usp_ProjectTag_Add | tProjectTag | INSERT | Add a row to tProjectTag. Idempotent if pair already exists.
+R156: 163 | usp_ProjectTag_Remove | tProjectTag | DELETE | Hard-delete a row from tProjectTag.
+R157: 164 | usp_ProjectTag_List | tProjectTag | SELECT | List rows for a given parent ID.
+R158: 165 | usp_CreateTable_tServiceTag | tServiceTag | DDL | Create tServiceTag junction table (idempotent).
+R159: 166 | usp_ServiceTag_Add | tServiceTag | INSERT | Add a row to tServiceTag. Idempotent if pair already exists.
+R160: 167 | usp_ServiceTag_Remove | tServiceTag | DELETE | Hard-delete a row from tServiceTag.
+R161: 168 | usp_ServiceTag_List | tServiceTag | SELECT | List rows for a given parent ID.
+R162: 169 | usp_CreateTable_tActivityLog | tActivityLog | DDL | Create tActivityLog (idempotent).
+R163: 170 | usp_ActivityLog_Insert | tActivityLog | INSERT | Internal helper. Called by every modifying SP.
+R164: 171 | usp_ActivityLog_GetByEntity | tActivityLog | SELECT | Get audit history for a given entity.
+R165: 172 | usp_ActivityLog_GetByUser | tActivityLog | SELECT | Get all changes a user has made in a date range.
+R166: 173 | usp_CreateTable_tUserAddressRef | tUserAddressRef | DDL | Create tUserAddressRef junction (idempotent). Composite PK (UserID, AddressID, AddressType). Filtered unique index enforces one primary per (UserID, AddressType).
+R167: 174 | usp_UserAddressRef_Add | tUserAddressRef | INSERT | Add a row to tUserAddressRef. Idempotent if triple already exists. Promotes to primary atomically if @IsPrimary=1.
+R168: 175 | usp_UserAddressRef_Remove | tUserAddressRef | DELETE | Hard-delete a row from tUserAddressRef.
+R169: 176 | usp_UserAddressRef_List | tUserAddressRef | SELECT | List addresses for a UserID (joins tAddress). Ordered by AddressType then primary first.
+R170: 177 | usp_Create_vHomeTile_ActiveClientCount | v_HomeTile_ActiveClientCount | DDL | Create/refresh view returning COUNT(DISTINCT ClientID) WHERE IsActive=1. UI binds to tile #1.
+R171: 178 | usp_Create_vHomeTile_ActiveProjectCount | v_HomeTile_ActiveProjectCount | DDL | Create/refresh view returning COUNT(*) of active projects. UI binds to tile #2.
+R172: 179 | usp_Create_vHomeTile_ActiveProjectRevenue | v_HomeTile_ActiveProjectRevenue | DDL | Create/refresh view returning SUM(latest revenue per active project). UI binds to tile #3.
+R173: 180 | usp_Create_vProjectList | vProjectList | DDL | Create/refresh wide unfiltered view used by home-screen list box. One row per Client/Project/User/Service with RowType discriminator. UI filters via WHERE on BU/BC/ClientActive/ProjectType columns.
+================================================================================
+SHEET: SP Bodies
+================================================================================
+R2: SP Bodies — Full T-SQL for every procedure
+R3: Full CREATE OR ALTER PROCEDURE body for each procedure listed on the Stored Procedures catalog tab. Each row contains one procedure. Run in dependency order: all CreateTable procs first (lookups → entities → bridges → children → junctions → log), then deploy the CRUD procs.
+R5: # | Procedure | T-SQL Body
+R6: 1 | usp_CreateTable_tBusinessUnit | CREATE OR ALTER PROCEDURE usp_CreateTable_tBusinessUnit
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tBusinessUnit', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tBusinessUnit (
+            BusinessUnitID INT IDENTITY(1,1) NOT NULL,
+        BusinessUnitName             VARCHAR(100)         NOT NULL,
+        BusinessUnitDescription      VARCHAR(255)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tBusinessUnit_IsActive DEFAULT (1),
+        CONSTRAINT PK_tBusinessUnit PRIMARY KEY CLUSTERED (BusinessUnitID),
+        CONSTRAINT UQ_tBusinessUnit_BusinessUnitName UNIQUE (BusinessUnitName)
+        );
+    END;
+
+    -- Seed rows (idempotent)
+    SET IDENTITY_INSERT dbo.tBusinessUnit ON;
+
+    MERGE dbo.tBusinessUnit AS tgt
+    USING (VALUES
+        (1, 'US', 'U.S. Clients',          1),
+        (2, 'UK', 'U.K. Clients',          1),
+        (3, 'LA', 'Latin America Clients', 1),
+        (4, 'Global', 'Global Clients',    1)
+    ) AS src (BusinessUnitID, BusinessUnitName, BusinessUnitDescription, IsActive)
+      ON tgt.BusinessUnitID = src.BusinessUnitID
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (BusinessUnitID, BusinessUnitName, BusinessUnitDescription, IsActive)
+        VALUES (src.BusinessUnitID, src.BusinessUnitName, src.BusinessUnitDescription, src.IsActive);
+
+    SET IDENTITY_INSERT dbo.tBusinessUnit OFF;
+END;
+R7: 2 | usp_BusinessUnit_Create | CREATE OR ALTER PROCEDURE usp_BusinessUnit_Create
+    @BusinessUnitName             VARCHAR(100),
+    @BusinessUnitDescription      VARCHAR(255) = NULL,
+    @ActingUserID                INT,
+    @NewBusinessUnitID           INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tBusinessUnit (BusinessUnitName, BusinessUnitDescription)
+        VALUES (@BusinessUnitName, @BusinessUnitDescription);
+
+        SET @NewBusinessUnitID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessUnit',
+            @EntityID   = @NewBusinessUnitID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R8: 3 | usp_BusinessUnit_Get | CREATE OR ALTER PROCEDURE usp_BusinessUnit_Get
+    @BusinessUnitID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tBusinessUnit WHERE BusinessUnitID = @BusinessUnitID;
+END;
+R9: 4 | usp_BusinessUnit_List | CREATE OR ALTER PROCEDURE usp_BusinessUnit_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tBusinessUnit
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R10: 5 | usp_BusinessUnit_Update | CREATE OR ALTER PROCEDURE usp_BusinessUnit_Update
+    @BusinessUnitID               INT,
+    @BusinessUnitName             VARCHAR(100) = NULL,
+    @BusinessUnitDescription      VARCHAR(255) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tBusinessUnit WHERE BusinessUnitID = @BusinessUnitID)
+        THROW 50001, 'tBusinessUnit not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tBusinessUnit
+           SET
+        BusinessUnitName = COALESCE(@BusinessUnitName, BusinessUnitName),
+        BusinessUnitDescription = COALESCE(@BusinessUnitDescription, BusinessUnitDescription)
+         WHERE BusinessUnitID = @BusinessUnitID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessUnit',
+            @EntityID   = @BusinessUnitID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R11: 6 | usp_BusinessUnit_SoftDelete | CREATE OR ALTER PROCEDURE usp_BusinessUnit_SoftDelete
+    @BusinessUnitID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tBusinessUnit WHERE BusinessUnitID = @BusinessUnitID AND IsActive = 1)
+        THROW 50001, 'tBusinessUnit not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tBusinessUnit
+           SET IsActive = 0
+         WHERE BusinessUnitID = @BusinessUnitID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessUnit',
+            @EntityID   = @BusinessUnitID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R12: 7 | usp_CreateTable_tBusinessClass | CREATE OR ALTER PROCEDURE usp_CreateTable_tBusinessClass
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tBusinessClass', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tBusinessClass (
+            BusinessClassID INT IDENTITY(1,1) NOT NULL,
+        BusinessClassName            VARCHAR(100)         NOT NULL,
+        BusinessClassDescription     VARCHAR(255)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tBusinessClass_IsActive DEFAULT (1),
+        CONSTRAINT PK_tBusinessClass PRIMARY KEY CLUSTERED (BusinessClassID),
+        CONSTRAINT UQ_tBusinessClass_BusinessClassName UNIQUE (BusinessClassName)
+        );
+    END;
+END;
+R13: 8 | usp_BusinessClass_Create | CREATE OR ALTER PROCEDURE usp_BusinessClass_Create
+    @BusinessClassName            VARCHAR(100),
+    @BusinessClassDescription     VARCHAR(255) = NULL,
+    @ActingUserID                INT,
+    @NewBusinessClassID          INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tBusinessClass (BusinessClassName, BusinessClassDescription)
+        VALUES (@BusinessClassName, @BusinessClassDescription);
+
+        SET @NewBusinessClassID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessClass',
+            @EntityID   = @NewBusinessClassID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R14: 9 | usp_BusinessClass_Get | CREATE OR ALTER PROCEDURE usp_BusinessClass_Get
+    @BusinessClassID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tBusinessClass WHERE BusinessClassID = @BusinessClassID;
+END;
+R15: 10 | usp_BusinessClass_List | CREATE OR ALTER PROCEDURE usp_BusinessClass_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tBusinessClass
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R16: 11 | usp_BusinessClass_Update | CREATE OR ALTER PROCEDURE usp_BusinessClass_Update
+    @BusinessClassID              INT,
+    @BusinessClassName            VARCHAR(100) = NULL,
+    @BusinessClassDescription     VARCHAR(255) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tBusinessClass WHERE BusinessClassID = @BusinessClassID)
+        THROW 50001, 'tBusinessClass not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tBusinessClass
+           SET
+        BusinessClassName = COALESCE(@BusinessClassName, BusinessClassName),
+        BusinessClassDescription = COALESCE(@BusinessClassDescription, BusinessClassDescription)
+         WHERE BusinessClassID = @BusinessClassID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessClass',
+            @EntityID   = @BusinessClassID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R17: 12 | usp_BusinessClass_SoftDelete | CREATE OR ALTER PROCEDURE usp_BusinessClass_SoftDelete
+    @BusinessClassID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tBusinessClass WHERE BusinessClassID = @BusinessClassID AND IsActive = 1)
+        THROW 50001, 'tBusinessClass not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tBusinessClass
+           SET IsActive = 0
+         WHERE BusinessClassID = @BusinessClassID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessClass',
+            @EntityID   = @BusinessClassID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R18: 13 | usp_CreateTable_tClientType | CREATE OR ALTER PROCEDURE usp_CreateTable_tClientType
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tClientType', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tClientType (
+            ClientTypeID INT IDENTITY(1,1) NOT NULL,
+        ClientTypeName               VARCHAR(100)         NOT NULL,
+        ClientTypeDescription        VARCHAR(255)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tClientType_IsActive DEFAULT (1),
+        CONSTRAINT PK_tClientType PRIMARY KEY CLUSTERED (ClientTypeID),
+        CONSTRAINT UQ_tClientType_ClientTypeName UNIQUE (ClientTypeName)
+        );
+    END;
+END;
+R19: 14 | usp_ClientType_Create | CREATE OR ALTER PROCEDURE usp_ClientType_Create
+    @ClientTypeName               VARCHAR(100),
+    @ClientTypeDescription        VARCHAR(255) = NULL,
+    @ActingUserID                INT,
+    @NewClientTypeID             INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tClientType (ClientTypeName, ClientTypeDescription)
+        VALUES (@ClientTypeName, @ClientTypeDescription);
+
+        SET @NewClientTypeID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientType',
+            @EntityID   = @NewClientTypeID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R20: 15 | usp_ClientType_Get | CREATE OR ALTER PROCEDURE usp_ClientType_Get
+    @ClientTypeID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tClientType WHERE ClientTypeID = @ClientTypeID;
+END;
+R21: 16 | usp_ClientType_List | CREATE OR ALTER PROCEDURE usp_ClientType_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tClientType
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R22: 17 | usp_ClientType_Update | CREATE OR ALTER PROCEDURE usp_ClientType_Update
+    @ClientTypeID                 INT,
+    @ClientTypeName               VARCHAR(100) = NULL,
+    @ClientTypeDescription        VARCHAR(255) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClientType WHERE ClientTypeID = @ClientTypeID)
+        THROW 50001, 'tClientType not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClientType
+           SET
+        ClientTypeName = COALESCE(@ClientTypeName, ClientTypeName),
+        ClientTypeDescription = COALESCE(@ClientTypeDescription, ClientTypeDescription)
+         WHERE ClientTypeID = @ClientTypeID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientType',
+            @EntityID   = @ClientTypeID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R23: 18 | usp_ClientType_SoftDelete | CREATE OR ALTER PROCEDURE usp_ClientType_SoftDelete
+    @ClientTypeID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClientType WHERE ClientTypeID = @ClientTypeID AND IsActive = 1)
+        THROW 50001, 'tClientType not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClientType
+           SET IsActive = 0
+         WHERE ClientTypeID = @ClientTypeID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientType',
+            @EntityID   = @ClientTypeID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R24: 19 | usp_CreateTable_tClientTypeRef | CREATE OR ALTER PROCEDURE usp_CreateTable_tClientTypeRef
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tClientTypeRef', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tClientTypeRef (
+            ClientTypeRefID INT IDENTITY(1,1) NOT NULL,
+        ClientTypeRefName            VARCHAR(100)         NOT NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tClientTypeRef_IsActive DEFAULT (1),
+        CONSTRAINT PK_tClientTypeRef PRIMARY KEY CLUSTERED (ClientTypeRefID),
+        CONSTRAINT UQ_tClientTypeRef_ClientTypeRefName UNIQUE (ClientTypeRefName)
+        );
+    END;
+END;
+R25: 20 | usp_ClientTypeRef_Create | CREATE OR ALTER PROCEDURE usp_ClientTypeRef_Create
+    @ClientTypeRefName            VARCHAR(100),
+    @ActingUserID                INT,
+    @NewClientTypeRefID          INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tClientTypeRef (ClientTypeRefName)
+        VALUES (@ClientTypeRefName);
+
+        SET @NewClientTypeRefID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientTypeRef',
+            @EntityID   = @NewClientTypeRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R26: 21 | usp_ClientTypeRef_Get | CREATE OR ALTER PROCEDURE usp_ClientTypeRef_Get
+    @ClientTypeRefID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tClientTypeRef WHERE ClientTypeRefID = @ClientTypeRefID;
+END;
+R27: 22 | usp_ClientTypeRef_List | CREATE OR ALTER PROCEDURE usp_ClientTypeRef_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tClientTypeRef
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R28: 23 | usp_ClientTypeRef_Update | CREATE OR ALTER PROCEDURE usp_ClientTypeRef_Update
+    @ClientTypeRefID              INT,
+    @ClientTypeRefName            VARCHAR(100) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClientTypeRef WHERE ClientTypeRefID = @ClientTypeRefID)
+        THROW 50001, 'tClientTypeRef not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClientTypeRef
+           SET
+        ClientTypeRefName = COALESCE(@ClientTypeRefName, ClientTypeRefName)
+         WHERE ClientTypeRefID = @ClientTypeRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientTypeRef',
+            @EntityID   = @ClientTypeRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R29: 24 | usp_ClientTypeRef_SoftDelete | CREATE OR ALTER PROCEDURE usp_ClientTypeRef_SoftDelete
+    @ClientTypeRefID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClientTypeRef WHERE ClientTypeRefID = @ClientTypeRefID AND IsActive = 1)
+        THROW 50001, 'tClientTypeRef not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClientTypeRef
+           SET IsActive = 0
+         WHERE ClientTypeRefID = @ClientTypeRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientTypeRef',
+            @EntityID   = @ClientTypeRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R30: 25 | usp_CreateTable_tTag | CREATE OR ALTER PROCEDURE usp_CreateTable_tTag
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tTag', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tTag (
+            TagID INT IDENTITY(1,1) NOT NULL,
+        TagName                      VARCHAR(50)          NOT NULL,
+        TagScope                     VARCHAR(30)          NOT NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tTag_IsActive DEFAULT (1),
+        CONSTRAINT PK_tTag PRIMARY KEY CLUSTERED (TagID),
+        CONSTRAINT UQ_tTag_TagName UNIQUE (TagName)
+        );
+    END;
+END;
+R31: 26 | usp_Tag_Create | CREATE OR ALTER PROCEDURE usp_Tag_Create
+    @TagName                      VARCHAR(50),
+    @TagScope                     VARCHAR(30),
+    @ActingUserID                INT,
+    @NewTagID                    INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tTag (TagName, TagScope)
+        VALUES (@TagName, @TagScope);
+
+        SET @NewTagID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Tag',
+            @EntityID   = @NewTagID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R32: 27 | usp_Tag_Get | CREATE OR ALTER PROCEDURE usp_Tag_Get
+    @TagID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tTag WHERE TagID = @TagID;
+END;
+R33: 28 | usp_Tag_List | CREATE OR ALTER PROCEDURE usp_Tag_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tTag
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R34: 29 | usp_Tag_Update | CREATE OR ALTER PROCEDURE usp_Tag_Update
+    @TagID                        INT,
+    @TagName                      VARCHAR(50) = NULL,
+    @TagScope                     VARCHAR(30) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tTag WHERE TagID = @TagID)
+        THROW 50001, 'tTag not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tTag
+           SET
+        TagName = COALESCE(@TagName, TagName),
+        TagScope = COALESCE(@TagScope, TagScope)
+         WHERE TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Tag',
+            @EntityID   = @TagID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R35: 30 | usp_Tag_SoftDelete | CREATE OR ALTER PROCEDURE usp_Tag_SoftDelete
+    @TagID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tTag WHERE TagID = @TagID AND IsActive = 1)
+        THROW 50001, 'tTag not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tTag
+           SET IsActive = 0
+         WHERE TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Tag',
+            @EntityID   = @TagID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R36: 43 | usp_CreateTable_tProjectType | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectType
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectType', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectType (
+            ProjectTypeID INT IDENTITY(1,1) NOT NULL,
+        ProjectTypeCode              VARCHAR(20)          NOT NULL,
+        ProjectTypeDescription       VARCHAR(255)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectType_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProjectType PRIMARY KEY CLUSTERED (ProjectTypeID),
+        CONSTRAINT UQ_tProjectType_ProjectTypeCode UNIQUE (ProjectTypeCode)
+        );
+    END;
+
+    -- Seed rows (idempotent)
+    SET IDENTITY_INSERT dbo.tProjectType ON;
+
+    MERGE dbo.tProjectType AS tgt
+    USING (VALUES
+        (1, 'RNWL',  'Renewal',        1),
+        (2, 'NB',    'New Business',   1),
+        (3, 'Pro',   'Proforma',       1),
+        (4, 'AdHoc', 'AdHoc Analysis', 1)
+    ) AS src (ProjectTypeID, ProjectTypeCode, ProjectTypeDescription, IsActive)
+      ON tgt.ProjectTypeID = src.ProjectTypeID
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (ProjectTypeID, ProjectTypeCode, ProjectTypeDescription, IsActive)
+        VALUES (src.ProjectTypeID, src.ProjectTypeCode, src.ProjectTypeDescription, src.IsActive);
+
+    SET IDENTITY_INSERT dbo.tProjectType OFF;
+END;
+R37: 44 | usp_ProjectType_Create | CREATE OR ALTER PROCEDURE usp_ProjectType_Create
+    @ProjectTypeCode              VARCHAR(20),
+    @ProjectTypeDescription       VARCHAR(255) = NULL,
+    @ActingUserID                INT,
+    @NewProjectTypeID            INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectType (ProjectTypeCode, ProjectTypeDescription)
+        VALUES (@ProjectTypeCode, @ProjectTypeDescription);
+
+        SET @NewProjectTypeID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectType',
+            @EntityID   = @NewProjectTypeID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R38: 45 | usp_ProjectType_Get | CREATE OR ALTER PROCEDURE usp_ProjectType_Get
+    @ProjectTypeID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectType WHERE ProjectTypeID = @ProjectTypeID;
+END;
+R39: 46 | usp_ProjectType_List | CREATE OR ALTER PROCEDURE usp_ProjectType_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProjectType
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R40: 47 | usp_ProjectType_Update | CREATE OR ALTER PROCEDURE usp_ProjectType_Update
+    @ProjectTypeID                INT,
+    @ProjectTypeCode              VARCHAR(20) = NULL,
+    @ProjectTypeDescription       VARCHAR(255) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectType WHERE ProjectTypeID = @ProjectTypeID)
+        THROW 50001, 'tProjectType not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectType
+           SET
+        ProjectTypeCode = COALESCE(@ProjectTypeCode, ProjectTypeCode),
+        ProjectTypeDescription = COALESCE(@ProjectTypeDescription, ProjectTypeDescription)
+         WHERE ProjectTypeID = @ProjectTypeID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectType',
+            @EntityID   = @ProjectTypeID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R41: 48 | usp_ProjectType_SoftDelete | CREATE OR ALTER PROCEDURE usp_ProjectType_SoftDelete
+    @ProjectTypeID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectType WHERE ProjectTypeID = @ProjectTypeID AND IsActive = 1)
+        THROW 50001, 'tProjectType not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectType
+           SET IsActive = 0
+         WHERE ProjectTypeID = @ProjectTypeID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectType',
+            @EntityID   = @ProjectTypeID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R42: 49 | usp_CreateTable_tUserRole | CREATE OR ALTER PROCEDURE usp_CreateTable_tUserRole
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tUserRole', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tUserRole (
+            UserRoleID INT IDENTITY(1,1) NOT NULL,
+        UserRoleName                 VARCHAR(100)         NOT NULL,
+        RoleDescription              VARCHAR(255)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tUserRole_IsActive DEFAULT (1),
+        CONSTRAINT PK_tUserRole PRIMARY KEY CLUSTERED (UserRoleID),
+        CONSTRAINT UQ_tUserRole_UserRoleName UNIQUE (UserRoleName)
+        );
+    END;
+END;
+R43: 50 | usp_UserRole_Create | CREATE OR ALTER PROCEDURE usp_UserRole_Create
+    @UserRoleName                 VARCHAR(100),
+    @RoleDescription              VARCHAR(255) = NULL,
+    @ActingUserID                INT,
+    @NewUserRoleID               INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tUserRole (UserRoleName, RoleDescription)
+        VALUES (@UserRoleName, @RoleDescription);
+
+        SET @NewUserRoleID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserRole',
+            @EntityID   = @NewUserRoleID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R44: 51 | usp_UserRole_Get | CREATE OR ALTER PROCEDURE usp_UserRole_Get
+    @UserRoleID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tUserRole WHERE UserRoleID = @UserRoleID;
+END;
+R45: 52 | usp_UserRole_List | CREATE OR ALTER PROCEDURE usp_UserRole_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tUserRole
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R46: 53 | usp_UserRole_Update | CREATE OR ALTER PROCEDURE usp_UserRole_Update
+    @UserRoleID                   INT,
+    @UserRoleName                 VARCHAR(100) = NULL,
+    @RoleDescription              VARCHAR(255) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUserRole WHERE UserRoleID = @UserRoleID)
+        THROW 50001, 'tUserRole not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tUserRole
+           SET
+        UserRoleName = COALESCE(@UserRoleName, UserRoleName),
+        RoleDescription = COALESCE(@RoleDescription, RoleDescription)
+         WHERE UserRoleID = @UserRoleID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserRole',
+            @EntityID   = @UserRoleID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R47: 54 | usp_UserRole_SoftDelete | CREATE OR ALTER PROCEDURE usp_UserRole_SoftDelete
+    @UserRoleID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUserRole WHERE UserRoleID = @UserRoleID AND IsActive = 1)
+        THROW 50001, 'tUserRole not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tUserRole
+           SET IsActive = 0
+         WHERE UserRoleID = @UserRoleID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserRole',
+            @EntityID   = @UserRoleID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R48: 55 | usp_CreateTable_tUserGroup | CREATE OR ALTER PROCEDURE usp_CreateTable_tUserGroup
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tUserGroup', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tUserGroup (
+            UserGroupID INT IDENTITY(1,1) NOT NULL,
+        UserGroupNumber              VARCHAR(50)          NOT NULL,
+        UserGroupName                VARCHAR(100)         NOT NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tUserGroup_IsActive DEFAULT (1),
+        CONSTRAINT PK_tUserGroup PRIMARY KEY CLUSTERED (UserGroupID),
+        CONSTRAINT UQ_tUserGroup_UserGroupName UNIQUE (UserGroupName)
+        );
+    END;
+END;
+R49: 56 | usp_UserGroup_Create | CREATE OR ALTER PROCEDURE usp_UserGroup_Create
+    @UserGroupNumber              VARCHAR(50),
+    @UserGroupName                VARCHAR(100),
+    @ActingUserID                INT,
+    @NewUserGroupID              INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tUserGroup (UserGroupNumber, UserGroupName)
+        VALUES (@UserGroupNumber, @UserGroupName);
+
+        SET @NewUserGroupID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserGroup',
+            @EntityID   = @NewUserGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R50: 57 | usp_UserGroup_Get | CREATE OR ALTER PROCEDURE usp_UserGroup_Get
+    @UserGroupID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tUserGroup WHERE UserGroupID = @UserGroupID;
+END;
+R51: 58 | usp_UserGroup_List | CREATE OR ALTER PROCEDURE usp_UserGroup_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tUserGroup
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R52: 59 | usp_UserGroup_Update | CREATE OR ALTER PROCEDURE usp_UserGroup_Update
+    @UserGroupID                  INT,
+    @UserGroupNumber              VARCHAR(50) = NULL,
+    @UserGroupName                VARCHAR(100) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUserGroup WHERE UserGroupID = @UserGroupID)
+        THROW 50001, 'tUserGroup not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tUserGroup
+           SET
+        UserGroupNumber = COALESCE(@UserGroupNumber, UserGroupNumber),
+        UserGroupName = COALESCE(@UserGroupName, UserGroupName)
+         WHERE UserGroupID = @UserGroupID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserGroup',
+            @EntityID   = @UserGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R53: 60 | usp_UserGroup_SoftDelete | CREATE OR ALTER PROCEDURE usp_UserGroup_SoftDelete
+    @UserGroupID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUserGroup WHERE UserGroupID = @UserGroupID AND IsActive = 1)
+        THROW 50001, 'tUserGroup not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tUserGroup
+           SET IsActive = 0
+         WHERE UserGroupID = @UserGroupID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserGroup',
+            @EntityID   = @UserGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R54: 61 | usp_CreateTable_tServiceGroup | CREATE OR ALTER PROCEDURE usp_CreateTable_tServiceGroup
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tServiceGroup', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tServiceGroup (
+            ServiceGroupID INT IDENTITY(1,1) NOT NULL,
+        ServiceGroupNumber           VARCHAR(50)          NOT NULL,
+        ServiceGroupName             VARCHAR(100)         NOT NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tServiceGroup_IsActive DEFAULT (1),
+        CONSTRAINT PK_tServiceGroup PRIMARY KEY CLUSTERED (ServiceGroupID),
+        CONSTRAINT UQ_tServiceGroup_ServiceGroupName UNIQUE (ServiceGroupName)
+        );
+    END;
+END;
+R55: 62 | usp_ServiceGroup_Create | CREATE OR ALTER PROCEDURE usp_ServiceGroup_Create
+    @ServiceGroupNumber           VARCHAR(50),
+    @ServiceGroupName             VARCHAR(100),
+    @ActingUserID                INT,
+    @NewServiceGroupID           INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tServiceGroup (ServiceGroupNumber, ServiceGroupName)
+        VALUES (@ServiceGroupNumber, @ServiceGroupName);
+
+        SET @NewServiceGroupID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceGroup',
+            @EntityID   = @NewServiceGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R56: 63 | usp_ServiceGroup_Get | CREATE OR ALTER PROCEDURE usp_ServiceGroup_Get
+    @ServiceGroupID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tServiceGroup WHERE ServiceGroupID = @ServiceGroupID;
+END;
+R57: 64 | usp_ServiceGroup_List | CREATE OR ALTER PROCEDURE usp_ServiceGroup_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tServiceGroup
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R58: 65 | usp_ServiceGroup_Update | CREATE OR ALTER PROCEDURE usp_ServiceGroup_Update
+    @ServiceGroupID               INT,
+    @ServiceGroupNumber           VARCHAR(50) = NULL,
+    @ServiceGroupName             VARCHAR(100) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tServiceGroup WHERE ServiceGroupID = @ServiceGroupID)
+        THROW 50001, 'tServiceGroup not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tServiceGroup
+           SET
+        ServiceGroupNumber = COALESCE(@ServiceGroupNumber, ServiceGroupNumber),
+        ServiceGroupName = COALESCE(@ServiceGroupName, ServiceGroupName)
+         WHERE ServiceGroupID = @ServiceGroupID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceGroup',
+            @EntityID   = @ServiceGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R59: 66 | usp_ServiceGroup_SoftDelete | CREATE OR ALTER PROCEDURE usp_ServiceGroup_SoftDelete
+    @ServiceGroupID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tServiceGroup WHERE ServiceGroupID = @ServiceGroupID AND IsActive = 1)
+        THROW 50001, 'tServiceGroup not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tServiceGroup
+           SET IsActive = 0
+         WHERE ServiceGroupID = @ServiceGroupID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceGroup',
+            @EntityID   = @ServiceGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R60: 67 | usp_CreateTable_tServiceCategory | CREATE OR ALTER PROCEDURE usp_CreateTable_tServiceCategory
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tServiceCategory', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tServiceCategory (
+            ServiceCategoryID INT IDENTITY(1,1) NOT NULL,
+        CategoryName                 VARCHAR(100)         NOT NULL,
+        CatFunction                  VARCHAR(100)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tServiceCategory_IsActive DEFAULT (1),
+        CONSTRAINT PK_tServiceCategory PRIMARY KEY CLUSTERED (ServiceCategoryID),
+        CONSTRAINT UQ_tServiceCategory_CategoryName UNIQUE (CategoryName)
+        );
+    END;
+END;
+R61: 68 | usp_ServiceCategory_Create | CREATE OR ALTER PROCEDURE usp_ServiceCategory_Create
+    @CategoryName                 VARCHAR(100),
+    @CatFunction                  VARCHAR(100) = NULL,
+    @ActingUserID                INT,
+    @NewServiceCategoryID        INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tServiceCategory (CategoryName, CatFunction)
+        VALUES (@CategoryName, @CatFunction);
+
+        SET @NewServiceCategoryID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceCategory',
+            @EntityID   = @NewServiceCategoryID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R62: 69 | usp_ServiceCategory_Get | CREATE OR ALTER PROCEDURE usp_ServiceCategory_Get
+    @ServiceCategoryID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID;
+END;
+R63: 70 | usp_ServiceCategory_List | CREATE OR ALTER PROCEDURE usp_ServiceCategory_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tServiceCategory
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R64: 71 | usp_ServiceCategory_Update | CREATE OR ALTER PROCEDURE usp_ServiceCategory_Update
+    @ServiceCategoryID            INT,
+    @CategoryName                 VARCHAR(100) = NULL,
+    @CatFunction                  VARCHAR(100) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID)
+        THROW 50001, 'tServiceCategory not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tServiceCategory
+           SET
+        CategoryName = COALESCE(@CategoryName, CategoryName),
+        CatFunction = COALESCE(@CatFunction, CatFunction)
+         WHERE ServiceCategoryID = @ServiceCategoryID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceCategory',
+            @EntityID   = @ServiceCategoryID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R65: 72 | usp_ServiceCategory_SoftDelete | CREATE OR ALTER PROCEDURE usp_ServiceCategory_SoftDelete
+    @ServiceCategoryID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tServiceCategory WHERE ServiceCategoryID = @ServiceCategoryID AND IsActive = 1)
+        THROW 50001, 'tServiceCategory not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tServiceCategory
+           SET IsActive = 0
+         WHERE ServiceCategoryID = @ServiceCategoryID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceCategory',
+            @EntityID   = @ServiceCategoryID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R66: 73 | usp_CreateTable_tService | CREATE OR ALTER PROCEDURE usp_CreateTable_tService
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tService', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tService (
+            ServiceID INT IDENTITY(1,1) NOT NULL,
+        ServiceName                  VARCHAR(150)         NOT NULL,
+        ServiceDescription           VARCHAR(255)         NULL,
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tService_IsActive DEFAULT (1),
+        CONSTRAINT PK_tService PRIMARY KEY CLUSTERED (ServiceID),
+        CONSTRAINT UQ_tService_ServiceName UNIQUE (ServiceName)
+        );
+    END;
+END;
+R67: 74 | usp_Service_Create | CREATE OR ALTER PROCEDURE usp_Service_Create
+    @ServiceName                  VARCHAR(150),
+    @ServiceDescription           VARCHAR(255) = NULL,
+    @ActingUserID                INT,
+    @NewServiceID                INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tService (ServiceName, ServiceDescription)
+        VALUES (@ServiceName, @ServiceDescription);
+
+        SET @NewServiceID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Service',
+            @EntityID   = @NewServiceID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R68: 75 | usp_Service_Get | CREATE OR ALTER PROCEDURE usp_Service_Get
+    @ServiceID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tService WHERE ServiceID = @ServiceID;
+END;
+R69: 76 | usp_Service_List | CREATE OR ALTER PROCEDURE usp_Service_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tService
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R70: 77 | usp_Service_Update | CREATE OR ALTER PROCEDURE usp_Service_Update
+    @ServiceID                    INT,
+    @ServiceName                  VARCHAR(150) = NULL,
+    @ServiceDescription           VARCHAR(255) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tService WHERE ServiceID = @ServiceID)
+        THROW 50001, 'tService not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tService
+           SET
+        ServiceName = COALESCE(@ServiceName, ServiceName),
+        ServiceDescription = COALESCE(@ServiceDescription, ServiceDescription)
+         WHERE ServiceID = @ServiceID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Service',
+            @EntityID   = @ServiceID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R71: 78 | usp_Service_SoftDelete | CREATE OR ALTER PROCEDURE usp_Service_SoftDelete
+    @ServiceID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tService WHERE ServiceID = @ServiceID AND IsActive = 1)
+        THROW 50001, 'tService not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tService
+           SET IsActive = 0
+         WHERE ServiceID = @ServiceID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Service',
+            @EntityID   = @ServiceID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R72: 79 | usp_CreateTable_tClient | CREATE OR ALTER PROCEDURE usp_CreateTable_tClient
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tClient', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tClient (
+            ClientID INT IDENTITY(1,1) NOT NULL,
+        AccountExecutiveUserID       INT                  NULL,
+        AnalyticsLeadUserID          INT                  NULL,
+        ClientName                   VARCHAR(150)         NOT NULL,
+        ClientDescription            VARCHAR(500)         NULL,
+        ClientShortName              VARCHAR(50)          NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tClient_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tClient_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tClient_IsActive DEFAULT (1),
+        CONSTRAINT PK_tClient PRIMARY KEY CLUSTERED (ClientID),
+        CONSTRAINT FK_tClient_AccountExecutiveUserID FOREIGN KEY (AccountExecutiveUserID) REFERENCES dbo.tUser (UserID),
+        CONSTRAINT FK_tClient_AnalyticsLeadUserID FOREIGN KEY (AnalyticsLeadUserID) REFERENCES dbo.tUser (UserID)
+        );
+
+        CREATE INDEX IX_tClient_AccountExecutiveUserID ON dbo.tClient (AccountExecutiveUserID);
+        CREATE INDEX IX_tClient_AnalyticsLeadUserID ON dbo.tClient (AnalyticsLeadUserID);
+    END;
+END;
+R73: 80 | usp_Client_Create | CREATE OR ALTER PROCEDURE usp_Client_Create
+    @AccountExecutiveUserID       INT = NULL,
+    @AnalyticsLeadUserID          INT = NULL,
+    @ClientName                   VARCHAR(150),
+    @ClientDescription            VARCHAR(500) = NULL,
+    @ClientShortName              VARCHAR(50) = NULL,
+    @ActingUserID                INT,
+    @NewClientID                 INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tClient (AccountExecutiveUserID, AnalyticsLeadUserID, ClientName, ClientDescription, ClientShortName)
+        VALUES (@AccountExecutiveUserID, @AnalyticsLeadUserID, @ClientName, @ClientDescription, @ClientShortName);
+
+        SET @NewClientID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Client',
+            @EntityID   = @NewClientID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R74: 81 | usp_Client_Get | CREATE OR ALTER PROCEDURE usp_Client_Get
+    @ClientID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tClient WHERE ClientID = @ClientID;
+END;
+R75: 82 | usp_Client_List | CREATE OR ALTER PROCEDURE usp_Client_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tClient
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R76: 83 | usp_Client_Update | CREATE OR ALTER PROCEDURE usp_Client_Update
+    @ClientID                     INT,
+    @AccountExecutiveUserID       INT = NULL,
+    @AnalyticsLeadUserID          INT = NULL,
+    @ClientName                   VARCHAR(150) = NULL,
+    @ClientDescription            VARCHAR(500) = NULL,
+    @ClientShortName              VARCHAR(50) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClient WHERE ClientID = @ClientID)
+        THROW 50001, 'tClient not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClient
+           SET
+        AccountExecutiveUserID = COALESCE(@AccountExecutiveUserID, AccountExecutiveUserID),
+        AnalyticsLeadUserID = COALESCE(@AnalyticsLeadUserID, AnalyticsLeadUserID),
+        ClientName = COALESCE(@ClientName, ClientName),
+        ClientDescription = COALESCE(@ClientDescription, ClientDescription),
+        ClientShortName = COALESCE(@ClientShortName, ClientShortName),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ClientID = @ClientID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Client',
+            @EntityID   = @ClientID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R77: 84 | usp_Client_SoftDelete | CREATE OR ALTER PROCEDURE usp_Client_SoftDelete
+    @ClientID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClient WHERE ClientID = @ClientID AND IsActive = 1)
+        THROW 50001, 'tClient not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClient
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ClientID = @ClientID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Client',
+            @EntityID   = @ClientID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R78: 85 | usp_CreateTable_tProject | CREATE OR ALTER PROCEDURE usp_CreateTable_tProject
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProject', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProject (
+            ProjectID INT IDENTITY(1,1) NOT NULL,
+        ProjectNumber                VARCHAR(50)          NOT NULL,
+        ProjectName                  VARCHAR(200)         NOT NULL,
+        RenewalDate                  DATE                 NULL,
+        DueDate                      DATE                 NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProject_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProject_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProject_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProject PRIMARY KEY CLUSTERED (ProjectID)
+        );
+
+        CREATE UNIQUE INDEX UX_tProject_Number_Active ON dbo.tProject (ProjectNumber) WHERE IsActive = 1;
+
+        
+    END;
+END;
+R79: 86 | usp_Project_Create | CREATE OR ALTER PROCEDURE usp_Project_Create
+    @ProjectNumber                VARCHAR(50),
+    @ProjectName                  VARCHAR(200),
+    @RenewalDate                  DATE = NULL,
+    @DueDate                      DATE = NULL,
+    @ActingUserID                INT,
+    @NewProjectID                INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProject (ProjectNumber, ProjectName, RenewalDate, DueDate)
+        VALUES (@ProjectNumber, @ProjectName, @RenewalDate, @DueDate);
+
+        SET @NewProjectID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Project',
+            @EntityID   = @NewProjectID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R80: 87 | usp_Project_Get | CREATE OR ALTER PROCEDURE usp_Project_Get
+    @ProjectID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProject WHERE ProjectID = @ProjectID;
+END;
+R81: 88 | usp_Project_List | CREATE OR ALTER PROCEDURE usp_Project_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProject
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R82: 89 | usp_Project_Update | CREATE OR ALTER PROCEDURE usp_Project_Update
+    @ProjectID                    INT,
+    @ProjectNumber                VARCHAR(50) = NULL,
+    @ProjectName                  VARCHAR(200) = NULL,
+    @RenewalDate                  DATE = NULL,
+    @DueDate                      DATE = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProject WHERE ProjectID = @ProjectID)
+        THROW 50001, 'tProject not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProject
+           SET
+        ProjectNumber = COALESCE(@ProjectNumber, ProjectNumber),
+        ProjectName = COALESCE(@ProjectName, ProjectName),
+        RenewalDate = COALESCE(@RenewalDate, RenewalDate),
+        DueDate = COALESCE(@DueDate, DueDate),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectID = @ProjectID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Project',
+            @EntityID   = @ProjectID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R83: 90 | usp_Project_SoftDelete | CREATE OR ALTER PROCEDURE usp_Project_SoftDelete
+    @ProjectID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProject WHERE ProjectID = @ProjectID AND IsActive = 1)
+        THROW 50001, 'tProject not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProject
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectID = @ProjectID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Project',
+            @EntityID   = @ProjectID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R84: 91 | usp_CreateTable_tUser | CREATE OR ALTER PROCEDURE usp_CreateTable_tUser
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tUser', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tUser (
+            UserID INT IDENTITY(1,1) NOT NULL,
+        FirstName                    VARCHAR(50)          NOT NULL,
+        LastName                     VARCHAR(50)          NOT NULL,
+        Title                        VARCHAR(100)         NULL,
+        Email                        VARCHAR(150)         NOT NULL,
+        Phone                        VARCHAR(30)          NULL,
+        Company                      VARCHAR(150)         NULL,
+        Department                   VARCHAR(100)         NULL,
+        UserType                     VARCHAR(20)          NOT NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tUser_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tUser_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tUser_IsActive DEFAULT (1),
+        CONSTRAINT PK_tUser PRIMARY KEY CLUSTERED (UserID),
+        CONSTRAINT UQ_tUser_Email UNIQUE (Email)
+        );
+        CONSTRAINT CK_tUser_UserType CHECK (UserType IN ('Internal','External'))
+        
+    END;
+END;
+R85: 92 | usp_User_Create | CREATE OR ALTER PROCEDURE usp_User_Create
+    @FirstName                    VARCHAR(50),
+    @LastName                     VARCHAR(50),
+    @Title                        VARCHAR(100) = NULL,
+    @Email                        VARCHAR(150),
+    @Phone                        VARCHAR(30) = NULL,
+    @Company                      VARCHAR(150) = NULL,
+    @Department                   VARCHAR(100) = NULL,
+    @UserType                     VARCHAR(20),
+    @ActingUserID                INT,
+    @NewUserID                   INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserType)
+        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserType);
+
+        SET @NewUserID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'User',
+            @EntityID   = @NewUserID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R86: 93 | usp_User_Get | CREATE OR ALTER PROCEDURE usp_User_Get
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tUser WHERE UserID = @UserID;
+END;
+R87: 94 | usp_User_List | CREATE OR ALTER PROCEDURE usp_User_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tUser
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R88: 95 | usp_User_Update | CREATE OR ALTER PROCEDURE usp_User_Update
+    @UserID                       INT,
+    @FirstName                    VARCHAR(50) = NULL,
+    @LastName                     VARCHAR(50) = NULL,
+    @Title                        VARCHAR(100) = NULL,
+    @Email                        VARCHAR(150) = NULL,
+    @Phone                        VARCHAR(30) = NULL,
+    @Company                      VARCHAR(150) = NULL,
+    @Department                   VARCHAR(100) = NULL,
+    @UserType                     VARCHAR(20) = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @UserID)
+        THROW 50001, 'tUser not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tUser
+           SET
+        FirstName = COALESCE(@FirstName, FirstName),
+        LastName = COALESCE(@LastName, LastName),
+        Title = COALESCE(@Title, Title),
+        Email = COALESCE(@Email, Email),
+        Phone = COALESCE(@Phone, Phone),
+        Company = COALESCE(@Company, Company),
+        Department = COALESCE(@Department, Department),
+        UserType = COALESCE(@UserType, UserType),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE UserID = @UserID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'User',
+            @EntityID   = @UserID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R89: 96 | usp_User_SoftDelete | CREATE OR ALTER PROCEDURE usp_User_SoftDelete
+    @UserID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @UserID AND IsActive = 1)
+        THROW 50001, 'tUser not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tUser
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE UserID = @UserID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'User',
+            @EntityID   = @UserID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R90: 97 | usp_CreateTable_tAddress | CREATE OR ALTER PROCEDURE usp_CreateTable_tAddress
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tAddress', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tAddress (
+            AddressID    INT IDENTITY(1,1) NOT NULL,
+            Address1     VARCHAR(200) NOT NULL,
+            Address2     VARCHAR(200) NULL,
+            City         VARCHAR(100) NULL,
+            State        VARCHAR(50)  NULL,
+            PostalCode   VARCHAR(20)  NULL,
+            Country      VARCHAR(50)  NULL,
+            CreatedDate  DATETIME2(0) NOT NULL CONSTRAINT DF_tAddress_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+            ModifiedDate DATETIME2(0) NOT NULL CONSTRAINT DF_tAddress_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+            IsActive     BIT          NOT NULL CONSTRAINT DF_tAddress_IsActive     DEFAULT (1),
+            CONSTRAINT PK_tAddress PRIMARY KEY CLUSTERED (AddressID)
+        );
+    END;
+END;
+R91: 98 | usp_Address_Create | CREATE OR ALTER PROCEDURE usp_Address_Create
+    @Address1     VARCHAR(200),
+    @Address2     VARCHAR(200) = NULL,
+    @City         VARCHAR(100) = NULL,
+    @State        VARCHAR(50)  = NULL,
+    @PostalCode   VARCHAR(20)  = NULL,
+    @Country      VARCHAR(50)  = NULL,
+    @ActingUserID INT,
+    @NewAddressID INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tAddress (Address1, Address2, City, State, PostalCode, Country)
+        VALUES (@Address1, @Address2, @City, @State, @PostalCode, @Country);
+
+        SET @NewAddressID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Address',
+            @EntityID   = @NewAddressID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R92: 99 | usp_Address_Get | CREATE OR ALTER PROCEDURE usp_Address_Get
+    @AddressID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tAddress WHERE AddressID = @AddressID;
+END;
+R93: 100 | usp_Address_List | CREATE OR ALTER PROCEDURE usp_Address_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tAddress
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R94: 101 | usp_Address_Update | CREATE OR ALTER PROCEDURE usp_Address_Update
+    @AddressID    INT,
+    @Address1     VARCHAR(200) = NULL,
+    @Address2     VARCHAR(200) = NULL,
+    @City         VARCHAR(100) = NULL,
+    @State        VARCHAR(50)  = NULL,
+    @PostalCode   VARCHAR(20)  = NULL,
+    @Country      VARCHAR(50)  = NULL,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tAddress WHERE AddressID = @AddressID)
+        THROW 50001, 'tAddress not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tAddress
+           SET Address1     = COALESCE(@Address1, Address1),
+               Address2     = COALESCE(@Address2, Address2),
+               City         = COALESCE(@City, City),
+               State        = COALESCE(@State, State),
+               PostalCode   = COALESCE(@PostalCode, PostalCode),
+               Country      = COALESCE(@Country, Country),
+               ModifiedDate = SYSUTCDATETIME()
+         WHERE AddressID = @AddressID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Address',
+            @EntityID   = @AddressID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R95: 102 | usp_Address_SoftDelete | CREATE OR ALTER PROCEDURE usp_Address_SoftDelete
+    @AddressID    INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tAddress WHERE AddressID = @AddressID AND IsActive = 1)
+        THROW 50001, 'tAddress not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tAddress
+           SET IsActive     = 0,
+               ModifiedDate = SYSUTCDATETIME()
+         WHERE AddressID = @AddressID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Address',
+            @EntityID   = @AddressID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R96: 103 | usp_CreateTable_tClientRef | CREATE OR ALTER PROCEDURE usp_CreateTable_tClientRef
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tClientRef', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tClientRef (
+            ClientRefID INT IDENTITY(1,1) NOT NULL,
+        ClientID                     INT                  NOT NULL,
+        BusinessUnitID               INT                  NOT NULL,
+        BusinessClassID              INT                  NOT NULL,
+        ClientTypeID                 INT                  NOT NULL,
+        ClientTypeRefID              INT                  NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tClientRef_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tClientRef_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tClientRef_IsActive DEFAULT (1),
+        CONSTRAINT PK_tClientRef PRIMARY KEY CLUSTERED (ClientRefID),
+        CONSTRAINT FK_tClientRef_ClientID FOREIGN KEY (ClientID) REFERENCES dbo.tClient (ClientID) ON DELETE CASCADE,
+        CONSTRAINT FK_tClientRef_BusinessUnitID FOREIGN KEY (BusinessUnitID) REFERENCES dbo.tBusinessUnit (BusinessUnitID),
+        CONSTRAINT FK_tClientRef_BusinessClassID FOREIGN KEY (BusinessClassID) REFERENCES dbo.tBusinessClass (BusinessClassID),
+        CONSTRAINT FK_tClientRef_ClientTypeID FOREIGN KEY (ClientTypeID) REFERENCES dbo.tClientType (ClientTypeID),
+        CONSTRAINT FK_tClientRef_ClientTypeRefID FOREIGN KEY (ClientTypeRefID) REFERENCES dbo.tClientTypeRef (ClientTypeRefID)
+        );
+
+        CREATE INDEX IX_tClientRef_ClientID ON dbo.tClientRef (ClientID);
+        CREATE INDEX IX_tClientRef_BusinessUnitID ON dbo.tClientRef (BusinessUnitID);
+        CREATE INDEX IX_tClientRef_BusinessClassID ON dbo.tClientRef (BusinessClassID);
+        CREATE INDEX IX_tClientRef_ClientTypeID ON dbo.tClientRef (ClientTypeID);
+        CREATE INDEX IX_tClientRef_ClientTypeRefID ON dbo.tClientRef (ClientTypeRefID);
+
+        -- Filtered unique index: one active row per client per business unit
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes
+            WHERE name = 'UX_tClientRef_Client_BU_Active'
+            AND object_id = OBJECT_ID('dbo.tClientRef')
+        )
+        BEGIN
+            CREATE UNIQUE INDEX UX_tClientRef_Client_BU_Active
+            ON dbo.tClientRef (ClientID, BusinessUnitID)
+            WHERE IsActive = 1;
+        END;
+    END;
+END;
+R97: 104 | usp_ClientRef_Create | CREATE OR ALTER PROCEDURE usp_ClientRef_Create
+    @ClientID                     INT,
+    @BusinessUnitID               INT,
+    @BusinessClassID              INT,
+    @ClientTypeID                 INT,
+    @ClientTypeRefID              INT = NULL,
+    @ActingUserID                INT,
+    @NewClientRefID              INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tClientRef (ClientID, BusinessUnitID, BusinessClassID, ClientTypeID, ClientTypeRefID)
+        VALUES (@ClientID, @BusinessUnitID, @BusinessClassID, @ClientTypeID, @ClientTypeRefID);
+
+        SET @NewClientRefID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientRef',
+            @EntityID   = @NewClientRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R98: 105 | usp_ClientRef_Get | CREATE OR ALTER PROCEDURE usp_ClientRef_Get
+    @ClientRefID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tClientRef WHERE ClientRefID = @ClientRefID;
+END;
+R99: 106 | usp_ClientRef_List | CREATE OR ALTER PROCEDURE usp_ClientRef_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tClientRef
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R100: 107 | usp_ClientRef_Update | CREATE OR ALTER PROCEDURE usp_ClientRef_Update
+    @ClientRefID                  INT,
+    @ClientID                     INT = NULL,
+    @BusinessUnitID               INT = NULL,
+    @BusinessClassID              INT = NULL,
+    @ClientTypeID                 INT = NULL,
+    @ClientTypeRefID              INT = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClientRef WHERE ClientRefID = @ClientRefID)
+        THROW 50001, 'tClientRef not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClientRef
+           SET
+        ClientID = COALESCE(@ClientID, ClientID),
+        BusinessUnitID = COALESCE(@BusinessUnitID, BusinessUnitID),
+        BusinessClassID = COALESCE(@BusinessClassID, BusinessClassID),
+        ClientTypeID = COALESCE(@ClientTypeID, ClientTypeID),
+        ClientTypeRefID = COALESCE(@ClientTypeRefID, ClientTypeRefID),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ClientRefID = @ClientRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientRef',
+            @EntityID   = @ClientRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R101: 108 | usp_ClientRef_SoftDelete | CREATE OR ALTER PROCEDURE usp_ClientRef_SoftDelete
+    @ClientRefID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClientRef WHERE ClientRefID = @ClientRefID AND IsActive = 1)
+        THROW 50001, 'tClientRef not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tClientRef
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ClientRefID = @ClientRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientRef',
+            @EntityID   = @ClientRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R102: 109 | usp_CreateTable_tProjectRef | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectRef
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectRef', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectRef (
+            ProjectRefID INT IDENTITY(1,1) NOT NULL,
+        ProjectID                    INT                  NOT NULL,
+        ClientRefID                  INT                  NOT NULL,
+        ProjectTypeID                INT                  NOT NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectRef_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectRef_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectRef_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProjectRef PRIMARY KEY CLUSTERED (ProjectRefID),
+        CONSTRAINT FK_tProjectRef_ProjectID FOREIGN KEY (ProjectID) REFERENCES dbo.tProject (ProjectID),
+        CONSTRAINT FK_tProjectRef_ClientRefID FOREIGN KEY (ClientRefID) REFERENCES dbo.tClientRef (ClientRefID),
+        CONSTRAINT FK_tProjectRef_ProjectTypeID FOREIGN KEY (ProjectTypeID) REFERENCES dbo.tProjectType (ProjectTypeID),
+        );
+
+        CREATE INDEX IX_tProjectRef_ProjectID ON dbo.tProjectRef (ProjectID);
+        CREATE INDEX IX_tProjectRef_ClientRefID ON dbo.tProjectRef (ClientRefID);
+        CREATE INDEX IX_tProjectRef_ProjectTypeID ON dbo.tProjectRef (ProjectTypeID);
+    END;
+END;
+R103: 110 | usp_ProjectRef_Create | CREATE OR ALTER PROCEDURE usp_ProjectRef_Create
+    @ProjectID                    INT,
+    @ClientRefID                  INT,
+    @ProjectTypeID                INT,
+    @ActingUserID                INT,
+    @NewProjectRefID             INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectRef (ProjectID, ClientRefID, ProjectTypeID)
+        VALUES (@ProjectID, @ClientRefID, @ProjectTypeID);
+
+        SET @NewProjectRefID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectRef',
+            @EntityID   = @NewProjectRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R104: 111 | usp_ProjectRef_Get | CREATE OR ALTER PROCEDURE usp_ProjectRef_Get
+    @ProjectRefID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID;
+END;
+R105: 112 | usp_ProjectRef_List | CREATE OR ALTER PROCEDURE usp_ProjectRef_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProjectRef
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R106: 113 | usp_ProjectRef_Update | CREATE OR ALTER PROCEDURE usp_ProjectRef_Update
+    @ProjectRefID                 INT,
+    @ProjectID                    INT = NULL,
+    @ClientRefID                  INT = NULL,
+    @ProjectTypeID                INT = NULL,
+    @StatusID                     INT = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID)
+        THROW 50001, 'tProjectRef not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectRef
+           SET
+        ProjectID = COALESCE(@ProjectID, ProjectID),
+        ClientRefID = COALESCE(@ClientRefID, ClientRefID),
+        ProjectTypeID = COALESCE(@ProjectTypeID, ProjectTypeID),
+        StatusID = COALESCE(@StatusID, StatusID),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectRefID = @ProjectRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectRef',
+            @EntityID   = @ProjectRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R107: 114 | usp_ProjectRef_SoftDelete | CREATE OR ALTER PROCEDURE usp_ProjectRef_SoftDelete
+    @ProjectRefID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID AND IsActive = 1)
+        THROW 50001, 'tProjectRef not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectRef
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectRefID = @ProjectRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectRef',
+            @EntityID   = @ProjectRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R108: 115 | usp_CreateTable_tServiceRef | CREATE OR ALTER PROCEDURE usp_CreateTable_tServiceRef
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tServiceRef', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tServiceRef (
+            ServiceRefID INT IDENTITY(1,1) NOT NULL,
+        ServiceCategoryID            INT                  NOT NULL,
+        ServiceGroupID               INT                  NULL,
+        ServiceID                    INT                  NOT NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tServiceRef_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tServiceRef_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tServiceRef_IsActive DEFAULT (1),
+        CONSTRAINT PK_tServiceRef PRIMARY KEY CLUSTERED (ServiceRefID),
+        CONSTRAINT FK_tServiceRef_ServiceCategoryID FOREIGN KEY (ServiceCategoryID) REFERENCES dbo.tServiceCategory (ServiceCategoryID),
+        CONSTRAINT FK_tServiceRef_ServiceGroupID FOREIGN KEY (ServiceGroupID) REFERENCES dbo.tServiceGroup (ServiceGroupID),
+        CONSTRAINT FK_tServiceRef_ServiceID FOREIGN KEY (ServiceID) REFERENCES dbo.tService (ServiceID)
+        );
+
+        CREATE INDEX IX_tServiceRef_ServiceCategoryID ON dbo.tServiceRef (ServiceCategoryID);
+        CREATE INDEX IX_tServiceRef_ServiceGroupID ON dbo.tServiceRef (ServiceGroupID);
+        CREATE INDEX IX_tServiceRef_ServiceID ON dbo.tServiceRef (ServiceID);
+    END;
+END;
+R109: 116 | usp_ServiceRef_Create | CREATE OR ALTER PROCEDURE usp_ServiceRef_Create
+    @ServiceCategoryID            INT,
+    @ServiceGroupID               INT = NULL,
+    @ServiceID                    INT,
+    @ActingUserID                INT,
+    @NewServiceRefID             INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tServiceRef (ServiceCategoryID, ServiceGroupID, ServiceID)
+        VALUES (@ServiceCategoryID, @ServiceGroupID, @ServiceID);
+
+        SET @NewServiceRefID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceRef',
+            @EntityID   = @NewServiceRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R110: 117 | usp_ServiceRef_Get | CREATE OR ALTER PROCEDURE usp_ServiceRef_Get
+    @ServiceRefID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tServiceRef WHERE ServiceRefID = @ServiceRefID;
+END;
+R111: 118 | usp_ServiceRef_List | CREATE OR ALTER PROCEDURE usp_ServiceRef_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tServiceRef
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R112: 119 | usp_ServiceRef_Update | CREATE OR ALTER PROCEDURE usp_ServiceRef_Update
+    @ServiceRefID                 INT,
+    @ServiceCategoryID            INT = NULL,
+    @ServiceGroupID               INT = NULL,
+    @ServiceID                    INT = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tServiceRef WHERE ServiceRefID = @ServiceRefID)
+        THROW 50001, 'tServiceRef not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tServiceRef
+           SET
+        ServiceCategoryID = COALESCE(@ServiceCategoryID, ServiceCategoryID),
+        ServiceGroupID = COALESCE(@ServiceGroupID, ServiceGroupID),
+        ServiceID = COALESCE(@ServiceID, ServiceID),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ServiceRefID = @ServiceRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceRef',
+            @EntityID   = @ServiceRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R113: 120 | usp_ServiceRef_SoftDelete | CREATE OR ALTER PROCEDURE usp_ServiceRef_SoftDelete
+    @ServiceRefID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tServiceRef WHERE ServiceRefID = @ServiceRefID AND IsActive = 1)
+        THROW 50001, 'tServiceRef not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tServiceRef
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ServiceRefID = @ServiceRefID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceRef',
+            @EntityID   = @ServiceRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R114: 121 | usp_CreateTable_tProjectNote | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectNote
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectNote', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectNote (
+            NoteID INT IDENTITY(1,1) NOT NULL,
+        ProjectRefID                 INT                  NOT NULL,
+        NoteDate                     DATETIME2(0)         NOT NULL,
+        NoteType                     VARCHAR(30)          NOT NULL,
+        NoteText                     NVARCHAR(MAX)        NOT NULL,
+        IsPinned                     BIT                  NOT NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectNote_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectNote_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectNote_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProjectNote PRIMARY KEY CLUSTERED (NoteID),
+        CONSTRAINT FK_tProjectNote_ProjectRefID FOREIGN KEY (ProjectRefID) REFERENCES dbo.tProjectRef (ProjectRefID) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IX_tProjectNote_ProjectRefID ON dbo.tProjectNote (ProjectRefID);
+    END;
+END;
+R115: 122 | usp_ProjectNote_Create | CREATE OR ALTER PROCEDURE usp_ProjectNote_Create
+    @ProjectRefID                 INT,
+    @NoteDate                     DATETIME2(0),
+    @NoteType                     VARCHAR(30),
+    @NoteText                     NVARCHAR(MAX),
+    @IsPinned                     BIT,
+    @ActingUserID                INT,
+    @NewNoteID                   INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectNote (ProjectRefID, NoteDate, NoteType, NoteText, IsPinned)
+        VALUES (@ProjectRefID, @NoteDate, @NoteType, @NoteText, @IsPinned);
+
+        SET @NewNoteID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectNote',
+            @EntityID   = @NewNoteID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R116: 123 | usp_ProjectNote_Get | CREATE OR ALTER PROCEDURE usp_ProjectNote_Get
+    @NoteID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectNote WHERE NoteID = @NoteID;
+END;
+R117: 124 | usp_ProjectNote_List | CREATE OR ALTER PROCEDURE usp_ProjectNote_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProjectNote
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R118: 125 | usp_ProjectNote_Update | CREATE OR ALTER PROCEDURE usp_ProjectNote_Update
+    @NoteID                       INT,
+    @ProjectRefID                 INT = NULL,
+    @NoteDate                     DATETIME2(0) = NULL,
+    @NoteType                     VARCHAR(30) = NULL,
+    @NoteText                     NVARCHAR(MAX) = NULL,
+    @IsPinned                     BIT = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectNote WHERE NoteID = @NoteID)
+        THROW 50001, 'tProjectNote not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectNote
+           SET
+        ProjectRefID = COALESCE(@ProjectRefID, ProjectRefID),
+        NoteDate = COALESCE(@NoteDate, NoteDate),
+        NoteType = COALESCE(@NoteType, NoteType),
+        NoteText = COALESCE(@NoteText, NoteText),
+        IsPinned = COALESCE(@IsPinned, IsPinned),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE NoteID = @NoteID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectNote',
+            @EntityID   = @NoteID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R119: 126 | usp_ProjectNote_SoftDelete | CREATE OR ALTER PROCEDURE usp_ProjectNote_SoftDelete
+    @NoteID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectNote WHERE NoteID = @NoteID AND IsActive = 1)
+        THROW 50001, 'tProjectNote not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectNote
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE NoteID = @NoteID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectNote',
+            @EntityID   = @NoteID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R120: 127 | usp_CreateTable_tProjectRevenue | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectRevenue
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectRevenue', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectRevenue (
+            RevenueID INT IDENTITY(1,1) NOT NULL,
+        ProjectRefID                 INT                  NOT NULL,
+        EffectiveDate                DATE                 NOT NULL,
+        Revenue                      DECIMAL(18,2)        NOT NULL,
+        ChangeReason                 VARCHAR(255)         NULL,
+        RecordedBy                   INT                  NOT NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectRevenue_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectRevenue_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectRevenue_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProjectRevenue PRIMARY KEY CLUSTERED (RevenueID),
+        CONSTRAINT FK_tProjectRevenue_ProjectRefID FOREIGN KEY (ProjectRefID) REFERENCES dbo.tProjectRef (ProjectRefID) ON DELETE CASCADE,
+        CONSTRAINT FK_tProjectRevenue_RecordedBy FOREIGN KEY (RecordedBy) REFERENCES dbo.tUser (UserID)
+        );
+
+        CREATE INDEX IX_tProjectRevenue_ProjectRefID ON dbo.tProjectRevenue (ProjectRefID);
+        CREATE INDEX IX_tProjectRevenue_RecordedBy ON dbo.tProjectRevenue (RecordedBy);
+    END;
+END;
+R121: 128 | usp_ProjectRevenue_Create | CREATE OR ALTER PROCEDURE usp_ProjectRevenue_Create
+    @ProjectRefID                 INT,
+    @EffectiveDate                DATE,
+    @Revenue                      DECIMAL(18,2),
+    @ChangeReason                 VARCHAR(255) = NULL,
+    @RecordedBy                   INT,
+    @ActingUserID                INT,
+    @NewRevenueID                INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectRevenue (ProjectRefID, EffectiveDate, Revenue, ChangeReason, RecordedBy)
+        VALUES (@ProjectRefID, @EffectiveDate, @Revenue, @ChangeReason, @RecordedBy);
+
+        SET @NewRevenueID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectRevenue',
+            @EntityID   = @NewRevenueID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R122: 129 | usp_ProjectRevenue_Get | CREATE OR ALTER PROCEDURE usp_ProjectRevenue_Get
+    @RevenueID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectRevenue WHERE RevenueID = @RevenueID;
+END;
+R123: 130 | usp_ProjectRevenue_List | CREATE OR ALTER PROCEDURE usp_ProjectRevenue_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProjectRevenue
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R124: 131 | usp_ProjectRevenue_Update | CREATE OR ALTER PROCEDURE usp_ProjectRevenue_Update
+    @RevenueID                    INT,
+    @ProjectRefID                 INT = NULL,
+    @EffectiveDate                DATE = NULL,
+    @Revenue                      DECIMAL(18,2) = NULL,
+    @ChangeReason                 VARCHAR(255) = NULL,
+    @RecordedBy                   INT = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRevenue WHERE RevenueID = @RevenueID)
+        THROW 50001, 'tProjectRevenue not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectRevenue
+           SET
+        ProjectRefID = COALESCE(@ProjectRefID, ProjectRefID),
+        EffectiveDate = COALESCE(@EffectiveDate, EffectiveDate),
+        Revenue = COALESCE(@Revenue, Revenue),
+        ChangeReason = COALESCE(@ChangeReason, ChangeReason),
+        RecordedBy = COALESCE(@RecordedBy, RecordedBy),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE RevenueID = @RevenueID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectRevenue',
+            @EntityID   = @RevenueID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R125: 132 | usp_ProjectRevenue_SoftDelete | CREATE OR ALTER PROCEDURE usp_ProjectRevenue_SoftDelete
+    @RevenueID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRevenue WHERE RevenueID = @RevenueID AND IsActive = 1)
+        THROW 50001, 'tProjectRevenue not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectRevenue
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE RevenueID = @RevenueID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectRevenue',
+            @EntityID   = @RevenueID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R126: 133 | usp_CreateTable_tProjectService | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectService
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectService', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectService (
+            ProjectServiceID INT IDENTITY(1,1) NOT NULL,
+        ProjectRefID                 INT                  NOT NULL,
+        ServiceRefID                 INT                  NOT NULL,
+        Frequency                    VARCHAR(20)          NULL,
+        StartDate                    DATE                 NULL,
+        EndDate                      DATE                 NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectService_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectService_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectService_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProjectService PRIMARY KEY CLUSTERED (ProjectServiceID),
+        CONSTRAINT FK_tProjectService_ProjectRefID FOREIGN KEY (ProjectRefID) REFERENCES dbo.tProjectRef (ProjectRefID) ON DELETE CASCADE,
+        CONSTRAINT FK_tProjectService_ServiceRefID FOREIGN KEY (ServiceRefID) REFERENCES dbo.tServiceRef (ServiceRefID)
+        );
+
+        CREATE INDEX IX_tProjectService_ProjectRefID ON dbo.tProjectService (ProjectRefID);
+        CREATE INDEX IX_tProjectService_ServiceRefID ON dbo.tProjectService (ServiceRefID);
+    END;
+END;
+R127: 134 | usp_ProjectService_Create | CREATE OR ALTER PROCEDURE usp_ProjectService_Create
+    @ProjectRefID                 INT,
+    @ServiceRefID                 INT,
+    @Frequency                    VARCHAR(20) = NULL,
+    @StartDate                    DATE = NULL,
+    @EndDate                      DATE = NULL,
+    @ActingUserID                INT,
+    @NewProjectServiceID         INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectService (ProjectRefID, ServiceRefID, Frequency, StartDate, EndDate)
+        VALUES (@ProjectRefID, @ServiceRefID, @Frequency, @StartDate, @EndDate);
+
+        SET @NewProjectServiceID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectService',
+            @EntityID   = @NewProjectServiceID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R128: 135 | usp_ProjectService_Get | CREATE OR ALTER PROCEDURE usp_ProjectService_Get
+    @ProjectServiceID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectService WHERE ProjectServiceID = @ProjectServiceID;
+END;
+R129: 136 | usp_ProjectService_List | CREATE OR ALTER PROCEDURE usp_ProjectService_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProjectService
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R130: 137 | usp_ProjectService_Update | CREATE OR ALTER PROCEDURE usp_ProjectService_Update
+    @ProjectServiceID             INT,
+    @ProjectRefID                 INT = NULL,
+    @ServiceRefID                 INT = NULL,
+    @Frequency                    VARCHAR(20) = NULL,
+    @StartDate                    DATE = NULL,
+    @EndDate                      DATE = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectService WHERE ProjectServiceID = @ProjectServiceID)
+        THROW 50001, 'tProjectService not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectService
+           SET
+        ProjectRefID = COALESCE(@ProjectRefID, ProjectRefID),
+        ServiceRefID = COALESCE(@ServiceRefID, ServiceRefID),
+        Frequency = COALESCE(@Frequency, Frequency),
+        StartDate = COALESCE(@StartDate, StartDate),
+        EndDate = COALESCE(@EndDate, EndDate),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectServiceID = @ProjectServiceID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectService',
+            @EntityID   = @ProjectServiceID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R131: 138 | usp_ProjectService_SoftDelete | CREATE OR ALTER PROCEDURE usp_ProjectService_SoftDelete
+    @ProjectServiceID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectService WHERE ProjectServiceID = @ProjectServiceID AND IsActive = 1)
+        THROW 50001, 'tProjectService not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectService
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectServiceID = @ProjectServiceID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectService',
+            @EntityID   = @ProjectServiceID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R132: 139 | usp_CreateTable_tProjectUser | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectUser
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectUser', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectUser (
+            ProjectUserID INT IDENTITY(1,1) NOT NULL,
+        ProjectRefID                 INT                  NOT NULL,
+        UserID                       INT                  NOT NULL,
+        UserRoleID                   INT                  NULL,
+        StartDate                    DATE                 NULL,
+        EndDate                      DATE                 NULL,
+        CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectUser_CreatedDate  DEFAULT (SYSUTCDATETIME()),
+        ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectUser_ModifiedDate DEFAULT (SYSUTCDATETIME()),
+        IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectUser_IsActive DEFAULT (1),
+        CONSTRAINT PK_tProjectUser PRIMARY KEY CLUSTERED (ProjectUserID),
+        CONSTRAINT FK_tProjectUser_ProjectRefID FOREIGN KEY (ProjectRefID) REFERENCES dbo.tProjectRef (ProjectRefID) ON DELETE CASCADE,
+        CONSTRAINT FK_tProjectUser_UserID FOREIGN KEY (UserID) REFERENCES dbo.tUser (UserID) ON DELETE CASCADE,
+        CONSTRAINT FK_tProjectUser_UserRoleID FOREIGN KEY (UserRoleID) REFERENCES dbo.tUserRole (UserRoleID)
+        );
+
+        CREATE INDEX IX_tProjectUser_ProjectRefID ON dbo.tProjectUser (ProjectRefID);
+        CREATE INDEX IX_tProjectUser_UserID ON dbo.tProjectUser (UserID);
+        CREATE INDEX IX_tProjectUser_UserRoleID ON dbo.tProjectUser (UserRoleID);
+    END;
+END;
+R133: 140 | usp_ProjectUser_Create | CREATE OR ALTER PROCEDURE usp_ProjectUser_Create
+    @ProjectRefID                 INT,
+    @UserID                       INT,
+    @UserRoleID                   INT = NULL,
+    @StartDate                    DATE = NULL,
+    @EndDate                      DATE = NULL,
+    @ActingUserID                INT,
+    @NewProjectUserID            INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectUser (ProjectRefID, UserID, UserRoleID, StartDate, EndDate)
+        VALUES (@ProjectRefID, @UserID, @UserRoleID, @StartDate, @EndDate);
+
+        SET @NewProjectUserID = SCOPE_IDENTITY();
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectUser',
+            @EntityID   = @NewProjectUserID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Insert';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R134: 141 | usp_ProjectUser_Get | CREATE OR ALTER PROCEDURE usp_ProjectUser_Get
+    @ProjectUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectUser WHERE ProjectUserID = @ProjectUserID;
+END;
+R135: 142 | usp_ProjectUser_List | CREATE OR ALTER PROCEDURE usp_ProjectUser_List
+    @ActiveOnly BIT = 1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tProjectUser
+     WHERE (@ActiveOnly = 0 OR IsActive = 1);
+END;
+R136: 143 | usp_ProjectUser_Update | CREATE OR ALTER PROCEDURE usp_ProjectUser_Update
+    @ProjectUserID                INT,
+    @ProjectRefID                 INT = NULL,
+    @UserID                       INT = NULL,
+    @UserRoleID                   INT = NULL,
+    @StartDate                    DATE = NULL,
+    @EndDate                      DATE = NULL,
+    @ActingUserID                INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectUser WHERE ProjectUserID = @ProjectUserID)
+        THROW 50001, 'tProjectUser not found.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectUser
+           SET
+        ProjectRefID = COALESCE(@ProjectRefID, ProjectRefID),
+        UserID = COALESCE(@UserID, UserID),
+        UserRoleID = COALESCE(@UserRoleID, UserRoleID),
+        StartDate = COALESCE(@StartDate, StartDate),
+        EndDate = COALESCE(@EndDate, EndDate),
+        ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectUserID = @ProjectUserID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectUser',
+            @EntityID   = @ProjectUserID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Update';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R137: 144 | usp_ProjectUser_SoftDelete | CREATE OR ALTER PROCEDURE usp_ProjectUser_SoftDelete
+    @ProjectUserID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectUser WHERE ProjectUserID = @ProjectUserID AND IsActive = 1)
+        THROW 50001, 'tProjectUser not found or already inactive.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        UPDATE dbo.tProjectUser
+           SET IsActive = 0,
+            ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectUserID = @ProjectUserID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectUser',
+            @EntityID   = @ProjectUserID,
+            @UserID     = @ActingUserID,
+            @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R138: 145 | usp_CreateTable_tUserGroupRef | CREATE OR ALTER PROCEDURE usp_CreateTable_tUserGroupRef
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tUserGroupRef', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tUserGroupRef (
+            UserGroupID  INT          NOT NULL,
+            UserID       INT          NOT NULL,
+            UserRoleID   INT          NULL,
+            JoinedDate   DATETIME2(0) NOT NULL,
+            CONSTRAINT PK_tUserGroupRef PRIMARY KEY CLUSTERED (UserGroupID, UserID),
+            CONSTRAINT FK_tUserGroupRef_UserGroupID FOREIGN KEY (UserGroupID) REFERENCES dbo.tUserGroup (UserGroupID),
+            CONSTRAINT FK_tUserGroupRef_UserID      FOREIGN KEY (UserID)      REFERENCES dbo.tUser (UserID),
+            CONSTRAINT FK_tUserGroupRef_UserRoleID  FOREIGN KEY (UserRoleID)  REFERENCES dbo.tUserRole (UserRoleID)
+        );
+
+        CREATE INDEX IX_tUserGroupRef_UserID ON dbo.tUserGroupRef (UserID);
+    END;
+END;
+R139: 146 | usp_UserGroupRef_Add | CREATE OR ALTER PROCEDURE usp_UserGroupRef_Add
+    @UserGroupID  INT,
+    @UserID       INT,
+    @UserRoleID   INT = NULL,
+    @JoinedDate   DATETIME2(0),
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- Idempotent: skip if pair already exists
+    IF EXISTS (SELECT 1 FROM dbo.tUserGroupRef WHERE UserGroupID = @UserGroupID AND UserID = @UserID)
+        RETURN 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tUserGroupRef (UserGroupID, UserID, UserRoleID, JoinedDate)
+        VALUES (@UserGroupID, @UserID, @UserRoleID, @JoinedDate);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserGroupRef',
+            @EntityID   = @UserGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Add';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R140: 147 | usp_UserGroupRef_Remove | CREATE OR ALTER PROCEDURE usp_UserGroupRef_Remove
+    @UserGroupID  INT,
+    @UserID       INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tUserGroupRef
+         WHERE UserGroupID = @UserGroupID AND UserID = @UserID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserGroupRef',
+            @EntityID   = @UserGroupID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R141: 148 | usp_UserGroupRef_List | CREATE OR ALTER PROCEDURE usp_UserGroupRef_List
+    @UserGroupID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tUserGroupRef WHERE UserGroupID = @UserGroupID;
+END;
+R142: 149 | usp_CreateTable_tBusinessClassTag | CREATE OR ALTER PROCEDURE usp_CreateTable_tBusinessClassTag
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tBusinessClassTag', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tBusinessClassTag (
+        BusinessClassID      INT NOT NULL,
+        TagID                INT NOT NULL,
+        CONSTRAINT PK_tBusinessClassTag PRIMARY KEY CLUSTERED (BusinessClassID, TagID),
+        CONSTRAINT FK_tBusinessClassTag_BusinessClassID FOREIGN KEY (BusinessClassID) REFERENCES dbo.tBusinessClass (BusinessClassID),
+        CONSTRAINT FK_tBusinessClassTag_TagID FOREIGN KEY (TagID) REFERENCES dbo.tTag (TagID)
+        );
+
+        CREATE INDEX IX_tBusinessClassTag_TagID ON dbo.tBusinessClassTag (TagID);
+    END;
+END;
+R143: 150 | usp_BusinessClassTag_Add | CREATE OR ALTER PROCEDURE usp_BusinessClassTag_Add
+    @BusinessClassID      INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- Idempotent: skip if pair already exists
+    IF EXISTS (SELECT 1 FROM dbo.tBusinessClassTag WHERE BusinessClassID = @BusinessClassID AND TagID = @TagID)
+        RETURN 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tBusinessClassTag (BusinessClassID, TagID)
+        VALUES (@BusinessClassID, @TagID);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessClassTag',
+            @EntityID   = @BusinessClassID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Add';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R144: 151 | usp_BusinessClassTag_Remove | CREATE OR ALTER PROCEDURE usp_BusinessClassTag_Remove
+    @BusinessClassID      INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tBusinessClassTag WHERE BusinessClassID = @BusinessClassID AND TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessClassTag',
+            @EntityID   = @BusinessClassID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R145: 152 | usp_BusinessClassTag_List | CREATE OR ALTER PROCEDURE usp_BusinessClassTag_List
+    @BusinessClassID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tBusinessClassTag WHERE BusinessClassID = @BusinessClassID;
+END;
+R146: 153 | usp_CreateTable_tUserRoleTag | CREATE OR ALTER PROCEDURE usp_CreateTable_tUserRoleTag
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tUserRoleTag', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tUserRoleTag (
+        UserRoleID           INT NOT NULL,
+        TagID                INT NOT NULL,
+        CONSTRAINT PK_tUserRoleTag PRIMARY KEY CLUSTERED (UserRoleID, TagID),
+        CONSTRAINT FK_tUserRoleTag_UserRoleID FOREIGN KEY (UserRoleID) REFERENCES dbo.tUserRole (UserRoleID),
+        CONSTRAINT FK_tUserRoleTag_TagID FOREIGN KEY (TagID) REFERENCES dbo.tTag (TagID)
+        );
+
+        CREATE INDEX IX_tUserRoleTag_TagID ON dbo.tUserRoleTag (TagID);
+    END;
+END;
+R147: 154 | usp_UserRoleTag_Add | CREATE OR ALTER PROCEDURE usp_UserRoleTag_Add
+    @UserRoleID           INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- Idempotent: skip if pair already exists
+    IF EXISTS (SELECT 1 FROM dbo.tUserRoleTag WHERE UserRoleID = @UserRoleID AND TagID = @TagID)
+        RETURN 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tUserRoleTag (UserRoleID, TagID)
+        VALUES (@UserRoleID, @TagID);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserRoleTag',
+            @EntityID   = @UserRoleID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Add';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R148: 155 | usp_UserRoleTag_Remove | CREATE OR ALTER PROCEDURE usp_UserRoleTag_Remove
+    @UserRoleID           INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tUserRoleTag WHERE UserRoleID = @UserRoleID AND TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'UserRoleTag',
+            @EntityID   = @UserRoleID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R149: 156 | usp_UserRoleTag_List | CREATE OR ALTER PROCEDURE usp_UserRoleTag_List
+    @UserRoleID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tUserRoleTag WHERE UserRoleID = @UserRoleID;
+END;
+R150: 157 | usp_CreateTable_tClientTag | CREATE OR ALTER PROCEDURE usp_CreateTable_tClientTag
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tClientTag', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tClientTag (
+        ClientID             INT NOT NULL,
+        TagID                INT NOT NULL,
+        CONSTRAINT PK_tClientTag PRIMARY KEY CLUSTERED (ClientID, TagID),
+        CONSTRAINT FK_tClientTag_ClientID FOREIGN KEY (ClientID) REFERENCES dbo.tClient (ClientID),
+        CONSTRAINT FK_tClientTag_TagID FOREIGN KEY (TagID) REFERENCES dbo.tTag (TagID)
+        );
+
+        CREATE INDEX IX_tClientTag_TagID ON dbo.tClientTag (TagID);
+    END;
+END;
+R151: 158 | usp_ClientTag_Add | CREATE OR ALTER PROCEDURE usp_ClientTag_Add
+    @ClientID             INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- Idempotent: skip if pair already exists
+    IF EXISTS (SELECT 1 FROM dbo.tClientTag WHERE ClientID = @ClientID AND TagID = @TagID)
+        RETURN 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tClientTag (ClientID, TagID)
+        VALUES (@ClientID, @TagID);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientTag',
+            @EntityID   = @ClientID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Add';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R152: 159 | usp_ClientTag_Remove | CREATE OR ALTER PROCEDURE usp_ClientTag_Remove
+    @ClientID             INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tClientTag WHERE ClientID = @ClientID AND TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ClientTag',
+            @EntityID   = @ClientID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R153: 160 | usp_ClientTag_List | CREATE OR ALTER PROCEDURE usp_ClientTag_List
+    @ClientID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tClientTag WHERE ClientID = @ClientID;
+END;
+R154: 161 | usp_CreateTable_tProjectTag | CREATE OR ALTER PROCEDURE usp_CreateTable_tProjectTag
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProjectTag', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tProjectTag (
+        ProjectRefID         INT NOT NULL,
+        TagID                INT NOT NULL,
+        CONSTRAINT PK_tProjectTag PRIMARY KEY CLUSTERED (ProjectRefID, TagID),
+        CONSTRAINT FK_tProjectTag_ProjectRefID FOREIGN KEY (ProjectRefID) REFERENCES dbo.tProjectRef (ProjectRefID),
+        CONSTRAINT FK_tProjectTag_TagID FOREIGN KEY (TagID) REFERENCES dbo.tTag (TagID)
+        );
+
+        CREATE INDEX IX_tProjectTag_TagID ON dbo.tProjectTag (TagID);
+    END;
+END;
+R155: 162 | usp_ProjectTag_Add | CREATE OR ALTER PROCEDURE usp_ProjectTag_Add
+    @ProjectRefID         INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- Idempotent: skip if pair already exists
+    IF EXISTS (SELECT 1 FROM dbo.tProjectTag WHERE ProjectRefID = @ProjectRefID AND TagID = @TagID)
+        RETURN 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tProjectTag (ProjectRefID, TagID)
+        VALUES (@ProjectRefID, @TagID);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectTag',
+            @EntityID   = @ProjectRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Add';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R156: 163 | usp_ProjectTag_Remove | CREATE OR ALTER PROCEDURE usp_ProjectTag_Remove
+    @ProjectRefID         INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tProjectTag WHERE ProjectRefID = @ProjectRefID AND TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ProjectTag',
+            @EntityID   = @ProjectRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R157: 164 | usp_ProjectTag_List | CREATE OR ALTER PROCEDURE usp_ProjectTag_List
+    @ProjectRefID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tProjectTag WHERE ProjectRefID = @ProjectRefID;
+END;
+R158: 165 | usp_CreateTable_tServiceTag | CREATE OR ALTER PROCEDURE usp_CreateTable_tServiceTag
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tServiceTag', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tServiceTag (
+        ServiceRefID         INT NOT NULL,
+        TagID                INT NOT NULL,
+        CONSTRAINT PK_tServiceTag PRIMARY KEY CLUSTERED (ServiceRefID, TagID),
+        CONSTRAINT FK_tServiceTag_ServiceRefID FOREIGN KEY (ServiceRefID) REFERENCES dbo.tServiceRef (ServiceRefID),
+        CONSTRAINT FK_tServiceTag_TagID FOREIGN KEY (TagID) REFERENCES dbo.tTag (TagID)
+        );
+
+        CREATE INDEX IX_tServiceTag_TagID ON dbo.tServiceTag (TagID);
+    END;
+END;
+R159: 166 | usp_ServiceTag_Add | CREATE OR ALTER PROCEDURE usp_ServiceTag_Add
+    @ServiceRefID         INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    -- Idempotent: skip if pair already exists
+    IF EXISTS (SELECT 1 FROM dbo.tServiceTag WHERE ServiceRefID = @ServiceRefID AND TagID = @TagID)
+        RETURN 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        INSERT INTO dbo.tServiceTag (ServiceRefID, TagID)
+        VALUES (@ServiceRefID, @TagID);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceTag',
+            @EntityID   = @ServiceRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Add';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R160: 167 | usp_ServiceTag_Remove | CREATE OR ALTER PROCEDURE usp_ServiceTag_Remove
+    @ServiceRefID         INT,
+    @TagID                INT,
+    @ActingUserID         INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tServiceTag WHERE ServiceRefID = @ServiceRefID AND TagID = @TagID;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'ServiceTag',
+            @EntityID   = @ServiceRefID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R161: 168 | usp_ServiceTag_List | CREATE OR ALTER PROCEDURE usp_ServiceTag_List
+    @ServiceRefID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT * FROM dbo.tServiceTag WHERE ServiceRefID = @ServiceRefID;
+END;
+R162: 169 | usp_CreateTable_tActivityLog | CREATE OR ALTER PROCEDURE usp_CreateTable_tActivityLog
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tActivityLog', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tActivityLog (
+            LogID      BIGINT IDENTITY(1,1) NOT NULL,
+            UserID     INT                  NOT NULL,
+            EntityType VARCHAR(50)          NOT NULL,
+            EntityID   INT                  NOT NULL,
+            ActionDate DATETIME2(0)         NOT NULL CONSTRAINT DF_tActivityLog_ActionDate DEFAULT (SYSUTCDATETIME()),
+            Action     VARCHAR(30)          NOT NULL,
+            FieldName  VARCHAR(100)         NULL,
+            OldValue   NVARCHAR(MAX)        NULL,
+            NewValue   NVARCHAR(MAX)        NULL,
+            CONSTRAINT PK_tActivityLog PRIMARY KEY CLUSTERED (LogID),
+            CONSTRAINT FK_tActivityLog_User FOREIGN KEY (UserID) REFERENCES dbo.tUser (UserID),
+            CONSTRAINT CK_tActivityLog_Action CHECK (Action IN ('Insert','Update','SoftDelete','Restore','Add','Remove'))
+        );
+
+        CREATE INDEX IX_tActivityLog_Entity ON dbo.tActivityLog (EntityType, EntityID, ActionDate DESC);
+        CREATE INDEX IX_tActivityLog_User   ON dbo.tActivityLog (UserID, ActionDate DESC);
+    END;
+END;
+R163: 170 | usp_ActivityLog_Insert | CREATE OR ALTER PROCEDURE usp_ActivityLog_Insert
+    @EntityType VARCHAR(50),
+    @EntityID   INT,
+    @UserID     INT,
+    @Action     VARCHAR(30),
+    @FieldName  VARCHAR(100)  = NULL,
+    @OldValue   NVARCHAR(MAX) = NULL,
+    @NewValue   NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO dbo.tActivityLog (EntityType, EntityID, UserID, Action, FieldName, OldValue, NewValue)
+    VALUES (@EntityType, @EntityID, @UserID, @Action, @FieldName, @OldValue, @NewValue);
+END;
+R164: 171 | usp_ActivityLog_GetByEntity | CREATE OR ALTER PROCEDURE usp_ActivityLog_GetByEntity
+    @EntityType VARCHAR(50),
+    @EntityID   INT,
+    @FromDate   DATETIME2(0) = NULL,
+    @ToDate     DATETIME2(0) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tActivityLog
+     WHERE EntityType = @EntityType
+       AND EntityID   = @EntityID
+       AND (@FromDate IS NULL OR ActionDate >= @FromDate)
+       AND (@ToDate   IS NULL OR ActionDate <= @ToDate)
+     ORDER BY ActionDate DESC;
+END;
+R165: 172 | usp_ActivityLog_GetByUser | CREATE OR ALTER PROCEDURE usp_ActivityLog_GetByUser
+    @UserID   INT,
+    @FromDate DATETIME2(0) = NULL,
+    @ToDate   DATETIME2(0) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT *
+      FROM dbo.tActivityLog
+     WHERE UserID = @UserID
+       AND (@FromDate IS NULL OR ActionDate >= @FromDate)
+       AND (@ToDate   IS NULL OR ActionDate <= @ToDate)
+     ORDER BY ActionDate DESC;
+END;
+R166: 173 | usp_CreateTable_tUserAddressRef | CREATE OR ALTER PROCEDURE usp_CreateTable_tUserAddressRef
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tUserAddressRef', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.tUserAddressRef (
+            UserID       INT          NOT NULL,
+            AddressID    INT          NOT NULL,
+            AddressType  VARCHAR(20)  NOT NULL,
+            IsPrimary    BIT          NOT NULL CONSTRAINT DF_tUserAddressRef_IsPrimary DEFAULT (0),
+            CreatedDate  DATETIME2(0) NOT NULL CONSTRAINT DF_tUserAddressRef_CreatedDate DEFAULT (SYSUTCDATETIME()),
+            IsActive     BIT          NOT NULL CONSTRAINT DF_tUserAddressRef_IsActive DEFAULT (1),
+            CONSTRAINT PK_tUserAddressRef PRIMARY KEY CLUSTERED (UserID, AddressID, AddressType),
+            CONSTRAINT FK_tUserAddressRef_User    FOREIGN KEY (UserID)    REFERENCES dbo.tUser(UserID)       ON DELETE CASCADE,
+            CONSTRAINT FK_tUserAddressRef_Address FOREIGN KEY (AddressID) REFERENCES dbo.tAddress(AddressID),
+            CONSTRAINT CK_tUserAddressRef_AddressType CHECK (AddressType IN ('Home','Work','Billing','Other'))
+        );
+
+        -- Enforce at most one primary per (UserID, AddressType) via filtered unique index
+        CREATE UNIQUE INDEX UX_tUserAddressRef_Primary
+            ON dbo.tUserAddressRef (UserID, AddressType)
+            WHERE IsPrimary = 1;
+    END;
+END;
+R167: 174 | usp_UserAddressRef_Add | CREATE OR ALTER PROCEDURE usp_UserAddressRef_Add
+    @UserID       INT,
+    @AddressID    INT,
+    @AddressType  VARCHAR(20),
+    @IsPrimary    BIT = 0,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        -- If marking as primary, clear any existing primary for this user+type
+        IF @IsPrimary = 1
+        BEGIN
+            UPDATE dbo.tUserAddressRef
+               SET IsPrimary = 0
+             WHERE UserID = @UserID
+               AND AddressType = @AddressType
+               AND IsPrimary = 1;
+        END;
+
+        -- Idempotent insert
+        IF NOT EXISTS (
+            SELECT 1 FROM dbo.tUserAddressRef
+             WHERE UserID = @UserID AND AddressID = @AddressID AND AddressType = @AddressType
+        )
+        BEGIN
+            INSERT INTO dbo.tUserAddressRef (UserID, AddressID, AddressType, IsPrimary)
+            VALUES (@UserID, @AddressID, @AddressType, @IsPrimary);
+
+            EXEC dbo.usp_ActivityLog_Insert
+                @EntityType = 'UserAddressRef',
+                @EntityID   = @UserID,
+                @UserID     = @ActingUserID,
+                @Action     = 'Insert';
+        END;
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R168: 175 | usp_UserAddressRef_Remove | CREATE OR ALTER PROCEDURE usp_UserAddressRef_Remove
+    @UserID       INT,
+    @AddressID    INT,
+    @AddressType  VARCHAR(20),
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DELETE FROM dbo.tUserAddressRef
+         WHERE UserID = @UserID
+           AND AddressID = @AddressID
+           AND AddressType = @AddressType;
+
+        IF @@ROWCOUNT > 0
+        BEGIN
+            EXEC dbo.usp_ActivityLog_Insert
+                @EntityType = 'UserAddressRef',
+                @EntityID   = @UserID,
+                @UserID     = @ActingUserID,
+                @Action     = 'Delete';
+        END;
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+R169: 176 | usp_UserAddressRef_List | CREATE OR ALTER PROCEDURE usp_UserAddressRef_List
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT r.UserID,
+           r.AddressID,
+           r.AddressType,
+           r.IsPrimary,
+           r.IsActive,
+           a.Address1, a.Address2, a.City, a.State, a.PostalCode, a.Country
+      FROM dbo.tUserAddressRef r
+      JOIN dbo.tAddress a ON a.AddressID = r.AddressID
+     WHERE r.UserID = @UserID
+       AND r.IsActive = 1
+       AND a.IsActive = 1
+     ORDER BY r.AddressType, r.IsPrimary DESC;
+END;
+R170: 177 | usp_Create_vHomeTile_ActiveClientCount | CREATE OR ALTER PROCEDURE usp_Create_vHomeTile_ActiveClientCount
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    EXEC('
+CREATE OR ALTER VIEW dbo.v_HomeTile_ActiveClientCount
+AS
+SELECT ActiveClientCount = COUNT_BIG(DISTINCT c.ClientID)
+  FROM dbo.tClient c
+ WHERE c.IsActive = 1;
+');
+END;
+R171: 178 | usp_Create_vHomeTile_ActiveProjectCount | CREATE OR ALTER PROCEDURE usp_Create_vHomeTile_ActiveProjectCount
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    EXEC('
+CREATE OR ALTER VIEW dbo.v_HomeTile_ActiveProjectCount
+AS
+SELECT ActiveProjectCount = COUNT_BIG(*)
+  FROM dbo.tProject p
+ WHERE p.IsActive = 1;
+');
+END;
+R172: 179 | usp_Create_vHomeTile_ActiveProjectRevenue | CREATE OR ALTER PROCEDURE usp_Create_vHomeTile_ActiveProjectRevenue
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Sum of latest revenue per active project (tProjectRevenue is a history table).
+    -- OUTER APPLY + COALESCE(...,0) so projects with no revenue rows contribute 0 and the tile returns 0 (not NULL) when no revenue exists.
+    EXEC('
+CREATE OR ALTER VIEW dbo.v_HomeTile_ActiveProjectRevenue
+AS
+SELECT ActiveProjectRevenue = COALESCE(SUM(COALESCE(latest.Revenue, 0)), 0)
+  FROM dbo.tProject p
+ OUTER APPLY (
+     SELECT TOP 1 r.Revenue
+       FROM dbo.tProjectRevenue r
+       JOIN dbo.tProjectRef     pr ON pr.ProjectRefID = r.ProjectRefID
+      WHERE pr.ProjectID = p.ProjectID
+      ORDER BY r.EffectiveDate DESC, r.RevenueID DESC
+ ) latest
+ WHERE p.IsActive = 1;
+');
+END;
+R173: 180 | usp_Create_vProjectList | CREATE OR ALTER PROCEDURE usp_Create_vProjectList
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    /*
+      vProjectList — wide, unfiltered, denormalized list for the home-screen list box.
+      Shape (Option A):
+        RowType         CHAR(7)        'Client' | 'Project' | 'User' | 'Service'
+        EntityID        INT            ClientID / ProjectID / UserID / ServiceID (matches RowType)
+        PrimaryName     NVARCHAR(200)  ClientName / ProjectName / FirstName + LastName / ServiceName
+        SecondaryName   NVARCHAR(200)  ClientShortName / ProjectNumber / Title / ServiceDescription
+        ProjectID       INT NULL       Carrier project (NULL for Client/Service rows)
+        ClientID        INT NULL       Carrier client (NULL for Service rows)
+        BusinessUnitID  INT NULL       For Client filter
+        BusinessClassID INT NULL       For Client filter
+        ProjectTypeID   INT NULL       For Project filter (rolled up from tProjectRef)
+        RevenueAmount   DECIMAL(18,2)  Latest revenue (Project rows: 0 when no revenue history; NULL on Client/User/Service rows)
+        Tags            NVARCHAR(MAX)  STRING_AGG of tags (User → role names, Service → tags, others NULL)
+        IsActive        BIT            Entity IsActive flag
+
+      UI filters by adding a WHERE clause; no parameters needed at the SQL layer.
+    */
+
+    EXEC('
+CREATE OR ALTER VIEW dbo.vProjectList
+AS
+-- Clients
+SELECT
+    RowType          = CAST(''Client''  AS CHAR(7)),
+    EntityID         = c.ClientID,
+    PrimaryName      = CAST(c.ClientName      AS NVARCHAR(200)),
+    SecondaryName    = CAST(c.ClientShortName AS NVARCHAR(200)),
+    ProjectID        = CAST(NULL AS INT),
+    ClientID         = c.ClientID,
+    BusinessUnitID   = bc.BusinessUnitID,
+    BusinessClassID  = cr.BusinessClassID,
+    ProjectTypeID    = CAST(NULL AS INT),
+    RevenueAmount    = CAST(NULL AS DECIMAL(18,2)),
+    Tags             = (
+        SELECT STRING_AGG(t.TagName, '', '') WITHIN GROUP (ORDER BY t.TagName)
+          FROM dbo.tClientTag ct
+          JOIN dbo.tTag       t  ON t.TagID = ct.TagID
+         WHERE ct.ClientID = c.ClientID
+    ),
+    IsActive         = c.IsActive
+  FROM dbo.tClient c
+  OUTER APPLY (
+      SELECT TOP 1 BusinessClassID, BusinessUnitID
+        FROM dbo.tClientRef
+       WHERE ClientID = c.ClientID
+  ) cr
+  LEFT JOIN dbo.tBusinessClass bc ON bc.BusinessClassID = cr.BusinessClassID
+
+UNION ALL
+
+-- Projects
+SELECT
+    RowType          = CAST(''Project'' AS CHAR(7)),
+    EntityID         = p.ProjectID,
+    PrimaryName      = CAST(p.ProjectName   AS NVARCHAR(200)),
+    SecondaryName    = CAST(p.ProjectNumber AS NVARCHAR(200)),
+    ProjectID        = p.ProjectID,
+    ClientID         = pref.ClientRefID_ClientID,
+    BusinessUnitID   = bc.BusinessUnitID,
+    BusinessClassID  = cr.BusinessClassID,
+    ProjectTypeID    = pref.ProjectTypeID,
+    RevenueAmount    = COALESCE(latest.Revenue, CAST(0 AS DECIMAL(18,2))),
+    Tags             = (
+        SELECT STRING_AGG(t.TagName, '', '') WITHIN GROUP (ORDER BY t.TagName)
+          FROM dbo.tProjectTag pt
+          JOIN dbo.tProjectRef prf ON prf.ProjectRefID = pt.ProjectRefID
+          JOIN dbo.tTag         t   ON t.TagID = pt.TagID
+         WHERE prf.ProjectID = p.ProjectID
+    ),
+    IsActive         = p.IsActive
+  FROM dbo.tProject p
+  OUTER APPLY (
+      SELECT TOP 1
+             pr.ProjectTypeID,
+             ClientRefID_ClientID = cref.ClientID
+        FROM dbo.tProjectRef pr
+        LEFT JOIN dbo.tClientRef cref ON cref.ClientRefID = pr.ClientRefID
+       WHERE pr.ProjectID = p.ProjectID
+  ) pref
+  LEFT JOIN dbo.tClientRef     cr ON cr.ClientID = pref.ClientRefID_ClientID
+  LEFT JOIN dbo.tBusinessClass bc ON bc.BusinessClassID = cr.BusinessClassID
+  OUTER APPLY (
+      SELECT TOP 1 r.Revenue
+        FROM dbo.tProjectRevenue r
+        JOIN dbo.tProjectRef     pr ON pr.ProjectRefID = r.ProjectRefID
+       WHERE pr.ProjectID = p.ProjectID
+       ORDER BY r.EffectiveDate DESC, r.RevenueID DESC
+  ) latest
+
+UNION ALL
+
+-- Users (one row per user; roles pivoted into Tags via STRING_AGG)
+SELECT
+    RowType          = CAST(''User''    AS CHAR(7)),
+    EntityID         = u.UserID,
+    PrimaryName      = CAST(CONCAT(u.FirstName, '' '', u.LastName) AS NVARCHAR(200)),
+    SecondaryName    = CAST(u.Title AS NVARCHAR(200)),
+    ProjectID        = CAST(NULL AS INT),
+    ClientID         = CAST(NULL AS INT),
+    BusinessUnitID   = CAST(NULL AS INT),
+    BusinessClassID  = CAST(NULL AS INT),
+    ProjectTypeID    = CAST(NULL AS INT),
+    RevenueAmount    = CAST(NULL AS DECIMAL(18,2)),
+    Tags             = (
+        SELECT STRING_AGG(ur.UserRoleName, '', '') WITHIN GROUP (ORDER BY ur.UserRoleName)
+          FROM dbo.tUserGroupRef ugr
+          JOIN dbo.tUserRole     ur ON ur.UserRoleID = ugr.UserRoleID
+         WHERE ugr.UserID = u.UserID
+    ),
+    IsActive         = u.IsActive
+  FROM dbo.tUser u
+
+UNION ALL
+
+-- Services (one row per service; tags pivoted into Tags via STRING_AGG)
+SELECT
+    RowType          = CAST(''Service'' AS CHAR(7)),
+    EntityID         = s.ServiceID,
+    PrimaryName      = CAST(s.ServiceName        AS NVARCHAR(200)),
+    SecondaryName    = CAST(s.ServiceDescription AS NVARCHAR(200)),
+    ProjectID        = CAST(NULL AS INT),
+    ClientID         = CAST(NULL AS INT),
+    BusinessUnitID   = CAST(NULL AS INT),
+    BusinessClassID  = CAST(NULL AS INT),
+    ProjectTypeID    = CAST(NULL AS INT),
+    RevenueAmount    = CAST(NULL AS DECIMAL(18,2)),
+    Tags             = (
+        SELECT STRING_AGG(t.TagName, '', '') WITHIN GROUP (ORDER BY t.TagName)
+          FROM dbo.tServiceTag st
+          JOIN dbo.tServiceRef sr ON sr.ServiceRefID = st.ServiceRefID
+          JOIN dbo.tTag        t  ON t.TagID = st.TagID
+         WHERE sr.ServiceID = s.ServiceID
+    ),
+    IsActive         = s.IsActive
+  FROM dbo.tService s;
+');
+END;
+================================================================================
+SHEET: Seed Data
+================================================================================
+R2: Seed Data — Reference Tables
+R4: tBusinessUnit
+R5: BusinessUnitID | BusinessUnitName | BusinessUnitDescription | IsActive
+R6: 1 | US | U.S. Clients | 1
+R7: 2 | UK | U.K. Clients | 1
+R8: 3 | LA | Latin America Clients | 1
+R9: 4 | Global | Global Clients | 1
+R11: tBusinessClass
+R12: BusinessClassID | BusinessUnitID | BusinessClassName | BusinessClassDescription | IsActive
+R13: 1 | 1 | USRe | U.S. Reinsurance | 1
+R14: 2 | 2 | Fac | Global Retro | 1
+R15: 3 | 2 | NM Re | Non-Marine Retro | 1
+R16: 4 | 2 | NA DF | North American D&F | 1
+R17: 5 | 3 | Int DF | International D&F | 1
+R18: 6 | 2 | DUA | Delegated Authority | 1
+R19: 7 | 2 | EN | Energy | 1
+R20: 8 | 2 | MA | Marine | 1
+R21: 9 | 2 | SP Re | Specialty Re | 1
+R22: 10 | 2 | NZ | BMS Risk NZ | 1
+R23: 11 | 2 | BE | Bermuda | 1
+R24: 12 | 2 | TR | Turkey | 1
+R25: 13 | 2 | PS | Portfolio Solutions | 1
+R27: tClientType
+R28: ClientTypeID | ClientTypeName | ClientTypeDescription | IsActive
+R29: 1 | Insurance carrier | 1
+R30: 2 | Managing General Agent | 1
+R31: 3 | Reinsurer | 1
+R32: 4 | Insurance broker | 1
+R33: Reinsurance broker
+R35: tProjectType
+R36: ProjectTypeID | ProjectTypeCode | ProjectTypeDescription | IsActive
+R37: 1 | RNWL | Renewal | 1
+R38: 2 | NB | New Business | 1
+R39: 3 | Pro | Proforma | 1
+R40: 4 | AdHoc | AdHoc Analysis | 1
+R43: tUserRole
+R44: UserRoleID | UserRoleName | UserRoleDescription | IsActive
+R45: 1 | Analytics Lead | Oversees all analytics for client | 1
+R46: 2 | Analyst I | Lead Analyst | 1
+R47: 3 | Analyst II | Support Analyst | 1
+R48: 4 | Account Executive | Relationship Manager | 1
+R49: 5 | Broker I | Lead Broker | 1
+R50: 6 | Broker II | Support Broker | 1
+R51: 7 | Broker III | Support Broker | 1
+R53: tUser
+R54: 5 | FirstName | LastName | Title | Email | Phone | Company | Department | UserType | IsActive
+R55: Scott | Christian | EVP, Castrophe Analytics & Advisory | Scott.Christian@bmsgroup.com | 817-856-9797 | BMS | CAT | Internal | 1
+R56: Andrew | Siffert | SVP, Global Head of Peril Adviosry | andrew.siffert@bmsgroup.com | 952-252-0812 | BMS | CAT | Internal | 1
+R57: Divya | Anand | VP, Catastrophe Analytics & Advisory | Divya.Anand@bmsgroup.com | 256-836-1194 | BMS | CAT | Internal | 1
+R58: Ryan | Vesledahl | SVP, Head of Cat Product | Ryan.Vesledahl@bmsgroup.com | 612-479-5480 | BMS | CAT | Internal | 1
+R59: Jason | Chou | VP, Catastrophe Analytics & Advisory | Jason.Chou@bmsgroup.com | 781-493-2671 | BMS | CAT | Internal | 1
+R60: James | Rogers | VP, Catastrophe Analytics & Advisory | James.Rogers@bmsgroup.com | 224 291 5586 | BMS | CAT | Internal | 1
+R61: Mitch | Von Hoffmann | VP, Catastrophe Analytics & Advisory | Mitch.VonHoffmann@bmsgroup.com | NULL | BMS | CAT | Internal | 1
+R62: Jasmine | Weekes | Analyst | Jasmine.Weekes@bmsgroup.com | NULL | BMS | CAT | Internal | 1
+R63: Shafaath | Qureshi | VP - Senior Principal Architect | Shafaath.Qureshi@bmsgroup.com | 908-432-1609 | BMS | IT | Internal | 1
+R64: Nitesh | Singh | Team Lead | Nitesh.Singh@bmsgroup.com | NULL | BMS | CAT | Internal | 1
+R65: Anish | Singh | Sr. Specialist | Anish.Singh@bmsgroup.com | NULL | BMS | CAT | Internal | 1
+R66: Akash | Patil | Sr. Specialist | Akash.Patil@bmsgroup.com | NULL | BMS | CAT | Internal | 1
+R67: Kenneth | Bond | Analyst | chaz.bond@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R68: Jack | Long | Analyst | jack.long@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R69: Chaitanaya | Vij | Associate | manya.vij@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R70: Tenzing Rapden | Lama | Associate | rapden.lama@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R71: Qudus | Kassim | Capital Advisory Associate | qudus.kassim@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R72: Josh | Curry | Chief Growth Officer | josh.curry@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R73: James | Bradley | Director | james.bradley@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R74: Michael | O'Connell | Director | michael.oconnell@bmsgroup.com | NULL | BMS | Capital Advisory | Internal | 1
+R75: Nicholas | Carey | Associate Broker | nick.carey@bmsgroup.com | 404-270-0362 | BMS | P&C Treaty | Internal | 1
+R76: Scott | Fields | Senior Vice President | scott.fields@bmsgroup.com | 404-353-7420 | BMS | P&C Treaty | Internal | 1
+R77: Christopher | McCrary | Managing Director, Branch Manager | sean.mccrary@bmsgroup.com | 214-538-8040 | BMS | P&C Treaty | Internal | 1
+R78: Thomas | Evans | Vice President | thomas.evans@bmsgroup.com | 682-712-4934 | BMS | P&C Treaty | Internal | 1
+R79: Cody | Sigman | Vice President | cody.sigman@bmsgroup.com | 945-336-6156 | BMS | P&C Treaty | Internal | 1
+R80: Levi | Nelson | Broker | levi.nelson@bmsgroup.com | 612-417-9883 | BMS | P&C Treaty | Internal | 1
+R81: David | Cameron | Executive Vice President | david.cameron@bmsgroup.com | 612-443-2199 | BMS | P&C Treaty | Internal | 1
+R82: Nathan | Pelant | Broker | nathan.pelant@bmsgroup.com | 612-443-7245 | BMS | P&C Treaty | Internal | 1
+R83: Steven | Galleger | Managing Director, Branch Manager | Steve.Galleger@bmsgroup.com | 952-258-3936 | BMS | P&C Treaty | Internal | 1
+R84: Matthew | Blanch | Senior Vice President | matt.blanch@bmsgroup.com | 952-388-8507 | BMS | P&C Treaty | Internal | 1
+R85: Alexander | Kracht | Senior Vice President | alex.kracht@bmsgroup.com | 312-208-8243 | BMS | P&C Treaty | Internal | 1
+R86: Matthew | Cratem | Vice President | matthew.cratem@bmsgroup.com | 904-742-5241 | BMS | P&C Treaty | Internal | 1
+R87: Jack | Idelson | Broker | jack.idelson@bmsgroup.com | NULL | BMS | P&C Treaty | Internal | 1
+R88: John | Hickey | Managing Director, Branch Manager | jack.hickey@bmsgroup.com | 203-308-6333 | BMS | P&C Treaty | Internal | 1
+R89: Colin | Curran | Assistant Vice President | colin.curran@bmsgroup.com | 347-410-4513 | BMS | P&C Treaty | Internal | 1
+R90: Philip | Clementi | Broker | pj.clementi@bmsgroup.com | 347-420-4100 | BMS | P&C Treaty | Internal | 1
+R91: Carter | McFadden | Associate Broker | carter.mcfadden@bmsgroup.com | 347-429-4435 | BMS | P&C Treaty | Internal | 1
+R92: Hunter | Rotchford | Senior Vice President | hunter.rotchford@bmsgroup.com | 347-754-0552 | BMS | P&C Treaty | Internal | 1
+R93: Gavin | Brennan | Senior Vice President | gavin.brennan@bmsgroup.com | 516-528-3661 | BMS | P&C Treaty | Internal | 1
+R94: Jordi | Jefferson | Assistant Vice President | jordi.jefferson@bmsgroup.com | 646-629-3087 | BMS | P&C Treaty | Internal | 1
+R95: Charles | Ill | Vice President | charles.ill@bmsgroup.com | 646-830-4561 | BMS | P&C Treaty | Internal | 1
+R96: Frank | Belarge | Broker | frank.jbelarge@bmsgroup.com | 718-406-3084 | BMS | P&C Treaty | Internal | 1
+R97: Anthony | Blanton | Vice President | clarke.blanton@bmsgroup.com | 917-587-0479 | BMS | P&C Treaty | Internal | 1
+R98: Michael | Kearney | Broker | michael.kearney@bmsgroup.com | 917-854-1315 | BMS | P&C Treaty | Internal | 1
+R99: Reagan | Phillips | Broker | reagan.phillips@bmsgroup.com | 929-286-2044 | BMS | P&C Treaty | Internal | 1
+R100: Chase | Moresco | Vice President | chase.moresco@bmsgroup.com | 445-247-5369 | BMS | P&C Treaty | Internal | 1
+R101: Jake | LaCava | Assistant Vice President | jake.lacava@bmsgroup.com | 484-981-5267 | BMS | P&C Treaty | Internal | 1
+R102: Thomas | Spataro | Managing Director | thomas.spatarosr@bmsgroup.com | NULL | BMS | P&C Treaty | Internal | 1
+R103: Edward | Ryan | Senior Vice President | edward.ryan@bmsgroup.com | 904-921-6504 | BMS | P&C Treaty | Internal | 1
+R104: Nathaniel | Robison | Broker | nate.robison@bmsgroup.com | 215-796-7005 | BMS | P&C Treaty | Internal | 1
+R105: Tom | Spataro | Vice President | tom.spatarojr@bmsgroup.com | NULL | BMS | P&C Treaty | Internal | 1
+R106: Christa | Coletti | Managing Director, Branch Manager | christa.coletti@bmsgroup.com | 215-688-1417 | BMS | P&C Treaty | Internal | 1
+R107: Kristin | Callahan | Senior Vice President | kristin.callahan@bmsgroup.com | 267-253-1550 | BMS | P&C Treaty | Internal | 1
+R108: Julie | Weiss | Assistant Vice President | julie.weiss@bmsgroup.com | 267-582-4788 | BMS | P&C Treaty | Internal | 1
+R109: Denise | Fratanduono | Vice President | denise.fratanduono@bmsgroup.com | 267-738-1162 | BMS | P&C Treaty | Internal | 1
+R110: John | Faustman | Assistant Vice President | john.faustmanjr@bmsgroup.com | 267-825-0815 | BMS | P&C Treaty | Internal | 1
+R111: Matthew | O'Connor | Associate Broker | matt.oconnor@bmsgroup.com | 367-251-4917 | BMS | P&C Treaty | Internal | 1
+R112: David | Galleger | Executive Vice President | dave.galleger@bmsgroup.com | 469-933-4331 | BMS | P&C Treaty | Internal | 1
+R113: Christopher | Ervey | Executive Vice President | chris.ervey@bmsgroup.com | 562-393-3628 | BMS | P&C Treaty | Internal | 1
+R114: Nathan | Henke | Assistant Vice President | nathan.henke@bmsgroup.com | 612-946-1964 | BMS | P&C Treaty | Internal | 1
+R115: Mark | LaVoie | Senior Vice President | mark.lavoie@bmsgroup.com | 320-342-8071 | BMS | P&C Treaty | Internal | 1
+R116: Jaclyn | Clemson | Executive Vice President | micki.clemson@bmsgroup.com | 612-804-6609 | BMS | P&C Treaty | Internal | 1
+R117: Bennett | Soderberg | Associate Broker | bennett.soderberg@bmsgroup.com | 952-233-1340 | BMS | P&C Treaty | Internal | 1
+R118: William | Penn | Executive Vice President | william.penn@bmsgroup.com | 630-796-5362 | BMS | Prolink | Internal | 1
+R119: John | Speckman | Head of Programs | john.speckman@bmsgroup.com | 917-696-8315 | BMS | Prolink | Internal | 1
+R120: Brenda | Martinez-Cox | Technical Support Associate | brenda.martinez-cox@bmsgroup.com | 929-618-9414 | BMS | Prolink | Internal | 1
+R121: Shruti | Sem | Managing Director | shruti.sem@bmsgroup.com | 267-374-4438 | BMS | Prolink | Internal | 1
+R122: Andrew | Justice | Managing Director | andy.justice@bmsgroup.com | 214-536-0089 | BMS | P&C Treaty | Internal | 1
+R123: Peter | Magliaro | EVP, Head of Actuarial Services | Peter.Magliaro@bmsgroup.com | NULL | BMS | Actuarial Services | Internal | 1
+R124: Simon | Chowaniec | Senior Vice President Actuary | Simon.Chowaniec@bmsgroup.com | 972-322-8418 | BMS | Actuarial Services | Internal | 1
+R125: Greg | Spindell | Executive Vice President | Greg.Spindell@bmsgroup.com | NULL | BMS | Actuarial Services | Internal | 1
+R126: Clare | Whitlam | Executive Vice President | Clare.Whitlam@bmsgroup.com | 415-734-8931 | BMS | Actuarial Services | Internal | 1
+R127: Kurt | Johnson | Chief Actuary | Kurt.Johnson@bmsgroup.com | 612-993642 | BMS | Actuarial Services | Internal | 1
+R128: Joe | Tripodi | Senior Vice President Actuary | Joe.Tripodi@bmsgroup.com | 609-647-2400 | BMS | Actuarial Services | Internal | 1
+R129: Meghan | Aydin | Vice President Actuary | Meghan.Aydin@bmsgroup.com | 718-687-3746 | BMS | Actuarial Services | Internal | 1
+R130: Chase | Benoist | Vice President | Chase.Benoist@bmsgroup.com | 470-494-9596 | BMS | Actuarial Services | Internal | 1
+R131: TJ | Rogers | Vice President | TJ.Rogers@bmsgroup.com | 612-930-6337 | BMS | Actuarial Services | Internal | 1
+R132: Daniel | Tully | Actuary | Daniel.Tully@bmsgroup.com | 44-20-7480-4389 | BMS | Actuarial Services | Internal | 1
+R133: Anna | Kazachka | Actuarial Senior Analyst | Anna.Kazachka@bmsgroup.com | 469-607184 | BMS | Actuarial Services | Internal | 1
+R134: Wei | Sheng | Actuarial Senior Analyst | Wei.Sheng@bmsgroup.com | 612-479-5968 | BMS | Actuarial Services | Internal | 1
+R135: Genieva | Beckstrand | Actuarial Senior Analyst | Genieva.Beckstrand@bmsgroup.com | 952-463-3856 | BMS | Actuarial Services | Internal | 1
+R136: Sy | Neeley | Senior Actuarial Analyst | Sy.Neeley@bmsgroup.com | 469-560-3305 | BMS | Actuarial Services | Internal | 1
+R137: Tony | Haack | Intern | Tony.Haack@bmsgroup.com | NULL | BMS | Actuarial Services | Internal | 1
+R138: James | Mills | Senior Vice President – Reinsurance Platforms | James.Mills@bmsgroup.com | 469 381-0493 | BMS Re | IT | Internal | 1
+================================================================================
+SHEET: Delete Policy
+================================================================================
+R2: Delete Policy — Pattern 4 (Hybrid)
+R4: Tier | Tables | Strategy | Notes
+R5: Lookups | tBusinessUnit, tBusinessClass, tClientCategory, tClientType, tProjectType, tServiceCategory, tUserRole, tStatusType, tTag | Block (NO ACTION) | Use IsActive=0 to retire. Never physically delete — breaks historical FKs.
+R6: Business entities | tClient, tProject, tUser, tUserGroup, tService | Soft delete | IsDeleted=1 + DeletedDate stamped. Filtered views (vClient, vProject, etc.) hide deleted rows. UNIQUE constraints on natural keys (Email, ProjectNumber, UserGroupNumber) need to be filtered: WHERE IsDeleted=0.
+R7: Owned children | tUserAddress, tProjectService, tUserGroupUser, tServiceTag, tBusinessClassTag, tStatusAppliesTo, tProjectRevenue, tProjectNote | CASCADE | ON DELETE CASCADE on FK to parent. Lifecycle is bound to parent — no independent meaning. When parent is soft-deleted, children stay (only parent's IsDeleted flips); when parent is hard-deleted, children go with it.
+R8: Status / classification | tStatus | Block (NO ACTION) | Use IsActive=0. Status rows referenced by many business entities — deletion would orphan them.
+R11: Per-FK Cascade Rules
+R13: Child Table | FK | Parent | Rule
+R14: tClient | BusinessUnitID | tBusinessUnit | NO ACTION (lookup blocked)
+R15: tClient | BusinessClassID | tBusinessClass | NO ACTION
+R16: tClient | ClientCategoryID | tClientCategory | NO ACTION
+R17: tClient | ClientTypeID | tClientType | NO ACTION
+R18: tProject | ClientID | tClient | NO ACTION (soft-delete only)
+R19: tProject | UGID | tUserGroup | NO ACTION (soft-delete only)
+R20: tProject | OwnerUserID | tUser | NO ACTION (soft-delete only)
+R21: tUserGroupUser | UGID | tUserGroup | CASCADE (owned child)
+R22: tUserGroupUser | UserID | tUser | CASCADE (owned child)
+R23: tUserAddress | UserID | tUser | CASCADE (owned child)
+R24: tProjectService | ProjectID | tProject | CASCADE (owned child)
+R25: tProjectService | ServiceID | tService | NO ACTION (service may be deleted independently)
+R26: tServiceTag | ServiceID | tService | CASCADE (owned child)
+R27: tServiceTag | TagID | tTag | NO ACTION
+R28: tBusinessClassTag | BusinessClassID | tBusinessClass | CASCADE (owned child)
+R29: tBusinessClassTag | TagID | tTag | NO ACTION
+R30: tStatusAppliesTo | StatusID | tStatus | CASCADE (owned child)
+R31: tStatusAppliesTo | StatusTypeID | tStatusType | CASCADE (owned child)
+R32: Anywhere | StatusID | tStatus | NO ACTION (used everywhere)
+R33: tProjectRevenue | ProjectID | tProject | CASCADE (owned child)
+R34: tProjectRevenue | RecordedBy | tUser | NO ACTION (preserve audit trail)
+R35: tProjectNote | ProjectID | tProject | CASCADE (owned child)
+R36: tProjectNote | UserID | tUser | NO ACTION (preserve authorship)
+R37: tActivityLog | UserID | tUser | NO ACTION (preserve audit trail; users only soft-deleted anyway)
+R40: Implementation Checklist
+R42: 1 | Add IsDeleted BIT NOT NULL DEFAULT 0, DeletedDate DATETIME NULL to tClient, tProject, tUser, tUserGroup, tService.
+R43: 2 | Filtered UNIQUE indexes on natural keys: CREATE UNIQUE INDEX UQ_tClient_Email ON tClient(Email) WHERE IsDeleted = 0;
+R44: 3 | Views: vClient, vProject, vUser, vUserGroup, vService — each SELECT * WHERE IsDeleted = 0.
+R45: 4 | usp_*_SoftDelete: set IsDeleted=1, DeletedDate=GETDATE(); insert tActivityLog row with Action='SoftDelete'.
+R46: 5 | ON DELETE CASCADE on FKs in the 'Owned children' tier per table above.
+R47: 6 | usp_*_Restore: flip IsDeleted=0, clear DeletedDate; validate no UNIQUE conflict with active rows.
+================================================================================
+SHEET: Test Scenarios
+================================================================================
+R2: Test Scenarios
+R4: ID | Scenario | Steps | Expected Outcome
+R6: HAPPY PATH
+R7: HP-01 | Add new client from scratch | Call usp_Client_Add with BU='Acme Holdings', BC='Industrial', Category='Premier', Type='Enterprise', ClientName='Acme Corp'. | Lookups auto-created if missing. New ClientID returned. vClient shows the new row. tActivityLog has Insert row.
+R8: HP-02 | Create user group + add members + assign to project | 1) usp_UserGroup_Add 2) usp_User_Add (Internal) x3 3) usp_UserGroup_AddMember for each user 4) usp_Project_Add referencing the group. | Group has 3 members. Project FKs UGID. usp_UserGroup_ListMembers returns 3 rows with role names.
+R9: HP-03 | Add project with services and revenue history | 1) usp_Project_Add 2) usp_Project_AddService x3 3) usp_Project_AddRevenue with Revenue=100000 4) usp_Project_AddRevenue with Revenue=120000 next month. | tProjectService has 3 rows. tProjectRevenue has 2 rows. usp_Project_GetFull returns latest revenue=120000 + 3 services.
+R10: HP-04 | Log a call note on a project | usp_Project_AddNote with NoteType='Call', NoteText='Discussed renewal terms', IsPinned=1. | usp_Project_ListNotes returns this note first (pinned).
+R11: HP-05 | Resolve BU from client | Query vClient_WithBU for a client; observe BU name. | BU resolved correctly via tBusinessClass join. No tClient.BusinessUnitID column referenced.
+R13: EDGE CASES
+R14: EC-01 | Duplicate project number | Add Project with ProjectNumber='P-1001'. Try to add another active project with same number. | Second insert fails on filtered UNIQUE index. THROWs business-rule error 50001 'Project number already exists'.
+R15: EC-02 | Reuse soft-deleted natural key | Soft-delete project 'P-1001'. Add new project with ProjectNumber='P-1001'. | Second insert succeeds (filtered UNIQUE excludes deleted row). Both rows exist in base table; vProject shows only the new one.
+R16: EC-03 | Restore would collide | After EC-02, attempt usp_Project_Restore on the original 'P-1001'. | THROWs 'Cannot restore: active project with same ProjectNumber exists'.
+R17: EC-04 | Internal user with no BU | usp_User_Add with UserType='Internal', BusinessUnitID=NULL, ClientID=NULL. | THROWs CHECK constraint violation. App receives parseable error.
+R18: EC-05 | External user with both BU and Client | usp_User_Add with UserType='External', BusinessUnitID=5, ClientID=10. | THROWs XOR rule violation: External requires ClientID, BusinessUnitID must be NULL.
+R19: EC-06 | Switch user from Internal to External | usp_User_Update flipping UserType. Old BusinessUnitID still populated. | SP must NULL out BusinessUnitID and require ClientID to be supplied. If ClientID not provided in same call, THROW.
+R20: EC-07 | Soft-delete user who owns a project | Make UserX the OwnerUserID on Project P1. Call usp_User_SoftDelete(UserX). | THROWs 'Cannot delete: user owns active projects'. Caller must reassign first.
+R21: EC-08 | Status not valid for entity | Try usp_Client_Update with StatusID corresponding to 'P' (Pending, ProjectType only per tStatusAppliesTo). | usp_Status_ValidateForEntity returns 0; SP THROWs 'Status not valid for Client entity'.
+R22: EC-09 | Deactivate BU with active BusinessClasses | usp_BusinessUnit_SetActive(@BUID, @IsActive=0) when one or more tBusinessClass rows reference it. | THROWs 'Cannot deactivate: active BusinessClasses reference this BU'.
+R23: EC-10 | Add duplicate group member | usp_UserGroup_AddMember(UGID=1, UserID=5). Then call same again. | Second call hits composite PK violation. SP catches and either silently succeeds (idempotent) or THROWs — receiving agent should pick one and document.
+R24: EC-11 | Revenue with backdated EffectiveDate | Project has Revenue rows at 2025-01-01 ($100k) and 2025-06-01 ($120k). Insert new row with EffectiveDate=2025-03-15, Revenue=$110k. | Insert succeeds. usp_Project_GetRevenueHistory returns 3 rows in date order. usp_Project_GetFull still returns the most recent row by EffectiveDate ($120k from June).
+R25: EC-12 | Service used by project then soft-deleted | Add Service S1 to Project P1. usp_Service_SoftDelete(S1). | Service IsDeleted=1. tProjectService row remains. usp_Project_GetFull still shows S1 in services list (with a 'deleted' flag if surfaced).
+R27: INTEGRITY CHECKS
+R28: IC-01 | BU/BC consistency cannot drift | Create Client linked to BusinessClass 'Industrial' (BU=Acme). Change tBusinessClass 'Industrial' to point at BU=Globex via usp_BusinessClass_Update. | Either SP blocks the change (if Clients are attached) OR the change succeeds and ALL attached clients now report BU=Globex via vClient_WithBU. There is no inconsistency — single source of truth holds.
+R29: IC-02 | Soft-delete is reversible without data loss | Soft-delete Client C1 (which has Projects, Notes, Revenue). Wait. Restore C1. | C1 visible again in vClient. All child Projects/Notes/Revenue still attached. Activity log shows SoftDelete and Restore actions.
+R30: IC-03 | Hard CASCADE only fires on hard delete | Soft-delete a UserGroup that has tUserGroupUser rows. | tUserGroupUser rows are untouched. Hard DELETE the group (if ever permitted via admin SP) would CASCADE remove members.
+R31: IC-04 | Activity log captures every write | Insert a client, update its name, soft-delete it, restore it. Query tActivityLog for that ClientID. | Returns 4 rows: Insert, Update (with FieldName='ClientName', OldValue, NewValue), SoftDelete, Restore. All stamped with correct UserID.
+R32: IC-05 | Views hide deleted rows everywhere | Soft-delete one of each: Client, Project, User, UserGroup, Service. Query vClient/vProject/vUser/vUserGroup/vService. | None of the deleted rows appear in any view. Base tables still hold them.
+R33: IC-06 | All FK on-delete rules behave per spec | For each FK on the Delete Policy sheet, attempt a hard DELETE on the parent and verify the child behaves as specified (CASCADE removes children; NO ACTION blocks). | Every FK matches its declared rule. Note: parents in the 'Business entities' tier are never hard-deleted in normal operation; test in a sandbox.
+R34: IC-07 | Transactions roll back on partial failure | Inject a fault mid-way through usp_Client_Add (e.g. invalid ClientType param after successful BU/BC creation). Verify the BU/BC rows were NOT created if they didn't already exist. | Transaction rolled back — no orphan lookup rows. Activity log has no entry. tClient empty for that name.
+R35: IC-08 | Revenue history shows correct current value | Insert revenue rows out of order (Jan, March, then February). Query latest revenue per usp_Project_Get. | Always returns the row with MAX(EffectiveDate), regardless of insert order.
+R36: IC-09 | User XOR rule survives updates | Create Internal user (BU set). Update Title only (no UserType/BU/Client change). | Update succeeds without re-validating the XOR. Then change UserType to External without supplying ClientID — THROWs.
+R37: IC-10 | Status validation everywhere | For each entity type (Client, Project, UserGroup, User, Service), attempt to set a StatusID whose tStatusAppliesTo does NOT include that EntityType. | All five SPs THROW the same standardized 'Status not valid for entity' error.
+================================================================================
+SHEET: ERD Diagram
+================================================================================
+R2: CMS ERD v2 — Relationship Map
+R3: All foreign-key joins, cardinality, and ON DELETE behavior. See ERD v2 for column-level schema.
+R5: FK Relationship Matrix
+R6: # | Child Table | FK Column | → | Parent Table | Parent Key | Cardinality | ON DELETE | Notes
+R7: 1 | tBusinessClass | BusinessUnitID | → | tBusinessUnit | BusinessUnitID | N:1 | NO ACTION | Class belongs to one BU
+R8: 2 | tClient | BusinessClassID | → | tBusinessClass | BusinessClassID | N:1 | NO ACTION | BU derived via BusinessClass
+R9: 3 | tClient | AccountExecutiveID | → | tUser | UserID | N:1 | NO ACTION | AE assigned to client
+R10: 4 | tClient | AnalyticsLeadID | → | tUser | UserID | N:1 | NO ACTION | Analytics lead assigned to client
+R11: 5 | tProject | ClientID | → | tClient | ClientID | N:1 | CASCADE | Projects owned by client
+R12: 6 | tProject | UserGroupID | → | tUserGroup | UserGroupID | N:1 | NO ACTION | Project team
+R13: 7 | tProject | ProjectTypeID | → | tProjectType | ProjectTypeID | N:1 | NO ACTION | Lookup
+R14: 8 | tProject | StatusID | → | tStatus | StatusID | N:1 | NO ACTION | Lifecycle state
+R15: 9 | tProject | OwnerUserID | → | tUser | UserID | N:1 | NO ACTION | Independent of group membership
+R16: 10 | tUserGroup | UserRoleID | → | tUserRole | UserRoleID | N:1 | NO ACTION | Group-level role
+R17: 11 | tUserGroupUser | UserGroupID | → | tUserGroup | UserGroupID | N:1 | CASCADE | Junction (composite PK)
+R18: 12 | tUserGroupUser | UserID | → | tUser | UserID | N:1 | CASCADE | Junction (composite PK)
+R19: 13 | tUserGroupUser | UserRoleID | → | tUserRole | UserRoleID | N:1 | NO ACTION | Per-member role override
+R20: 14 | tUserAddress | UserID | → | tUser | UserID | N:1 | CASCADE | User can have multiple addresses
+R21: 15 | tService | ServiceCategoryID | → | tServiceCategory | ServiceCategoryID | N:1 | NO ACTION | Replaces free-text category
+R22: 16 | tProjectService | ProjectID | → | tProject | ProjectID | N:1 | CASCADE | Junction (composite PK)
+R23: 17 | tProjectService | ServiceID | → | tService | ServiceID | N:1 | NO ACTION | Junction (composite PK)
+R24: 18 | tServiceTag | ServiceID | → | tService | ServiceID | N:1 | CASCADE | Junction (composite PK)
+R25: 19 | tServiceTag | TagID | → | tTag | TagID | N:1 | NO ACTION | Shared tag dictionary
+R26: 20 | tBusinessClassTag | BusinessClassID | → | tBusinessClass | BusinessClassID | N:1 | CASCADE | Junction (composite PK)
+R27: 21 | tBusinessClassTag | TagID | → | tTag | TagID | N:1 | NO ACTION | Shared tag dictionary
+R28: 22 | tStatus | StatusTypeID | → | tStatusType | StatusTypeID | N:1 | NO ACTION | Project / Universal scope
+R29: 23 | tStatusAppliesTo | StatusID | → | tStatus | StatusID | N:1 | CASCADE | Junction (composite PK)
+R30: 24 | tStatusAppliesTo | EntityTypeID | → | tStatusType | StatusTypeID | N:1 | NO ACTION | Which entity the status applies to
+R31: 25 | tProjectRevenue | ProjectID | → | tProject | ProjectID | N:1 | CASCADE | Revenue history
+R32: 26 | tProjectRevenue | RecordedBy | → | tUser | UserID | N:1 | NO ACTION | Audit — who recorded
+R33: 27 | tProjectNote | ProjectID | → | tProject | ProjectID | N:1 | CASCADE | User-authored notes
+R34: 28 | tProjectNote | UserID | → | tUser | UserID | N:1 | NO ACTION | Note author
+R35: 29 | tActivityLog | UserID | → | tUser | UserID | N:1 | NO ACTION | EntityType/EntityID polymorphic — no FK
+R36: 30 | tClientRef | ClientID | → | tClient | ClientID | N:1 | CASCADE | Client classification rows
+R37: 31 | tClientRef | ClientTypeID | → | tClientType | ClientTypeID | N:1 | NO ACTION | Client type lookup
+R38: 32 | tClientRef | ClientTypeRefID | → | tClientTypeRef | ClientTypeRefID | N:1 | NO ACTION | Client type ref lookup
+R40: Visual ERD
+R41: Tables grouped by domain. Lines show FK joins (arrow points to parent). See legend below.
+R85: Legend
+R86: Lookup | Reference / enum tables
+R87: Core / Entity | Business entities (Client, Project, Service, BusinessClass, User, UserGroup)
+R88: Junction (FK) | Many-to-many bridge / reference tables
+R89: History / Log | Revenue history, notes, audit log
+R91: → | Arrow points from child (FK) to parent (PK)
