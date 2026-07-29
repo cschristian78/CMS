@@ -294,7 +294,14 @@ public sealed class DashboardRepository : IDashboardRepository
         string? projectTypeName = null,
         CancellationToken cancellationToken = default)
     {
-        var sql = new StringBuilder("SELECT * FROM dbo.vProject_Current WHERE 1 = 1");
+        var sql = new StringBuilder("""
+            SELECT
+                CAST(ISNULL(tp.IsOnline, 0) AS BIT) AS ProjectOnline,
+                v.*
+            FROM dbo.vProject_Current AS v
+            LEFT JOIN dbo.tProject AS tp ON tp.ProjectID = v.ProjectID
+            WHERE 1 = 1
+            """);
         var parameters = new List<SqlParameter>();
         ClientProjectListFilterSql.AppendFilters(
             sql,

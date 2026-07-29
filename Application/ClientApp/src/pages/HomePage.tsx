@@ -52,7 +52,16 @@ function findClientIdColumnIndex(columns: string[]): number {
 }
 
 function findIsOnlineColumnIndex(columns: string[]): number {
+  const preferred = findGridColumnIndex(columns, 'ProjectOnline');
+  if (preferred >= 0) {
+    return preferred;
+  }
   return findGridColumnIndex(columns, 'IsOnline');
+}
+
+function isOnlineStatusColumn(columnName: string): boolean {
+  const n = normalizeColumnName(columnName);
+  return n === 'projectonline' || n === 'isonline';
 }
 
 function cellIsTruthy(raw: string | number | boolean | null | undefined): boolean {
@@ -64,7 +73,7 @@ function cellIsTruthy(raw: string | number | boolean | null | undefined): boolea
   }
   if (typeof raw === 'string') {
     const t = raw.trim().toLowerCase();
-    return t === '1' || t === 'true' || t === 'yes' || t === 'online';
+    return t === '1' || t === 'true' || t === 'yes' || t === 'online' || t === 'y';
   }
   return false;
 }
@@ -218,6 +227,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const [list, setList] = useState<ClientProjectListModel | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
+  /** Local online overrides so the green dot updates immediately even if the grid column is missing. */
+  const [onlineOverrides, setOnlineOverrides] = useState<Record<number, boolean>>({});
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [sortColumnIndex, setSortColumnIndex] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<ClientProjectListSortDirection>('asc');
@@ -268,6 +279,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         try {
           const data = await apiGet<ClientProjectListModel>(listUrl);
           setList(normalizeClientProjectListModel(data));
+          setOnlineOverrides({});
           setSelectedRowIndex(null);
         } catch (e) {
           setList(null);
@@ -353,15 +365,16 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     return findIsOnlineColumnIndex(list.columns);
   }, [list?.columns]);
 
-  /** Data columns shown in the grid (IsOnline is rendered as the leading green-dot column). */
+  /** Data columns shown in the grid (online flags are rendered as the leading green-dot column). */
   const visibleColumnIndexes = useMemo(() => {
     if (!list?.columns?.length) {
       return [] as number[];
     }
     return list.columns
-      .map((_, i) => i)
-      .filter((i) => i !== isOnlineColumnIndex);
-  }, [list?.columns, isOnlineColumnIndex]);
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => !isOnlineStatusColumn(c))
+      .map(({ i }) => i);
+  }, [list?.columns]);
 
   const displayRows = useMemo((): (string | number | boolean | null)[][] => {
     if (!list?.rows?.length) {
@@ -515,6 +528,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         return;
       }
       const nextOnline = !currentlyOnline;
+      setOnlineOverrides((prev) => ({ ...prev, [projectId]: nextOnline }));
       try {
         const result = await apiPostJson<{ message: string; isOnline: boolean }>(
           `/api/projects/${projectId}/online`,
@@ -541,6 +555,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         });
         flash('success', result.message ?? (nextOnline ? 'Project is now Online.' : 'Project is now Offline.'));
       } catch (err) {
+        setOnlineOverrides((prev) => ({ ...prev, [projectId]: currentlyOnline }));
         flash('error', err instanceof ApiError ? err.message : 'Could not update online status.');
       }
     },
@@ -951,10 +966,14 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                   {displayRows.map((row, ri) => {
                     const rowProjectId =
                       projectIdColumnIndex >= 0 ? parseProjectIdFromRow(row, projectIdColumnIndex) : null;
-                    const isOnline =
+                    const fromRow =
                       isOnlineColumnIndex >= 0 && isOnlineColumnIndex < row.length ?
                         cellIsTruthy(row[isOnlineColumnIndex])
                       : false;
+                    const isOnline =
+                      rowProjectId !== null && Object.prototype.hasOwnProperty.call(onlineOverrides, rowProjectId) ?
+                        onlineOverrides[rowProjectId]
+                      : fromRow;
                     const rowKey =
                       rowProjectId !== null ? `project-${rowProjectId}` : `row-${ri}-${String(row[0] ?? '')}`;
                     return (

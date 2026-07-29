@@ -2216,11 +2216,14 @@ textarea {
 button.home-online-dot {
     appearance: none;
     -webkit-appearance: none;
+    background-color: #c8d2dc;
 }
 
-.home-online-dot--on {
-    background: #22a045;
-    border-color: #1a7a34;
+.home-online-dot--on,
+button.home-online-dot.home-online-dot--on {
+    background: #22a045 !important;
+    background-color: #22a045 !important;
+    border-color: #1a7a34 !important;
     box-shadow: 0 0 0 2px rgba(34, 160, 69, 0.28);
 }
 
