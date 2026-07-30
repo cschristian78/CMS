@@ -90,7 +90,7 @@ function homeProjectListCellClass(columnName: string): string {
     n === 'businessunitname' ||
     n === 'businessclassname' ||
     n === 'segmentname' ||
-    n === 'clientstatus' ||
+    n === 'statusdescription' ||
     n === 'projectstatus'
   ) {
     return `${base} ${base}--fit-one-line`;
@@ -1061,7 +1061,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               CSV columns (no IDs): <strong>ClientName</strong>, <strong>ProjectNumber</strong>,{' '}
               <strong>ProjectName</strong>, <strong>ProjectType</strong>, <strong>ProjectStatus</strong> (required);
               optional client fields <strong>ClientShortName</strong>, <strong>ClientDescription</strong>,{' '}
-              <strong>ClientStatus</strong> (Active / Inactive / Prospect),{' '}
+              <strong>Status</strong> (<strong>StatusDescription</strong> from ClientRef → tStatus),{' '}
               <strong>BusinessUnit</strong>, <strong>BusinessClass</strong>, <strong>ClientType</strong> (all three
               together for new clients; must match tBusinessUnit / tBusinessClass / tClientType for existing clients),{' '}
               <strong>AccountExecutiveEmail</strong>, <strong>AnalyticsLeadEmail</strong>; optional project fields{' '}

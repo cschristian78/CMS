@@ -9,7 +9,7 @@ namespace ClientManagementSystem.Data;
 public sealed class HomeRepository : IHomeRepository
 {
     private const string ActiveClientProjectPredicate = """
-         AND LTRIM(RTRIM(CAST([ClientStatus] AS NVARCHAR(50)))) = N'Active'
+         AND LTRIM(RTRIM(CAST([StatusDescription] AS NVARCHAR(50)))) = N'Active'
          AND LTRIM(RTRIM(CAST([ProjectStatus] AS NVARCHAR(50)))) = N'Active'
         """;
 
@@ -85,10 +85,11 @@ public sealed class HomeRepository : IHomeRepository
             : new { UniqueClientCount = 0, DistinctProjectCount = 0, TotalProjectRevenue = 0d };
 
         const string activeClientCountSql = """
-            SELECT CAST(COUNT(*) AS int) AS UniqueClientCount
+            SELECT CAST(COUNT(DISTINCT c.ClientID) AS int) AS UniqueClientCount
               FROM dbo.tClient AS c
-             WHERE c.IsActive = 1
-               AND c.ClientStatus = N'Active'
+              INNER JOIN dbo.tClientRef AS cr ON cr.ClientID = c.ClientID AND cr.IsActive = 1
+              INNER JOIN dbo.tStatus AS st ON st.StatusID = cr.StatusID
+             WHERE st.StatusDescription = N'Active'
             """;
 
         var activeClientCount = await _db.QueryTextAsync(

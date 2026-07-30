@@ -67,7 +67,7 @@ public sealed class ClientProjectListService : IClientProjectListService
 
         var businessUnitsFromView = await SafeDistinctFromViewAsync("BusinessUnitName", cancellationToken);
         var businessClassesFromView = await SafeDistinctFromViewAsync("BusinessClassName", cancellationToken);
-        var statusFromView = await SafeDistinctFromViewAsync("ClientStatus", cancellationToken);
+        var statusFromView = await SafeDistinctFromViewAsync("StatusDescription", cancellationToken);
         var clientsFromView = await SafeDistinctFromViewAsync("ClientName", cancellationToken);
         var projectTypesFromView = await SafeDistinctFromViewAsync("PTDescription", cancellationToken);
 
@@ -82,7 +82,7 @@ public sealed class ClientProjectListService : IClientProjectListService
                     .ToList() as IReadOnlyList<string?>)
             : [];
         var statusFallback = statusFromView.Count == 0
-            ? await SafeAsync("ClientStatus/tStatus", async () =>
+            ? await SafeAsync("StatusDescription/tStatus", async () =>
                 (await _referenceData.GetStatusesAsync(cancellationToken)).Select(StatusLabelForListFilter).ToList() as IReadOnlyList<string?>)
             : [];
         var clientsFallback = clientsFromView.Count == 0

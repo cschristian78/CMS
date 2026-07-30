@@ -321,7 +321,7 @@ public sealed class DashboardRepository : IDashboardRepository
     private static bool IsClientProjectListFilterColumn(string columnName) =>
         string.Equals(columnName, "BusinessUnitName", StringComparison.OrdinalIgnoreCase)
         || string.Equals(columnName, "BusinessClassName", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(columnName, "ClientStatus", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(columnName, "StatusDescription", StringComparison.OrdinalIgnoreCase)
         || string.Equals(columnName, "ProjectStatus", StringComparison.OrdinalIgnoreCase)
         || string.Equals(columnName, "ClientName", StringComparison.OrdinalIgnoreCase)
         || string.Equals(columnName, "PTDescription", StringComparison.OrdinalIgnoreCase);

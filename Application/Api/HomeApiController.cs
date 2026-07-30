@@ -66,7 +66,7 @@ public sealed class HomeApiController : ControllerBase
             _logger.LogError(ex, "Home API client-project-list options failed.");
             var diagnostic = BuildTemporaryDiagnosticDetail(ex);
             return Problem(
-                detail: $"Could not load business unit (BUName), business class (BCName), client status (ClientStatus), client name, or project type (PTDescription) filter options from dbo.vProject_Current. TEMP DIAGNOSTIC: {diagnostic}",
+                detail: $"Could not load business unit (BUName), business class (BCName), status (StatusDescription), client name, or project type (PTDescription) filter options from dbo.vProject_Current. TEMP DIAGNOSTIC: {diagnostic}",
                 title: "Operation failed",
                 statusCode: StatusCodes.Status500InternalServerError);
         }

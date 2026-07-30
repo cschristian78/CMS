@@ -10,9 +10,8 @@ export function clientProjectListColumnHeaderForDisplay(columnName: string): str
   if (compact === 'segmentid') {
     return 'BusinessUnitID';
   }
-  // Legacy materialized list column; dbo.vProject_Current exposes ClientStatus instead.
   if (compact === 'statusdescription') {
-    return 'ClientStatus';
+    return 'Status';
   }
   if (compact === 'revenuetier') {
     return 'Revenue Tier';

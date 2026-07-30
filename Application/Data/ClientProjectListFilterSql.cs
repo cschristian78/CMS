@@ -4,11 +4,10 @@ using Microsoft.Data.SqlClient;
 namespace ClientManagementSystem.Data;
 
 /// <summary>Shared WHERE fragments for <c>dbo.vProject_Current</c>
-/// (BU / BC / client-status / online / client / project-type).
-/// The legacy <c>dbo.tClientProjectList</c> table is retired in CMS_PhaseI_All; filtering is
-/// now driven by the projection of <c>vProject_Current</c> which exposes <c>BUName</c>,
-/// <c>BCName</c>, <c>ClientStatus</c> (alias for the client&apos;s <c>StatusDescription</c>),
-/// <c>ClientName</c>, and <c>PTDescription</c>. Online status comes from <c>dbo.tProject.IsOnline</c>.</summary>
+/// (BU / BC / status description / online / client / project-type).
+/// Client status on Main is <c>StatusDescription</c> from
+/// <c>tClientRef.StatusID → tStatus</c> (not <c>tClient.ClientStatus</c> / <c>IsActive</c>).
+/// Online status comes from <c>dbo.tProject.IsOnline</c>.</summary>
 internal static class ClientProjectListFilterSql
 {
     public static void AppendFilters(
@@ -39,8 +38,8 @@ internal static class ClientProjectListFilterSql
         if (!string.IsNullOrWhiteSpace(statusName))
         {
             sql.Append(
-                " AND LTRIM(RTRIM(CAST([ClientStatus] AS NVARCHAR(500)))) = LTRIM(RTRIM(@ClientStatus))");
-            parameters.Add(SqlParameterFactory.NVarChar("@ClientStatus", 500, statusName.Trim()));
+                " AND LTRIM(RTRIM(CAST([StatusDescription] AS NVARCHAR(500)))) = LTRIM(RTRIM(@StatusDescription))");
+            parameters.Add(SqlParameterFactory.NVarChar("@StatusDescription", 500, statusName.Trim()));
         }
 
         if (isOnline.HasValue)

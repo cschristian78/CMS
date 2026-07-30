@@ -6,7 +6,7 @@ namespace ClientManagementSystem.ViewModels;
 /// <list type="bullet">
 ///   <item><see cref="BusinessUnitNames"/> ← <c>BUName</c></item>
 ///   <item><see cref="BusinessClassNames"/> ← <c>BCName</c></item>
-///   <item><see cref="StatusNames"/> ← <c>ClientStatus</c></item>
+///   <item><see cref="StatusNames"/> ← <c>StatusDescription</c> (tClientRef.StatusID → tStatus)</item>
 ///   <item><see cref="ClientNames"/> ← <c>ClientName</c></item>
 ///   <item><see cref="ProjectTypeNames"/> ← <c>PTDescription</c></item>
 /// </list>

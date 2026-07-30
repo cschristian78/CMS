@@ -27,7 +27,6 @@ public interface IClientRepository
 
     Task<int> GetProjectCountAsync(int clientId, CancellationToken cancellationToken = default);
 
-    /// <summary>Bulk loader for CSV imports. Each row is inserted via <c>usp_Client_Add</c>
-    /// inside a single transaction.</summary>
+    /// <summary>Bulk loader for CSV imports. Each row is inserted via <c>usp_Client_Create</c>.</summary>
     Task BulkInsertAsync(IReadOnlyList<Client> clients, CancellationToken cancellationToken = default);
 }

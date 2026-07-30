@@ -4580,6 +4580,9 @@ BEGIN
       vProjectList — one row per active project, wide denormalized shape for the home /
       dashboard grid (same contract as the legacy dbo.vProject_Current).
 
+      Client lifecycle status on the Main grid is StatusDescription from
+      dbo.tClientRef.StatusID → dbo.tStatus (not tClient.ClientStatus / IsActive).
+
       Dynamic columns:
         - One column per active dbo.tUserRole.UserRoleName: members of the project''s
           inferred user group (dbo.tUserGroupRef), pivoted like the Phase I proc.
@@ -4724,10 +4727,10 @@ CREATE OR ALTER VIEW dbo.vProjectList
 AS
 SELECT
     bu.BusinessUnitName,
-    BusinessClassName = COALESCE(NULLIF(LTRIM(RTRIM(bc.BusinessClassDescription)), N''), bc.BusinessClassName),
+    BusinessClassName = COALESCE(NULLIF(LTRIM(RTRIM(bc.BusinessClassDescription)), N''''), bc.BusinessClassName),
     c.ClientID,
     c.ClientName,
-    ClientStatus = CASE WHEN c.IsActive = 1 THEN CAST(N''Active'' AS NVARCHAR(50)) ELSE CAST(N''Inactive'' AS NVARCHAR(50)) END,
+    StatusDescription = CAST(stClient.StatusDescription AS NVARCHAR(50)),
     p.ProjectID,
     p.ProjectNumber,
     p.ProjectName,
@@ -4773,6 +4776,7 @@ OUTER APPLY
 ) pref
 INNER JOIN dbo.tClientRef cr ON cr.ClientRefID = pref.ClientRefID AND cr.IsActive = 1
 INNER JOIN dbo.tClient c ON c.ClientID = cr.ClientID
+LEFT JOIN dbo.tStatus stClient ON stClient.StatusID = cr.StatusID
 INNER JOIN dbo.tBusinessUnit bu ON bu.BusinessUnitID = cr.BusinessUnitID
 INNER JOIN dbo.tBusinessClass bc ON bc.BusinessClassID = cr.BusinessClassID
 INNER JOIN dbo.tProjectType pt ON pt.ProjectTypeID = pref.ProjectTypeID

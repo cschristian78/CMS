@@ -5,11 +5,13 @@ namespace ClientManagementSystem.Data;
 
 /// <summary>
 /// Backed by <c>dbo.tClient</c> + <c>dbo.tClientRef</c> for reads and the <c>usp_Client_*</c> family for
-/// writes. The legacy link tables and <c>usp_Ref_CreateClientList</c>/<c>tClientList</c>
-/// path are retired in CMS_PhaseI_All.
+/// writes. Client Active/Inactive/Prospect for UI and Main is <c>tClientRef.StatusID → tStatus</c>.
 /// </summary>
 public sealed class ClientRepository : IClientRepository
 {
+    /// <summary>
+    /// Status comes from the primary active ClientRef → tStatus (not tClient.ClientStatus / IsActive).
+    /// </summary>
     private const string ClientListSelectSql = """
         SELECT
             c.ClientID,
@@ -25,7 +27,7 @@ public sealed class ClientRepository : IClientRepository
             cr.ClientTypeID,
             CTName = ct.ClientTypeName,
             CTDescription = ct.ClientTypeDescription,
-            cr.StatusID,
+            StatusID = cr.StatusID,
             StatusCode = st.StatusCode,
             StatusDescription = st.StatusDescription,
             c.CreatedDate,
@@ -66,8 +68,8 @@ public sealed class ClientRepository : IClientRepository
         CancellationToken cancellationToken = default)
     {
         var sql = ClientListSelectSql + """
-             WHERE (@IncludeInactive = 1 OR c.IsActive = 1)
-               AND (@ProjectEligibleOnly = 0 OR (c.IsActive = 1 AND st.StatusCode IN ('A', 'P')))
+             WHERE (@IncludeInactive = 1 OR st.StatusDescription IS NULL OR st.StatusDescription <> N'Inactive')
+               AND (@ProjectEligibleOnly = 0 OR st.StatusDescription IN (N'Active', N'Prospect'))
                AND (@SearchTerm IS NULL
                     OR c.ClientName LIKE @SearchPattern
                     OR c.ClientShortName LIKE @SearchPattern)
@@ -108,7 +110,7 @@ public sealed class ClientRepository : IClientRepository
                 cr.ClientTypeID,
                 CTName = ct.ClientTypeName,
                 CTDescription = ct.ClientTypeDescription,
-                cr.StatusID,
+                StatusID = cr.StatusID,
                 StatusCode = st.StatusCode,
                 StatusDescription = st.StatusDescription,
                 IsDeleted = CAST(CASE WHEN c.IsActive = 0 THEN 1 ELSE 0 END AS BIT),
@@ -142,25 +144,101 @@ public sealed class ClientRepository : IClientRepository
         return rows.Count == 0 ? null : rows[0];
     }
 
-    public Task<int> AddAsync(Client client, CancellationToken cancellationToken = default)
+    public async Task<int> AddAsync(Client client, CancellationToken cancellationToken = default)
     {
-        return _db.ExecuteScalarIntAsync("dbo.usp_Client_Add", BuildSaveParameters(client, isUpdate: false), cancellationToken);
+        var status = ResolveClientStatus(client);
+        var statusId = StatusIdFromClientStatus(status);
+        var output = SqlParameterFactory.OutputInt("@NewClientID");
+        await _db.ExecuteWithOutputIntAsync(
+            "dbo.usp_Client_Create",
+            [
+                SqlParameterFactory.Int("@AccountExecutiveUserID", null),
+                SqlParameterFactory.Int("@AnalyticsLeadUserID", null),
+                SqlParameterFactory.VarChar("@ClientName", 150, client.ClientName),
+                SqlParameterFactory.VarChar("@ClientDescription", 500, null),
+                SqlParameterFactory.VarChar("@ClientShortName", 50, client.ClientShortName),
+                SqlParameterFactory.VarChar("@ClientStatus", 10, status),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                output
+            ],
+            "@NewClientID",
+            cancellationToken);
+
+        var clientId = Convert.ToInt32(output.Value);
+        await SyncClientClassificationAndStatusAsync(clientId, client, statusId, cancellationToken);
+        return clientId;
     }
 
-    public Task<int> UpdateAsync(Client client, CancellationToken cancellationToken = default)
+    public async Task<int> UpdateAsync(Client client, CancellationToken cancellationToken = default)
     {
-        return _db.ExecuteScalarIntAsync("dbo.usp_Client_Update", BuildSaveParameters(client, isUpdate: true), cancellationToken);
+        var status = ResolveClientStatus(client);
+        var statusId = StatusIdFromClientStatus(status);
+
+        await _db.ExecuteAsync(
+            "dbo.usp_Client_Update",
+            [
+                SqlParameterFactory.Int("@ClientID", client.ClientID),
+                SqlParameterFactory.Int("@AccountExecutiveUserID", null),
+                SqlParameterFactory.Int("@AnalyticsLeadUserID", null),
+                SqlParameterFactory.VarChar("@ClientName", 150, client.ClientName),
+                SqlParameterFactory.VarChar("@ClientDescription", 500, null),
+                SqlParameterFactory.VarChar("@ClientShortName", 50, client.ClientShortName),
+                SqlParameterFactory.VarChar("@ClientStatus", 10, status),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+
+        await SyncClientClassificationAndStatusAsync(client.ClientID, client, statusId, cancellationToken);
+        return client.ClientID;
     }
 
-    public Task<int> SoftDeleteAsync(int clientId, CancellationToken cancellationToken = default)
-        => _db.ExecuteScalarIntAsync("dbo.usp_Client_SoftDelete", [SqlParameterFactory.Int("@ClientID", clientId)], cancellationToken);
+    public async Task<int> SoftDeleteAsync(int clientId, CancellationToken cancellationToken = default)
+    {
+        await _db.ExecuteAsync(
+            "dbo.usp_Client_SoftDelete",
+            [
+                SqlParameterFactory.Int("@ClientID", clientId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
 
-    public Task<int> RestoreAsync(int clientId, CancellationToken cancellationToken = default)
-        => _db.ExecuteScalarIntAsync("dbo.usp_Client_Restore", [SqlParameterFactory.Int("@ClientID", clientId)], cancellationToken);
+        await SyncAllClientRefStatusAsync(clientId, StatusIdFromClientStatus("Inactive"), cancellationToken);
+        return clientId;
+    }
+
+    public async Task<int> RestoreAsync(int clientId, CancellationToken cancellationToken = default)
+    {
+        // No dedicated restore proc in CMS_PhaseI_All_v3 — reactivate via ClientStatus = Active.
+        await _db.ExecuteAsync(
+            "dbo.usp_Client_Update",
+            [
+                SqlParameterFactory.Int("@ClientID", clientId),
+                SqlParameterFactory.Int("@AccountExecutiveUserID", null),
+                SqlParameterFactory.Int("@AnalyticsLeadUserID", null),
+                SqlParameterFactory.VarChar("@ClientName", 150, null),
+                SqlParameterFactory.VarChar("@ClientDescription", 500, null),
+                SqlParameterFactory.VarChar("@ClientShortName", 50, null),
+                SqlParameterFactory.VarChar("@ClientStatus", 10, "Active"),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+
+        await SyncAllClientRefStatusAsync(clientId, StatusIdFromClientStatus("Active"), cancellationToken);
+        return clientId;
+    }
 
     public async Task<int> GetProjectCountAsync(int clientId, CancellationToken cancellationToken = default)
     {
-        var rows = await _db.QueryAsync("dbo.usp_Client_GetSummary", static r => r.GetInt32OrDefault("ProjectCount"),
+        const string sql = """
+            SELECT CAST(COUNT(DISTINCT p.ProjectID) AS int) AS ProjectCount
+              FROM dbo.tProject AS p
+              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
+              INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID AND cr.IsActive = 1
+             WHERE cr.ClientID = @ClientID
+               AND p.IsActive = 1;
+            """;
+
+        var rows = await _db.QueryTextAsync(sql, static r => r.GetInt32(r.GetOrdinal("ProjectCount")),
         [
             SqlParameterFactory.Int("@ClientID", clientId)
         ], cancellationToken);
@@ -174,54 +252,144 @@ public sealed class ClientRepository : IClientRepository
             return;
         }
 
-        await using var connection = await _connections.CreateOpenConnectionAsync(cancellationToken);
-        await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
-
-        try
+        foreach (var c in clients)
         {
-            foreach (var c in clients)
-            {
-                await using var cmd = connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandType = System.Data.CommandType.StoredProcedure;
-                cmd.CommandText = "dbo.usp_Client_Add";
-                foreach (var p in BuildSaveParameters(c, isUpdate: false))
-                {
-                    cmd.Parameters.Add(p);
-                }
-
-                await cmd.ExecuteNonQueryAsync(cancellationToken);
-            }
-
-            await tx.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            await tx.RollbackAsync(cancellationToken);
-            throw;
+            await AddAsync(c, cancellationToken);
         }
     }
 
-    private static SqlParameter[] BuildSaveParameters(Client c, bool isUpdate)
+    /// <summary>
+    /// Persist BU / BC / type on the primary ClientRef and force every active ref's StatusID to
+    /// match the client's overall ClientStatus (so the Client form reload and home filters agree).
+    /// </summary>
+    private async Task SyncClientClassificationAndStatusAsync(
+        int clientId,
+        Client client,
+        int statusId,
+        CancellationToken cancellationToken)
     {
-        var parameters = new List<SqlParameter>();
-        if (isUpdate)
+        var businessUnitId = client.BusinessUnitID > 0 ? client.BusinessUnitID : null;
+        var businessClassId = client.BusinessClassID > 0 ? client.BusinessClassID : (int?)null;
+        var clientTypeId = client.ClientTypeID > 0 ? client.ClientTypeID : (int?)null;
+        var clientCategoryId = client.ClientCategoryID > 0 ? client.ClientCategoryID : (int?)null;
+
+        var existingRefId = await GetPrimaryClientRefIdAsync(clientId, cancellationToken);
+
+        if (businessUnitId is null && businessClassId is null && clientTypeId is null && clientCategoryId is null && existingRefId is null)
         {
-            parameters.Add(SqlParameterFactory.Int("@ClientID", c.ClientID));
+            return;
         }
 
-        parameters.AddRange(
-        [
-            SqlParameterFactory.VarChar("@ClientName", 200, c.ClientName),
-            SqlParameterFactory.VarChar("@ClientShortName", 50, c.ClientShortName),
-            SqlParameterFactory.Int("@BusinessClassID", c.BusinessClassID),
-            SqlParameterFactory.Int("@ClientCategoryID", c.ClientCategoryID),
-            SqlParameterFactory.Int("@ClientTypeID", c.ClientTypeID),
-            SqlParameterFactory.Int("@StatusID", c.StatusID)
-        ]);
+        if (existingRefId is null)
+        {
+            var output = SqlParameterFactory.OutputInt("@NewClientRefID");
+            await _db.ExecuteWithOutputIntAsync(
+                "dbo.usp_ClientRef_Create",
+                [
+                    SqlParameterFactory.Int("@ClientID", clientId),
+                    SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
+                    SqlParameterFactory.Int("@BusinessClassID", businessClassId),
+                    SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
+                    SqlParameterFactory.Int("@ClientTypeRefID", clientCategoryId),
+                    SqlParameterFactory.Int("@StatusID", statusId),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                    output
+                ],
+                "@NewClientRefID",
+                cancellationToken);
+        }
+        else
+        {
+            await _db.ExecuteAsync(
+                "dbo.usp_ClientRef_Update",
+                [
+                    SqlParameterFactory.Int("@ClientRefID", existingRefId.Value),
+                    SqlParameterFactory.Int("@ClientID", clientId),
+                    SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
+                    SqlParameterFactory.Int("@BusinessClassID", businessClassId),
+                    SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
+                    SqlParameterFactory.Int("@ClientTypeRefID", clientCategoryId),
+                    SqlParameterFactory.Int("@StatusID", statusId),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+                ],
+                cancellationToken);
+        }
 
-        return parameters.ToArray();
+        await SyncAllClientRefStatusAsync(clientId, statusId, cancellationToken);
     }
+
+    private Task SyncAllClientRefStatusAsync(int clientId, int statusId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE dbo.tClientRef
+               SET StatusID = @StatusID,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ClientID = @ClientID
+               AND IsActive = 1
+               AND StatusID <> @StatusID;
+            """;
+
+        return _db.ExecuteTextAsync(sql,
+        [
+            SqlParameterFactory.Int("@ClientID", clientId),
+            SqlParameterFactory.Int("@StatusID", statusId)
+        ], cancellationToken);
+    }
+
+    private async Task<int?> GetPrimaryClientRefIdAsync(int clientId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (1) ClientRefID
+              FROM dbo.tClientRef
+             WHERE ClientID = @ClientID
+               AND IsActive = 1
+             ORDER BY ClientRefID;
+            """;
+
+        var rows = await _db.QueryTextAsync(sql, static r => r.GetInt32(0),
+        [
+            SqlParameterFactory.Int("@ClientID", clientId)
+        ], cancellationToken);
+
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    /// <summary>Map UI StatusID / description to tClient.ClientStatus values.</summary>
+    private static string ResolveClientStatus(Client client)
+    {
+        var description = client.StatusDescription?.Trim();
+        if (string.Equals(description, "Inactive", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Inactive";
+        }
+
+        if (string.Equals(description, "Prospect", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Prospect";
+        }
+
+        if (string.Equals(description, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Active";
+        }
+
+        return StatusIdFromClientStatusInverse(client.StatusID);
+    }
+
+    private static string StatusIdFromClientStatusInverse(int statusId) => statusId switch
+    {
+        2 => "Inactive",
+        3 => "Prospect",
+        _ => "Active"
+    };
+
+    /// <summary>Seeded tStatus ids: 1=Active, 2=Inactive, 3=Prospect.</summary>
+    private static int StatusIdFromClientStatus(string status) => status switch
+    {
+        "Inactive" => 2,
+        "Prospect" => 3,
+        _ => 1
+    };
 
     private static Client MapClient(SqlDataReader r) => new()
     {
