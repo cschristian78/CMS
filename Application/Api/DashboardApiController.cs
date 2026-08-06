@@ -17,13 +17,35 @@ public sealed class DashboardApiController : ControllerBase
         _logger = logger;
     }
 
-    [HttpGet("clients-by-business-unit")]
-    public async Task<ActionResult<IReadOnlyList<DashboardBusinessUnitCount>>> GetClientsByBusinessUnitAsync(
-        CancellationToken cancellationToken)
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [HttpGet("filter-options")]
+    public async Task<ActionResult<object>> GetFilterOptionsAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var rows = await _dashboardService.GetClientCountByBusinessUnitAsync(cancellationToken);
+            var analyticsLeadNames = await _dashboardService.GetAnalyticsLeadFilterOptionsAsync(cancellationToken);
+            return Ok(new { analyticsLeadNames });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Dashboard filter-options failed.");
+            return Problem(
+                detail: "Could not load dashboard filter options (Analytics Lead).",
+                title: "Operation failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    [HttpGet("clients-by-business-unit")]
+    public async Task<ActionResult<IReadOnlyList<DashboardBusinessUnitCount>>> GetClientsByBusinessUnitAsync(
+        [FromQuery] string? analyticsLeadName = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var rows = await _dashboardService.GetClientCountByBusinessUnitAsync(
+                analyticsLeadName,
+                cancellationToken);
             return Ok(rows);
         }
         catch (Exception ex)
@@ -38,11 +60,14 @@ public sealed class DashboardApiController : ControllerBase
 
     [HttpGet("projects-by-business-unit")]
     public async Task<ActionResult<IReadOnlyList<DashboardBusinessUnitCount>>> GetProjectsByBusinessUnitAsync(
-        CancellationToken cancellationToken)
+        [FromQuery] string? analyticsLeadName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var rows = await _dashboardService.GetProjectCountByBusinessUnitAsync(cancellationToken);
+            var rows = await _dashboardService.GetProjectCountByBusinessUnitAsync(
+                analyticsLeadName,
+                cancellationToken);
             return Ok(rows);
         }
         catch (Exception ex)
@@ -57,11 +82,14 @@ public sealed class DashboardApiController : ControllerBase
 
     [HttpGet("clients-by-business-class")]
     public async Task<ActionResult<IReadOnlyList<DashboardNamedCount>>> GetClientsByBusinessClassAsync(
-        CancellationToken cancellationToken)
+        [FromQuery] string? analyticsLeadName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var rows = await _dashboardService.GetClientCountByBusinessClassAsync(cancellationToken);
+            var rows = await _dashboardService.GetClientCountByBusinessClassAsync(
+                analyticsLeadName,
+                cancellationToken);
             return Ok(rows);
         }
         catch (Exception ex)
@@ -76,11 +104,14 @@ public sealed class DashboardApiController : ControllerBase
 
     [HttpGet("projects-by-business-class")]
     public async Task<ActionResult<IReadOnlyList<DashboardNamedCount>>> GetProjectsByBusinessClassAsync(
-        CancellationToken cancellationToken)
+        [FromQuery] string? analyticsLeadName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var rows = await _dashboardService.GetProjectCountByBusinessClassAsync(cancellationToken);
+            var rows = await _dashboardService.GetProjectCountByBusinessClassAsync(
+                analyticsLeadName,
+                cancellationToken);
             return Ok(rows);
         }
         catch (Exception ex)

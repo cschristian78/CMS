@@ -2333,9 +2333,21 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   const savePt = async (e: FormEvent) => {
     e.preventDefault();
+    const code = ptForm.projectTypeCode.trim();
+    if (!code) {
+      flash('error', 'Project type code is required.');
+      return;
+    }
     try {
-      await apiPostJson('/api/admin/project-types/save', ptForm);
+      await apiPostJson('/api/admin/project-types/save', {
+        projectTypeID: ptForm.projectTypeID,
+        projectTypeCode: code,
+        projectTypeDescription: ptForm.projectTypeDescription.trim(),
+        isActive: true,
+      });
       flash('success', 'Project type saved.');
+      clearPt();
+      setSelectedPtId('');
       await reload();
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Save failed.');
@@ -3640,13 +3652,14 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               <div className="form-grid compact-grid">
                 <label>Code</label>
                 <input
-                  maxLength={3}
+                  maxLength={20}
+                  required
                   value={ptForm.projectTypeCode}
                   onChange={(e) => setPtForm({ ...ptForm, projectTypeCode: e.target.value })}
                 />
                 <label>Description</label>
                 <input
-                  maxLength={100}
+                  maxLength={255}
                   value={ptForm.projectTypeDescription}
                   onChange={(e) => setPtForm({ ...ptForm, projectTypeDescription: e.target.value })}
                 />

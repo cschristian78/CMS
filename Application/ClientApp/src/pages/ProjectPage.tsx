@@ -93,6 +93,7 @@ interface ProjectFormModel {
   clientStatusCode?: string | null;
 
   selectedServiceIds: number[];
+  calendarItems?: ProjectCalendarItemDraft[];
 
   clientDirectoryRows?: ClientDirectoryRow[];
   clientOptions: SelectOption[];
@@ -104,6 +105,44 @@ interface ProjectFormModel {
   userGroupOptions: SelectOption[];
   projectTypeOptions: SelectOption[];
   statusOptions: SelectOption[];
+}
+
+interface ProjectCalendarItemDraft {
+  /** Client-only key for React list rendering before save. */
+  tempId: string;
+  calendarItemID?: number;
+  itemType: 'Deliverable' | 'Meeting' | 'Task' | 'Other';
+  title: string;
+  ownerUserID: number | '';
+  receivedDate: string;
+  completedDate: string;
+  notes: string;
+  sortOrder?: number;
+}
+
+interface UserGroupMemberOption {
+  userID: number;
+  userFullName: string;
+}
+
+const CALENDAR_ITEM_TYPES: ProjectCalendarItemDraft['itemType'][] = [
+  'Deliverable',
+  'Meeting',
+  'Task',
+  'Other',
+];
+
+function newCalendarDraft(sortOrder = 0): ProjectCalendarItemDraft {
+  return {
+    tempId: `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    itemType: 'Task',
+    title: '',
+    ownerUserID: '',
+    receivedDate: '',
+    completedDate: '',
+    notes: '',
+    sortOrder,
+  };
 }
 
 interface CatalogServiceRow {
@@ -148,7 +187,7 @@ interface ActivityLogRow {
   newValue?: string | null;
 }
 
-type ProjectTab = 'client' | 'project' | 'services' | 'revenue' | 'notes' | 'activity';
+type ProjectTab = 'client' | 'project' | 'services' | 'calendar' | 'revenue' | 'notes' | 'activity';
 
 /** Matches admin/client Client Type dropdown (name and description). */
 function optionTextForValue(options: SelectOption[] | undefined, value: number | '' | null | undefined): string {
@@ -362,6 +401,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [clientBcFilter, setClientBcFilter] = useState<number | ''>('');
   const [clientTypeFilter, setClientTypeFilter] = useState<number | ''>('');
   const [clientStatusFilter, setClientStatusFilter] = useState<number | ''>('');
+  const [calendarItems, setCalendarItems] = useState<ProjectCalendarItemDraft[]>([]);
+  const [ownerOptions, setOwnerOptions] = useState<UserGroupMemberOption[]>([]);
 
   const applyClientFromRow = useCallback((row: ClientDirectoryRow) => {
     setClientBuFilter(row.businessUnitID ?? '');
@@ -567,6 +608,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
       let merged: ProjectFormModel = {
         ...data,
+        ugid: Number(
+          (data as { ugid?: number; userGroupID?: number; uGID?: number }).ugid
+            ?? (data as { userGroupID?: number }).userGroupID
+            ?? (data as { uGID?: number }).uGID
+            ?? 0,
+        ),
         selectedServiceIds: Array.isArray(data.selectedServiceIds) ? data.selectedServiceIds : [],
         businessUnitOptions: normalizeSelectOptions(data.businessUnitOptions),
         businessClassOptions: normalizeSelectOptions(data.businessClassOptions),
@@ -622,7 +669,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     })();
   }, []);
 
-  // Refresh user-group options when client changes.
+  // Refresh user-group options when client changes (full active list).
   useEffect(() => {
     if (!model || model.clientID <= 0) {
       setUserGroupOptionsForClient([]);
@@ -631,7 +678,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     let cancelled = false;
     void (async () => {
       try {
-        const opts = await apiGet<SelectOption[]>(`/api/projects/user-groups?clientId=${model.clientID}`);
+        const opts = normalizeSelectOptions(
+          await apiGet<SelectOption[]>(`/api/projects/user-groups?clientId=${model.clientID}`),
+        );
         if (!cancelled) {
           setUserGroupOptionsForClient(opts);
         }
@@ -816,6 +865,44 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     setModel({ ...model, selectedServiceIds: [] });
   };
 
+  useEffect(() => {
+    const ugid = model?.ugid ?? 0;
+    if (ugid <= 0) {
+      setOwnerOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await apiGet<UserGroupMemberOption[]>(`/api/projects/user-groups/${ugid}/members`);
+        if (!cancelled) {
+          setOwnerOptions(Array.isArray(rows) ? rows : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setOwnerOptions([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [model?.ugid]);
+
+  const updateCalendarItem = (tempId: string, patch: Partial<ProjectCalendarItemDraft>) => {
+    setCalendarItems((prev) => prev.map((row) => (row.tempId === tempId ? { ...row, ...patch } : row)));
+  };
+
+  const addCalendarItem = () => {
+    setCalendarItems((prev) => [...prev, newCalendarDraft(prev.length)]);
+  };
+
+  const removeCalendarItem = (tempId: string) => {
+    setCalendarItems((prev) => prev.filter((row) => row.tempId !== tempId));
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!model) {
@@ -824,10 +911,29 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     setValidationMessage(null);
 
     try {
+      const calendarPayload = !isEdit
+        ? calendarItems
+            .filter((row) => row.title.trim().length > 0)
+            .map((row, index) => ({
+              calendarItemID: row.calendarItemID ?? 0,
+              itemType: row.itemType,
+              title: row.title.trim(),
+              ownerUserID: row.ownerUserID === '' ? null : row.ownerUserID,
+              receivedDate: row.receivedDate || null,
+              completedDate: row.completedDate || null,
+              notes: row.notes.trim() || null,
+              sortOrder: index,
+            }))
+        : undefined;
+
       const payload: ProjectFormModel = {
         ...model,
         projectID: isEdit ? projectId : model.projectID,
-      };
+        ugid: model.ugid > 0 ? model.ugid : 0,
+        // Canonical name expected by ProjectFormViewModel.UserGroupID
+        ...( { userGroupID: model.ugid > 0 ? model.ugid : 0 } as object ),
+        calendarItems: calendarPayload as ProjectFormModel['calendarItems'],
+      } as ProjectFormModel;
       const result = await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
       flash('success', result.message);
       const savedId = result.projectId;
@@ -945,7 +1051,19 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     );
   }
 
-  const groupOptions = userGroupOptionsForClient.length > 0 ? userGroupOptionsForClient : model.userGroupOptions;
+  const groupOptions = useMemo(() => {
+    const base =
+      userGroupOptionsForClient.length > 0 ? userGroupOptionsForClient : (model?.userGroupOptions ?? []);
+    if (!model || model.ugid <= 0) {
+      return base;
+    }
+    const selected = String(model.ugid);
+    if (base.some((o) => o.value === selected)) {
+      return base;
+    }
+    // Keep the current assignment visible even if it is inactive / missing from the list.
+    return [{ value: selected, text: `User Group ${selected}` }, ...base];
+  }, [userGroupOptionsForClient, model?.userGroupOptions, model?.ugid]);
   const title = isEdit ? 'Edit Project' : 'New Project';
 
   const projectTabClass = (tab: ProjectTab) => 'admin-tab-panel' + (activeTab === tab ? ' active' : '');
@@ -979,6 +1097,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           {projectTabBtn('client', 'Client Info')}
           {projectTabBtn('project', 'Project Info')}
           {projectTabBtn('services', 'Services')}
+          {!isEdit ? projectTabBtn('calendar', 'Calendar') : null}
           {isEdit ? projectTabBtn('revenue', 'Revenue history') : null}
           {isEdit ? projectTabBtn('notes', 'Notes') : null}
           {isEdit ? projectTabBtn('activity', 'Activity') : null}
@@ -1131,11 +1250,16 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               <select
                 id="ugid"
                 value={model.ugid > 0 ? model.ugid : ''}
-                onChange={(e) => setModel({ ...model, ugid: Number(e.target.value) })}
+                onChange={(e) => {
+                  const nextUgid = Number(e.target.value) || 0;
+                  setModel({ ...model, ugid: nextUgid });
+                  // Ownership options change with the group — clear owners that may no longer apply.
+                  setCalendarItems((prev) => prev.map((row) => ({ ...row, ownerUserID: '' })));
+                }}
               >
                 <option value="">-- Select user group --</option>
                 {groupOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
+                  <option key={o.value} value={o.value} title={o.text}>
                     {o.text}
                   </option>
                 ))}
@@ -1369,6 +1493,133 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             </div>
             </div>
           </div>
+
+          {!isEdit ? (
+            <div id="project-tab-calendar" className={projectTabClass('calendar')}>
+              <h2>Analytics Calendar</h2>
+              <div className="admin-edit-card">
+                <p className="field-help">
+                  Document deliverables, meetings, and tasks for this project. Ownership is limited to members of the
+                  selected <strong>User Group</strong> on Project Info. Rows with a title are saved with the project.
+                </p>
+                <div className="page-header-actions project-services-select-actions">
+                  <button type="button" className="secondary-button" onClick={addCalendarItem}>
+                    Add row
+                  </button>
+                </div>
+                {model.ugid <= 0 ? (
+                  <p className="field-help" role="status">
+                    Select a User Group on the Project Info tab to enable the Owner dropdown.
+                  </p>
+                ) : null}
+                <div className="project-tab-table-wrap">
+                  <table className="catalog-table project-calendar-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Title</th>
+                        <th>Owner</th>
+                        <th>Received</th>
+                        <th>Completed</th>
+                        <th>Notes</th>
+                        <th>&nbsp;</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {calendarItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={7}>No calendar items yet. Click Add row to begin.</td>
+                        </tr>
+                      ) : (
+                        calendarItems.map((row) => (
+                          <tr key={row.tempId}>
+                            <td>
+                              <select
+                                value={row.itemType}
+                                onChange={(e) =>
+                                  updateCalendarItem(row.tempId, {
+                                    itemType: e.target.value as ProjectCalendarItemDraft['itemType'],
+                                  })
+                                }
+                                aria-label="Calendar item type"
+                              >
+                                {CALENDAR_ITEM_TYPES.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                value={row.title}
+                                onChange={(e) => updateCalendarItem(row.tempId, { title: e.target.value })}
+                                maxLength={200}
+                                placeholder="Deliverable / meeting / task"
+                                aria-label="Calendar item title"
+                              />
+                            </td>
+                            <td>
+                              <select
+                                value={row.ownerUserID === '' ? '' : String(row.ownerUserID)}
+                                onChange={(e) =>
+                                  updateCalendarItem(row.tempId, {
+                                    ownerUserID: e.target.value ? Number(e.target.value) : '',
+                                  })
+                                }
+                                disabled={model.ugid <= 0}
+                                aria-label="Calendar item owner"
+                              >
+                                <option value="">-- Owner --</option>
+                                {ownerOptions.map((o) => (
+                                  <option key={o.userID} value={o.userID}>
+                                    {o.userFullName}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                type="date"
+                                value={row.receivedDate}
+                                onChange={(e) => updateCalendarItem(row.tempId, { receivedDate: e.target.value })}
+                                aria-label="Received date"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="date"
+                                value={row.completedDate}
+                                onChange={(e) => updateCalendarItem(row.tempId, { completedDate: e.target.value })}
+                                aria-label="Completed date"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={row.notes}
+                                onChange={(e) => updateCalendarItem(row.tempId, { notes: e.target.value })}
+                                placeholder="Notes"
+                                aria-label="Calendar item notes"
+                              />
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="danger-button"
+                                onClick={() => removeCalendarItem(row.tempId)}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {isEdit ? (
             <div id="project-tab-revenue" className={projectTabClass('revenue')}>

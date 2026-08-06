@@ -570,8 +570,21 @@ public sealed class AdminService : IAdminService
 
     public async Task SaveProjectTypeAsync(ProjectType projectType, CancellationToken cancellationToken = default)
     {
+        // Admin Remove posts { projectTypeID, isActive: false } to the same save endpoint.
+        if (projectType.ProjectTypeID > 0 && !projectType.IsActive)
+        {
+            await _admin.SoftDeleteProjectTypeAsync(projectType.ProjectTypeID, cancellationToken);
+            await RefreshHomeListAsync(cancellationToken);
+            return;
+        }
+
         projectType.PTCode = projectType.PTCode?.Trim().ToUpperInvariant();
         projectType.PTDescription = projectType.PTDescription?.Trim();
+        if (string.IsNullOrWhiteSpace(projectType.PTCode))
+        {
+            throw new InvalidOperationException("Project type code is required.");
+        }
+
         await _admin.SaveProjectTypeAsync(projectType, cancellationToken);
         await RefreshHomeListAsync(cancellationToken);
     }

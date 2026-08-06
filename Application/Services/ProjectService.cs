@@ -168,7 +168,7 @@ public sealed class ProjectService : IProjectService
             ProjectNumber = (model.ProjectNumber ?? string.Empty).Trim(),
             ProjectName = (model.ProjectName ?? string.Empty).Trim(),
             ClientID = model.ClientID,
-            UGID = model.UGID,
+            UGID = model.UserGroupID > 0 ? model.UserGroupID : model.UGID,
             ProjectTypeID = model.ProjectTypeID,
             RenewalDate = model.RenewalDate,
             DueDate = model.DueDate,
@@ -205,6 +205,13 @@ public sealed class ProjectService : IProjectService
             revenueEntry,
             clientRefContext,
             cancellationToken);
+
+        model.CalendarItems ??= [];
+        // New Project only for now — Edit Calendar tab comes after confirmation.
+        if (existing is null)
+        {
+            await _projects.ReplaceCalendarItemsAsync(projectId, model.CalendarItems, cancellationToken);
+        }
 
         // Explicit ActivityLog: status transitions and creation.
         try
@@ -290,12 +297,19 @@ public sealed class ProjectService : IProjectService
         int clientId,
         CancellationToken cancellationToken = default)
     {
-        var used = await _referenceData.GetUserGroupsUsedOnClientProjectsAsync(clientId, cancellationToken);
-        var source = used.Count > 0
-            ? used
-            : await _referenceData.GetTopUserGroupSummariesAsync(null, cancellationToken);
+        // Always offer every active user group so Edit/New can assign any group.
+        // Optionally put groups already used on this client's projects first.
+        var all = await _referenceData.GetTopUserGroupSummariesAsync(null, cancellationToken);
+        var usedIds = clientId > 0
+            ? (await _referenceData.GetUserGroupsUsedOnClientProjectsAsync(clientId, cancellationToken))
+                .Select(g => g.UGID)
+                .ToHashSet()
+            : new HashSet<int>();
 
-        return source
+        return all
+            .OrderByDescending(g => usedIds.Contains(g.UGID))
+            .ThenBy(g => g.UGName ?? g.UserGroupNumber, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(g => g.UGID)
             .Select(g =>
             {
                 var label = string.IsNullOrWhiteSpace(g.UGName)
@@ -349,6 +363,35 @@ public sealed class ProjectService : IProjectService
 
     public Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default)
         => _projects.DeleteNoteAsync(noteId, cancellationToken);
+
+    public Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(
+        int projectId,
+        CancellationToken cancellationToken = default)
+        => _projects.ListCalendarItemsAsync(projectId, cancellationToken);
+
+    public async Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(
+        int ugid,
+        CancellationToken cancellationToken = default)
+    {
+        if (ugid <= 0)
+        {
+            return [];
+        }
+
+        var members = await _admin.ListUserGroupMembersAsync(ugid, cancellationToken);
+        return members
+            .GroupBy(m => m.UserID)
+            .Select(g => g.First())
+            .OrderBy(m => m.UserFullName ?? m.Username ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(m => (object)new
+            {
+                userID = m.UserID,
+                userFullName = string.IsNullOrWhiteSpace(m.UserFullName)
+                    ? (m.Username ?? $"User {m.UserID}")
+                    : m.UserFullName.Trim()
+            })
+            .ToList();
+    }
 
     public Task<IReadOnlyList<ActivityLog>> GetActivityAsync(int projectId, int top = 100, CancellationToken cancellationToken = default)
         => _admin.GetActivityForEntityAsync(ProjectEntityType, projectId, top, cancellationToken);

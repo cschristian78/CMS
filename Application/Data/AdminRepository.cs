@@ -291,6 +291,13 @@ public sealed class AdminRepository : IAdminRepository
         return Convert.ToInt32(output.Value);
     }
 
+    public Task SoftDeleteProjectTypeAsync(int projectTypeId, CancellationToken cancellationToken = default) =>
+        _db.ExecuteAsync("dbo.usp_ProjectType_SoftDelete",
+        [
+            SqlParameterFactory.Int("@ProjectTypeID", projectTypeId),
+            SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+        ], cancellationToken);
+
     public async Task<int> SaveBusinessUnitAsync(BusinessUnit bu, CancellationToken cancellationToken = default)
     {
         if (bu.BusinessUnitID > 0)

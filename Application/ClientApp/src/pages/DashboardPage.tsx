@@ -8,6 +8,19 @@ import {
 } from '../utils/dashboardChartItems';
 import { REGION_BAR_COLORS } from '../utils/regionBarColors';
 
+type DashboardFilterOptions = {
+  analyticsLeadNames: string[];
+};
+
+function withAnalyticsLeadQuery(path: string, analyticsLeadName: string): string {
+  if (!analyticsLeadName.trim()) {
+    return path;
+  }
+  const params = new URLSearchParams();
+  params.set('analyticsLeadName', analyticsLeadName.trim());
+  return `${path}?${params.toString()}`;
+}
+
 async function loadDashboardEndpoint<T>(path: string): Promise<T | null> {
   try {
     return await apiGet<T>(path);
@@ -22,14 +35,31 @@ export default function DashboardPage() {
   const [projectBuRaw, setProjectBuRaw] = useState<unknown>(null);
   const [clientBcRaw, setClientBcRaw] = useState<unknown>(null);
   const [projectBcRaw, setProjectBcRaw] = useState<unknown>(null);
+  const [analyticsLeadNames, setAnalyticsLeadNames] = useState<string[]>([]);
+  const [filterAnalyticsLead, setFilterAnalyticsLead] = useState('');
   const [loadWarnings, setLoadWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const loadFilterOptions = useCallback(async () => {
+    const options = await loadDashboardEndpoint<DashboardFilterOptions>('/api/dashboard/filter-options');
+    if (options?.analyticsLeadNames && Array.isArray(options.analyticsLeadNames)) {
+      setAnalyticsLeadNames(
+        options.analyticsLeadNames
+          .map((s) => (typeof s === 'string' ? s.trim() : ''))
+          .filter(Boolean),
+      );
+    } else {
+      setAnalyticsLeadNames([]);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     setLoadWarnings([]);
+
+    await loadFilterOptions();
 
     const paths = [
       ['/api/dashboard/clients-by-business-unit', setClientBuRaw] as const,
@@ -41,7 +71,9 @@ export default function DashboardPage() {
     const warnings: string[] = [];
     await Promise.all(
       paths.map(async ([path, setter]) => {
-        const data = await loadDashboardEndpoint<unknown>(path);
+        const data = await loadDashboardEndpoint<unknown>(
+          withAnalyticsLeadQuery(path, filterAnalyticsLead),
+        );
         if (data == null) {
           warnings.push(path);
           setter([]);
@@ -59,7 +91,7 @@ export default function DashboardPage() {
       setError('Could not load any dashboard data. Restart the application (dotnet run) and refresh.');
     }
     setLoading(false);
-  }, []);
+  }, [filterAnalyticsLead, loadFilterOptions]);
 
   useEffect(() => {
     void load();
@@ -92,7 +124,7 @@ export default function DashboardPage() {
 
   const totalProjects = useMemo(
     () => projectBuChartItems.reduce((sum, x) => sum + x.value, 0),
-    [projectBcChartItems],
+    [projectBuChartItems],
   );
 
   const dataReady = clientBuRaw !== null;
@@ -119,10 +151,33 @@ export default function DashboardPage() {
       </section>
 
       <section className="card wide-card">
-        <div className="filter-row dashboard-view-toolbar">
-          <button className="secondary-button" type="button" onClick={() => void load()} disabled={loading}>
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
+        <div
+          className="filter-row dashboard-view-toolbar dashboard-tabular-filters"
+          role="search"
+          aria-label="Dashboard filters"
+        >
+          <div className="dashboard-filter-field dashboard-filter-field--grow">
+            <label htmlFor="dashboard-filter-analytics-lead">Analytics Lead</label>
+            <select
+              id="dashboard-filter-analytics-lead"
+              value={filterAnalyticsLead}
+              onChange={(e) => setFilterAnalyticsLead(e.target.value)}
+              disabled={loading}
+              title={filterAnalyticsLead || 'All Analytics Leads'}
+            >
+              <option value="">All Analytics Leads</option>
+              {analyticsLeadNames.map((name) => (
+                <option key={name} value={name} title={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="dashboard-filter-actions">
+            <button className="secondary-button" type="button" onClick={() => void load()} disabled={loading}>
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
         {error ? <div className="alert alert-error">{error}</div> : null}
@@ -136,6 +191,12 @@ export default function DashboardPage() {
 
         {!error && dataReady && !loading ?
           <p className="field-help" role="status">
+            {filterAnalyticsLead ? (
+              <>
+                Filtered to Analytics Lead <strong>{filterAnalyticsLead}</strong>
+                {' · '}
+              </>
+            ) : null}
             Active clients: <strong>{totalClients}</strong> · Projects (by unit):{' '}
             <strong>{totalProjects}</strong>
           </p>

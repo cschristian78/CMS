@@ -298,6 +298,7 @@ public sealed class ReferenceDataRepository : IReferenceDataRepository
 
     public Task<IReadOnlyList<UserGroupSummary>> GetUserGroupsUsedOnClientProjectsAsync(int clientId, CancellationToken cancellationToken = default)
     {
+        // Groups assigned on ProjectRef.UserGroupID OR inferred via project users' membership.
         const string sql = """
             SELECT DISTINCT
                 ug.UserGroupID AS UGID,
@@ -308,22 +309,33 @@ public sealed class ReferenceDataRepository : IReferenceDataRepository
                     FROM dbo.tUserGroupRef AS ugr2
                     WHERE ugr2.UserGroupID = ug.UserGroupID
                 ) AS MemberCount
-            FROM dbo.tProject AS p
-            INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
-            INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID AND cr.IsActive = 1
-            INNER JOIN dbo.tProjectUser AS pu ON pu.ProjectRefID = pr.ProjectRefID AND pu.IsActive = 1
-            INNER JOIN dbo.tUserGroupRef AS ugr ON ugr.UserID = pu.UserID
-            INNER JOIN dbo.tUserGroup AS ug ON ug.UserGroupID = ugr.UserGroupID AND ug.IsActive = 1
-            WHERE cr.ClientID = @ClientId
-              AND p.IsActive = 1
+            FROM dbo.tUserGroup AS ug
+            WHERE ug.IsActive = 1
+              AND ug.UserGroupID IN (
+                    SELECT pr.UserGroupID
+                      FROM dbo.tProject AS p
+                      INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
+                      INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID AND cr.IsActive = 1
+                     WHERE cr.ClientID = @ClientId
+                       AND p.IsActive = 1
+                       AND pr.UserGroupID IS NOT NULL
+                    UNION
+                    SELECT ugr.UserGroupID
+                      FROM dbo.tProject AS p
+                      INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
+                      INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID AND cr.IsActive = 1
+                      INNER JOIN dbo.tProjectUser AS pu ON pu.ProjectRefID = pr.ProjectRefID AND pu.IsActive = 1
+                      INNER JOIN dbo.tUserGroupRef AS ugr ON ugr.UserID = pu.UserID
+                     WHERE cr.ClientID = @ClientId
+                       AND p.IsActive = 1
+              )
             ORDER BY ug.UserGroupNumber;
             """;
 
-        return _db.QueryTextAsync(
-            sql,
-            MapUserGroupSummary,
-            [SqlParameterFactory.Int("@ClientId", clientId)],
-            cancellationToken);
+        return _db.QueryTextAsync(sql, MapUserGroupSummary,
+        [
+            SqlParameterFactory.Int("@ClientId", clientId)
+        ], cancellationToken);
     }
 
     private static Status MapStatus(Microsoft.Data.SqlClient.SqlDataReader reader) => new()

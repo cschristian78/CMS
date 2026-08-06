@@ -12,19 +12,27 @@ public sealed class DashboardService : IDashboardService
         _dashboard = dashboard;
     }
 
-    public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+    public Task<IReadOnlyList<string>> GetAnalyticsLeadFilterOptionsAsync(
         CancellationToken cancellationToken = default) =>
-        _dashboard.GetClientCountByBusinessUnitAsync(cancellationToken);
+        _dashboard.GetDistinctAnalyticsLeadNamesAsync(cancellationToken);
+
+    public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+        string? analyticsLeadName = null,
+        CancellationToken cancellationToken = default) =>
+        _dashboard.GetClientCountByBusinessUnitAsync(analyticsLeadName, cancellationToken);
 
     public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetProjectCountByBusinessUnitAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default) =>
-        _dashboard.GetProjectCountByBusinessUnitAsync(cancellationToken);
+        _dashboard.GetProjectCountByBusinessUnitAsync(analyticsLeadName, cancellationToken);
 
     public Task<IReadOnlyList<DashboardNamedCount>> GetClientCountByBusinessClassAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default) =>
-        _dashboard.GetClientCountByBusinessClassAsync(cancellationToken);
+        _dashboard.GetClientCountByBusinessClassAsync(analyticsLeadName, cancellationToken);
 
     public Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBusinessClassAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default) =>
-        _dashboard.GetProjectCountByBusinessClassAsync(cancellationToken);
+        _dashboard.GetProjectCountByBusinessClassAsync(analyticsLeadName, cancellationToken);
 }

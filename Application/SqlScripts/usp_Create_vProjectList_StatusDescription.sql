@@ -77,7 +77,7 @@ LEFT JOIN
         MAX(UserNames)
         FOR UserRoleName IN (' + @pivotColumns + N')
     ) pvt
-) roleUsers ON projUg.UserGroupID = roleUsers.UserGroupID';
+) roleUsers ON COALESCE(pref.UserGroupID, projUg.UserGroupID) = roleUsers.UserGroupID';
     END;
 
     SELECT @colServices = STRING_AGG(CatService, ',')
@@ -183,10 +183,10 @@ SELECT
         WHEN lr.Revenue <= 10000000 THEN N''Less Than $10.0M''
         ELSE N''Needs Reviewed''
     END,
-    UGID = projUg.UserGroupID,
-    UGName = ug.UserGroupName,
-    UserGroupID = projUg.UserGroupID,
-    UserGroupName = ug.UserGroupName,
+    UGID = COALESCE(pref.UserGroupID, projUg.UserGroupID),
+    UGName = COALESCE(ugPref.UserGroupName, ug.UserGroupName),
+    UserGroupID = COALESCE(pref.UserGroupID, projUg.UserGroupID),
+    UserGroupName = COALESCE(ugPref.UserGroupName, ug.UserGroupName),
     pref.ProjectRefID,
     p.CreatedDate,
     p.ModifiedDate,
@@ -199,7 +199,8 @@ OUTER APPLY
     SELECT TOP (1)
         pr.ProjectRefID,
         pr.ClientRefID,
-        pr.ProjectTypeID
+        pr.ProjectTypeID,
+        pr.UserGroupID
     FROM dbo.tProjectRef pr
     WHERE pr.ProjectID = p.ProjectID
       AND pr.IsActive = 1
@@ -211,6 +212,7 @@ LEFT JOIN dbo.tStatus stClient ON stClient.StatusID = cr.StatusID
 INNER JOIN dbo.tBusinessUnit bu ON bu.BusinessUnitID = cr.BusinessUnitID
 INNER JOIN dbo.tBusinessClass bc ON bc.BusinessClassID = cr.BusinessClassID
 INNER JOIN dbo.tProjectType pt ON pt.ProjectTypeID = pref.ProjectTypeID
+LEFT JOIN dbo.tUserGroup ugPref ON ugPref.UserGroupID = pref.UserGroupID
 OUTER APPLY
 (
     SELECT TOP (1) ugr.UserGroupID

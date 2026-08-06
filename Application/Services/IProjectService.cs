@@ -40,5 +40,8 @@ public interface IProjectService
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(int projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(int ugid, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ActivityLog>> GetActivityAsync(int projectId, int top = 100, CancellationToken cancellationToken = default);
 }

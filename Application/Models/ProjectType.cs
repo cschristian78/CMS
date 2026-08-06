@@ -1,12 +1,19 @@
+using System.Text.Json.Serialization;
+
 namespace ClientManagementSystem.Models;
 
-/// <summary>Mirrors <c>dbo.tProjectType</c>. Columns renamed from <c>ProjectTypeCode/Description</c>
-/// to <c>PTCode/PTDescription</c> in the CMS_PhaseI_All schema.</summary>
+/// <summary>Mirrors <c>dbo.tProjectType</c> (<c>ProjectTypeCode</c> / <c>ProjectTypeDescription</c>).
+/// Admin UI posts camelCase <c>projectTypeCode</c> / <c>projectTypeDescription</c>.</summary>
 public sealed class ProjectType
 {
     public int ProjectTypeID { get; set; }
+
+    [JsonPropertyName("projectTypeCode")]
     public string? PTCode { get; set; }
+
+    [JsonPropertyName("projectTypeDescription")]
     public string? PTDescription { get; set; }
+
     public bool IsActive { get; set; } = true;
     public DateTime? CreatedDate { get; set; }
     public DateTime? ModifiedDate { get; set; }

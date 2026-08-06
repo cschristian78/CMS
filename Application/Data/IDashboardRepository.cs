@@ -7,16 +7,23 @@ namespace ClientManagementSystem.Data;
 /// </summary>
 public interface IDashboardRepository
 {
+    Task<IReadOnlyList<string>> GetDistinctAnalyticsLeadNamesAsync(
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<DashboardBusinessUnitCount>> GetProjectCountByBusinessUnitAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<DashboardNamedCount>> GetClientCountByBusinessClassAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBusinessClassAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default);
 
     Task RefreshClientProjectListAsync(CancellationToken cancellationToken = default);

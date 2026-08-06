@@ -26,6 +26,7 @@ public interface IAdminRepository
     Task<int> SaveUserRoleAsync(UserRole userRole, CancellationToken cancellationToken = default);
 
     Task<int> SaveProjectTypeAsync(ProjectType projectType, CancellationToken cancellationToken = default);
+    Task SoftDeleteProjectTypeAsync(int projectTypeId, CancellationToken cancellationToken = default);
 
     Task<int> SaveBusinessUnitAsync(BusinessUnit businessUnit, CancellationToken cancellationToken = default);
     Task<int> SetBusinessUnitActiveAsync(int businessUnitId, bool isActive, CancellationToken cancellationToken = default);

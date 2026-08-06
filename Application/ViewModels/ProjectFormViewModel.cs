@@ -30,9 +30,19 @@ public sealed class ProjectFormViewModel
     [Display(Name = "Client")]
     public int ClientID { get; set; }
 
+    /// <summary>FK to <c>dbo.tUserGroup</c> stored on <c>tProjectRef.UserGroupID</c>.
+    /// Serialized as both <c>userGroupID</c> (canonical) and <c>ugid</c> (legacy clients).</summary>
     [Display(Name = "User Group")]
+    [JsonPropertyName("userGroupID")]
+    public int UserGroupID { get; set; }
+
+    /// <summary>Legacy alias for <see cref="UserGroupID"/> — accepts older payloads that post <c>ugid</c>.</summary>
     [JsonPropertyName("ugid")]
-    public int UGID { get; set; }
+    public int UGID
+    {
+        get => UserGroupID;
+        set => UserGroupID = value;
+    }
 
     [Required]
     [Display(Name = "Project Type")]
@@ -86,6 +96,9 @@ public sealed class ProjectFormViewModel
 
     /// <summary>Selected <c>dbo.tService.ServiceID</c> values for this project.</summary>
     public List<int> SelectedServiceIds { get; set; } = [];
+
+    /// <summary>Analytics Calendar rows (New Project drafts; persisted on save).</summary>
+    public List<ProjectCalendarItem> CalendarItems { get; set; } = [];
 
     public IReadOnlyList<SelectListItem> ClientOptions { get; set; } = [];
     public IReadOnlyList<ClientListRow> ClientDirectoryRows { get; set; } = [];

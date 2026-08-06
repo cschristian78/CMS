@@ -11,3 +11,4 @@ PhaseII_MVC_Delivery.zip
 
 # Accidental local publish / test output under Application
 Application/cms_test/
+.nuget-packages/

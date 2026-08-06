@@ -33,8 +33,8 @@ public sealed class ProjectRepository : IProjectRepository
             pref.StatusID,
             st.StatusCode,
             st.StatusDescription,
-            UGID = COALESCE(NULLIF(pref.UserGroupID, 0), projUg.UserGroupID, 0),
-            UGName = COALESCE(ugPref.UserGroupName, ug.UserGroupName)
+            UGID = ISNULL(pref.UserGroupID, 0),
+            UGName = ugPref.UserGroupName
           FROM dbo.tProject AS p
           OUTER APPLY (
               SELECT TOP (1) pr.ProjectRefID, pr.ClientRefID, pr.ProjectTypeID, pr.StatusID, pr.UserGroupID
@@ -49,15 +49,6 @@ public sealed class ProjectRepository : IProjectRepository
           LEFT JOIN dbo.tProjectType AS pt ON pt.ProjectTypeID = pref.ProjectTypeID
           LEFT JOIN dbo.tStatus AS st ON st.StatusID = pref.StatusID
           LEFT JOIN dbo.tUserGroup AS ugPref ON ugPref.UserGroupID = pref.UserGroupID
-          OUTER APPLY (
-              SELECT TOP (1) ugr.UserGroupID
-                FROM dbo.tProjectUser AS pu
-                INNER JOIN dbo.tUserGroupRef AS ugr ON ugr.UserID = pu.UserID
-               WHERE pu.ProjectRefID = pref.ProjectRefID AND pu.IsActive = 1
-               GROUP BY ugr.UserGroupID
-               ORDER BY COUNT(*) DESC, ugr.UserGroupID
-          ) AS projUg
-          LEFT JOIN dbo.tUserGroup AS ug ON ug.UserGroupID = projUg.UserGroupID
         """;
 
     private readonly IDbExecutor _db;
@@ -440,6 +431,76 @@ public sealed class ProjectRepository : IProjectRepository
         return noteId;
     }
 
+    public Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(
+        int projectId,
+        CancellationToken cancellationToken = default)
+        => _db.QueryAsync(
+            "dbo.usp_ProjectCalendarItem_ListByProject",
+            MapCalendarItem,
+            [
+                SqlParameterFactory.Int("@ProjectID", projectId)
+            ],
+            cancellationToken);
+
+    public async Task ReplaceCalendarItemsAsync(
+        int projectId,
+        IReadOnlyList<ProjectCalendarItem> items,
+        CancellationToken cancellationToken = default)
+    {
+        var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
+        var existing = await ListCalendarItemsAsync(projectId, cancellationToken);
+        foreach (var row in existing)
+        {
+            await _db.ExecuteAsync(
+                "dbo.usp_ProjectCalendarItem_SoftDelete",
+                [
+                    SqlParameterFactory.Int("@CalendarItemID", row.CalendarItemID),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+                ],
+                cancellationToken);
+        }
+
+        var sort = 0;
+        foreach (var item in items)
+        {
+            var title = (item.Title ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            var itemType = NormalizeCalendarItemType(item.ItemType);
+            var output = SqlParameterFactory.OutputInt("@NewCalendarItemID");
+            await _db.ExecuteWithOutputIntAsync(
+                "dbo.usp_ProjectCalendarItem_Create",
+                [
+                    SqlParameterFactory.Int("@ProjectRefID", projectRefId),
+                    SqlParameterFactory.VarChar("@ItemType", 30, itemType),
+                    SqlParameterFactory.NVarChar("@Title", 200, title),
+                    SqlParameterFactory.Int("@OwnerUserID", item.OwnerUserID is > 0 ? item.OwnerUserID : null),
+                    SqlParameterFactory.Date("@ReceivedDate", item.ReceivedDate),
+                    SqlParameterFactory.Date("@CompletedDate", item.CompletedDate),
+                    SqlParameterFactory.NVarChar("@Notes", -1, item.Notes),
+                    SqlParameterFactory.Int("@SortOrder", item.SortOrder > 0 ? item.SortOrder : sort),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                    output
+                ],
+                "@NewCalendarItemID",
+                cancellationToken);
+            sort++;
+        }
+    }
+
+    private static string NormalizeCalendarItemType(string? itemType)
+    {
+        var value = (itemType ?? string.Empty).Trim();
+        return value switch
+        {
+            "Deliverable" or "Meeting" or "Task" or "Other" => value,
+            _ => "Task"
+        };
+    }
+
     private async Task<Project?> QueryProjectAsync(int projectId, CancellationToken cancellationToken)
     {
         var sql = ProjectSelectSql + " WHERE p.ProjectID = @ProjectID;";
@@ -573,7 +634,10 @@ public sealed class ProjectRepository : IProjectRepository
                 SqlParameterFactory.Int("@ClientRefID", clientRefId),
                 SqlParameterFactory.Int("@ProjectTypeID", projectTypeId),
                 SqlParameterFactory.Int("@StatusID", statusId),
-                SqlParameterFactory.Int("@UserGroupID", userGroupId),
+                // NULL means "leave existing UserGroupID alone". Passing 0 used to CLEAR the
+                // column (USP maps <=0 to NULL), which made the form fall back to an inferred
+                // group from tProjectUser and look like the save "reverted".
+                SqlParameterFactory.Int("@UserGroupID", userGroupId > 0 ? userGroupId : null),
                 SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
             ], cancellationToken);
             return existing.Value;
@@ -864,6 +928,24 @@ public sealed class ProjectRepository : IProjectRepository
         NoteText = r.GetNullableString("NoteText") ?? string.Empty,
         IsPinned = r.GetBooleanOrDefault("IsPinned"),
         CreatedDate = r.GetDateTimeOrDefault("CreatedDate"),
+        ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
+    };
+
+    private static ProjectCalendarItem MapCalendarItem(SqlDataReader r) => new()
+    {
+        CalendarItemID = r.GetInt32OrDefault("CalendarItemID"),
+        ProjectID = r.GetInt32OrDefault("ProjectID"),
+        ProjectRefID = r.GetInt32OrDefault("ProjectRefID"),
+        ItemType = r.GetNullableString("ItemType") ?? "Task",
+        Title = r.GetNullableString("Title") ?? string.Empty,
+        OwnerUserID = r.TryGetNullableInt32("OwnerUserID"),
+        OwnerFullName = r.TryGetNullableString("OwnerFullName"),
+        ReceivedDate = r.TryGetNullableDateTime("ReceivedDate"),
+        CompletedDate = r.TryGetNullableDateTime("CompletedDate"),
+        Notes = r.TryGetNullableString("Notes"),
+        SortOrder = r.GetInt32OrDefault("SortOrder"),
+        IsActive = r.TryGetNullableBoolean("IsActive") ?? true,
+        CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
     };
 }

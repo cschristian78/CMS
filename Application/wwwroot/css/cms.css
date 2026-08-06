@@ -852,12 +852,13 @@ textarea {
 }
 
 .project-workflow-card .admin-tab-panel .form-grid {
-    grid-template-columns: 190px minmax(0, 1fr);
+    grid-template-columns: 190px minmax(16rem, 1fr);
 }
 
 .project-workflow-card .admin-tab-panel .admin-edit-card {
     width: 100%;
     box-sizing: border-box;
+    overflow: visible;
 }
 
 .project-workflow-card .admin-tab-panel .catalog-table {
@@ -869,6 +870,20 @@ textarea {
     overflow: auto;
     border: 1px solid var(--border);
     border-radius: 0.55rem;
+}
+
+.project-workflow-card .project-calendar-table select,
+.project-workflow-card .project-calendar-table input[type='text'],
+.project-workflow-card .project-calendar-table input:not([type]),
+.project-workflow-card .project-calendar-table input[type='date'] {
+    width: 100%;
+    min-width: 6.5rem;
+    box-sizing: border-box;
+}
+
+.project-workflow-card .project-calendar-table td:nth-child(2),
+.project-workflow-card .project-calendar-table td:nth-child(6) {
+    min-width: 10rem;
 }
 
 /* Edit project: tab bar spans full card width; each tab gets equal width */
@@ -888,6 +903,7 @@ textarea {
     display: grid;
     width: 100%;
     min-height: 640px;
+    overflow: visible;
 }
 
 .project-workflow-card .project-tab-panels > .admin-tab-panel {
@@ -895,19 +911,25 @@ textarea {
     display: block !important;
     visibility: hidden;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
     pointer-events: none;
+    z-index: 0;
 }
 
 .project-workflow-card .project-tab-panels > .admin-tab-panel.active {
     visibility: visible;
     overflow: visible;
     pointer-events: auto;
+    z-index: 2;
 }
 
-.project-workflow-card .project-tab-panels > .admin-tab-panel > .admin-edit-card {
-    width: 100%;
-    box-sizing: border-box;
+.project-workflow-card .admin-tab-panel .form-grid {
+    grid-template-columns: 190px minmax(16rem, 1fr);
+}
+
+.project-workflow-card .admin-tab-panel .form-grid select#ugid {
+    min-width: 16rem;
+    max-width: 100%;
 }
 
 .card.admin-card.admin-card--services {

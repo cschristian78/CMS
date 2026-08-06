@@ -2926,8 +2926,7 @@ BEGIN
         ProjectTypeID = COALESCE(@ProjectTypeID, ProjectTypeID),
         StatusID = COALESCE(NULLIF(@StatusID, 0), StatusID),
         UserGroupID = CASE
-            WHEN @UserGroupID IS NULL THEN UserGroupID
-            WHEN @UserGroupID <= 0 THEN NULL
+            WHEN @UserGroupID IS NULL OR @UserGroupID <= 0 THEN UserGroupID
             ELSE @UserGroupID
         END,
         ModifiedDate = SYSUTCDATETIME()

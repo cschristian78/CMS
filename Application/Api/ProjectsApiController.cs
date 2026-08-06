@@ -162,4 +162,23 @@ public sealed class ProjectsApiController : ControllerBase
     [HttpGet("{id:int}/activity")]
     public async Task<ActionResult<IReadOnlyList<ActivityLog>>> GetActivityAsync(int id, [FromQuery] int top = 100, CancellationToken cancellationToken = default)
         => Ok(await _projectService.GetActivityAsync(id, top, cancellationToken));
+
+    [HttpGet("{id:int}/calendar")]
+    public async Task<ActionResult<IReadOnlyList<ProjectCalendarItem>>> ListCalendarItemsAsync(
+        int id,
+        CancellationToken cancellationToken)
+        => Ok(await _projectService.ListCalendarItemsAsync(id, cancellationToken));
+
+    [HttpGet("user-groups/{ugid:int}/members")]
+    public async Task<ActionResult<IReadOnlyList<object>>> GetUserGroupMembersAsync(
+        int ugid,
+        CancellationToken cancellationToken)
+    {
+        if (ugid <= 0)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid user group", Detail = "ugid must be positive." });
+        }
+
+        return Ok(await _projectService.GetUserGroupMemberOptionsAsync(ugid, cancellationToken));
+    }
 }

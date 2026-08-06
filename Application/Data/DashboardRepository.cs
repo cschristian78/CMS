@@ -7,6 +7,9 @@ namespace ClientManagementSystem.Data;
 /// <summary>Dashboard analytics and <c>dbo.vProject_Current</c> list access.</summary>
 public sealed class DashboardRepository : IDashboardRepository
 {
+    /// <summary>Role-pivoted column on <c>dbo.vProject_Current</c> / <c>vProjectList</c>.</summary>
+    private const string AnalyticsLeadColumn = "Analytics Lead";
+
     private readonly IDbExecutor _db;
 
     public DashboardRepository(IDbExecutor db)
@@ -14,9 +17,54 @@ public sealed class DashboardRepository : IDashboardRepository
         _db = db;
     }
 
-    public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+    public Task<IReadOnlyList<string>> GetDistinctAnalyticsLeadNamesAsync(
         CancellationToken cancellationToken = default)
     {
+        // Bracketed identifier — role column name includes a space.
+        var sql = $"""
+            SELECT DISTINCT LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500)))) AS Value
+            FROM dbo.vProject_Current AS v
+            WHERE v.[{AnalyticsLeadColumn}] IS NOT NULL
+              AND LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500)))) <> N''
+            ORDER BY Value
+            """;
+
+        return _db.QueryTextAsync(
+            sql,
+            static r => r.GetNullableString("Value")?.Trim() ?? string.Empty,
+            null,
+            cancellationToken);
+    }
+
+    public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+        string? analyticsLeadName = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(analyticsLeadName))
+        {
+            var filteredSql = $"""
+                SELECT
+                    CAST(bu.BusinessUnitID AS int) AS BusinessUnitID,
+                    CAST(bu.BusinessUnitName AS nvarchar(255)) AS BusinessUnitName,
+                    CAST(COUNT(DISTINCT v.ClientID) AS int) AS ClientCount
+                FROM dbo.tBusinessUnit AS bu
+                LEFT JOIN dbo.vProject_Current AS v
+                  ON v.BusinessUnitName = bu.BusinessUnitName
+                 AND v.ClientID IS NOT NULL
+                 AND LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500))))
+                     = LTRIM(RTRIM(@AnalyticsLeadName))
+                WHERE bu.IsActive = 1
+                GROUP BY bu.BusinessUnitID, bu.BusinessUnitName
+                ORDER BY bu.BusinessUnitName;
+                """;
+
+            return _db.QueryTextAsync(
+                filteredSql,
+                MapBusinessUnitCount,
+                [SqlParameterFactory.NVarChar("@AnalyticsLeadName", 500, analyticsLeadName.Trim())],
+                cancellationToken);
+        }
+
         const string sql = """
             SELECT
                 CAST(bu.BusinessUnitID AS int) AS BusinessUnitID,
@@ -44,22 +92,21 @@ public sealed class DashboardRepository : IDashboardRepository
             ORDER BY bu.BusinessUnitName;
             """;
 
-        return _db.QueryTextAsync(
-            sql,
-            static r => new DashboardBusinessUnitCount
-            {
-                BusinessUnitID = r.GetInt32OrDefault("BusinessUnitID"),
-                BusinessUnitName = r.GetNullableString("BusinessUnitName"),
-                ClientCount = r.GetInt32OrDefault("ClientCount")
-            },
-            null,
-            cancellationToken);
+        return _db.QueryTextAsync(sql, MapBusinessUnitCount, null, cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetProjectCountByBusinessUnitAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default)
     {
-        const string sql = """
+        var leadFilter = string.IsNullOrWhiteSpace(analyticsLeadName)
+            ? string.Empty
+            : $"""
+               AND LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500))))
+                   = LTRIM(RTRIM(@AnalyticsLeadName))
+              """;
+
+        var sql = $"""
             SELECT
                 CAST(bu.BusinessUnitID AS int) AS BusinessUnitID,
                 CAST(bu.BusinessUnitName AS nvarchar(255)) AS BusinessUnitName,
@@ -68,26 +115,93 @@ public sealed class DashboardRepository : IDashboardRepository
             LEFT JOIN dbo.vProject_Current AS v
               ON v.BusinessUnitName = bu.BusinessUnitName
              AND v.ProjectID IS NOT NULL
+             {leadFilter}
             WHERE bu.IsActive = 1
             GROUP BY bu.BusinessUnitID, bu.BusinessUnitName
             ORDER BY bu.BusinessUnitName;
             """;
 
-        return _db.QueryTextAsync(
-            sql,
-            static r => new DashboardBusinessUnitCount
+        var parameters = string.IsNullOrWhiteSpace(analyticsLeadName)
+            ? null
+            : new List<SqlParameter>
             {
-                BusinessUnitID = r.GetInt32OrDefault("BusinessUnitID"),
-                BusinessUnitName = r.GetNullableString("BusinessUnitName"),
-                ClientCount = r.GetInt32OrDefault("ClientCount")
-            },
-            null,
-            cancellationToken);
+                SqlParameterFactory.NVarChar("@AnalyticsLeadName", 500, analyticsLeadName.Trim())
+            };
+
+        return _db.QueryTextAsync(sql, MapBusinessUnitCount, parameters, cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardNamedCount>> GetClientCountByBusinessClassAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrWhiteSpace(analyticsLeadName))
+        {
+            var filteredSql = $"""
+                ;WITH base AS (
+                    SELECT
+                        BusinessClassName = COALESCE(
+                            NULLIF(LTRIM(RTRIM(CAST(v.BusinessClassName AS NVARCHAR(255)))), N''),
+                            N'(Unspecified)'),
+                        BusinessUnitName = COALESCE(
+                            NULLIF(LTRIM(RTRIM(CAST(v.BusinessUnitName AS NVARCHAR(100)))), N''),
+                            N'(Unassigned)'),
+                        v.ClientID
+                    FROM dbo.vProject_Current AS v
+                    WHERE v.ClientID IS NOT NULL
+                      AND LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500))))
+                          = LTRIM(RTRIM(@AnalyticsLeadName))
+                ),
+                byUnit AS (
+                    SELECT
+                        BusinessClassName,
+                        BusinessUnitName,
+                        CAST(COUNT(DISTINCT ClientID) AS int) AS UnitCount
+                    FROM base
+                    GROUP BY BusinessClassName, BusinessUnitName
+                ),
+                ranked AS (
+                    SELECT
+                        BusinessClassName,
+                        BusinessUnitName,
+                        UnitCount,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY BusinessClassName
+                            ORDER BY UnitCount DESC, BusinessUnitName) AS rn
+                    FROM byUnit
+                ),
+                totals AS (
+                    SELECT
+                        BusinessClassName,
+                        CAST(COUNT(DISTINCT ClientID) AS int) AS Count
+                    FROM base
+                    GROUP BY BusinessClassName
+                ),
+                allClasses AS (
+                    SELECT
+                        Label = COALESCE(
+                            NULLIF(LTRIM(RTRIM(bc.BusinessClassDescription)), N''),
+                            bc.BusinessClassName)
+                    FROM dbo.tBusinessClass AS bc
+                    WHERE bc.IsActive = 1
+                )
+                SELECT
+                    a.Label,
+                    CAST(ISNULL(t.Count, 0) AS int) AS Count,
+                    r.BusinessUnitName AS ColorKey
+                FROM allClasses AS a
+                LEFT JOIN totals AS t ON t.BusinessClassName = a.Label
+                LEFT JOIN ranked AS r ON r.BusinessClassName = a.Label AND r.rn = 1
+                ORDER BY a.Label;
+                """;
+
+            return _db.QueryTextAsync(
+                filteredSql,
+                MapNamedCount,
+                [SqlParameterFactory.NVarChar("@AnalyticsLeadName", 500, analyticsLeadName.Trim())],
+                cancellationToken);
+        }
+
         const string sql = """
             ;WITH base AS (
                 SELECT
@@ -159,22 +273,21 @@ public sealed class DashboardRepository : IDashboardRepository
             ORDER BY a.Label;
             """;
 
-        return _db.QueryTextAsync(
-            sql,
-            static r => new DashboardNamedCount
-            {
-                Label = r.GetNullableString("Label"),
-                Count = r.GetInt32OrDefault("Count"),
-                ColorKey = r.GetNullableString("ColorKey")
-            },
-            null,
-            cancellationToken);
+        return _db.QueryTextAsync(sql, MapNamedCount, null, cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBusinessClassAsync(
+        string? analyticsLeadName = null,
         CancellationToken cancellationToken = default)
     {
-        const string sql = """
+        var leadFilter = string.IsNullOrWhiteSpace(analyticsLeadName)
+            ? string.Empty
+            : $"""
+               AND LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500))))
+                   = LTRIM(RTRIM(@AnalyticsLeadName))
+              """;
+
+        var sql = $"""
             ;WITH base AS (
                 SELECT
                     BusinessClassName = COALESCE(
@@ -186,6 +299,7 @@ public sealed class DashboardRepository : IDashboardRepository
                     v.ProjectID
                 FROM dbo.vProject_Current AS v
                 WHERE v.ProjectID IS NOT NULL
+                  {leadFilter}
             ),
             byUnit AS (
                 SELECT
@@ -230,16 +344,14 @@ public sealed class DashboardRepository : IDashboardRepository
             ORDER BY a.Label;
             """;
 
-        return _db.QueryTextAsync(
-            sql,
-            static r => new DashboardNamedCount
+        var parameters = string.IsNullOrWhiteSpace(analyticsLeadName)
+            ? null
+            : new List<SqlParameter>
             {
-                Label = r.GetNullableString("Label"),
-                Count = r.GetInt32OrDefault("Count"),
-                ColorKey = r.GetNullableString("ColorKey")
-            },
-            null,
-            cancellationToken);
+                SqlParameterFactory.NVarChar("@AnalyticsLeadName", 500, analyticsLeadName.Trim())
+            };
+
+        return _db.QueryTextAsync(sql, MapNamedCount, parameters, cancellationToken);
     }
 
     public Task RefreshClientProjectListAsync(CancellationToken cancellationToken = default) =>
@@ -317,6 +429,22 @@ public sealed class DashboardRepository : IDashboardRepository
 
         return _db.QueryTextAsTableAsync(sql.ToString(), parameters, cancellationToken);
     }
+
+    private static DashboardBusinessUnitCount MapBusinessUnitCount(SqlDataReader r) =>
+        new()
+        {
+            BusinessUnitID = r.GetInt32OrDefault("BusinessUnitID"),
+            BusinessUnitName = r.GetNullableString("BusinessUnitName"),
+            ClientCount = r.GetInt32OrDefault("ClientCount")
+        };
+
+    private static DashboardNamedCount MapNamedCount(SqlDataReader r) =>
+        new()
+        {
+            Label = r.GetNullableString("Label"),
+            Count = r.GetInt32OrDefault("Count"),
+            ColorKey = r.GetNullableString("ColorKey")
+        };
 
     private static bool IsClientProjectListFilterColumn(string columnName) =>
         string.Equals(columnName, "BusinessUnitName", StringComparison.OrdinalIgnoreCase)

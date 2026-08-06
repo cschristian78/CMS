@@ -44,6 +44,10 @@ public interface IProjectRepository
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default);
 
+    // Analytics Calendar
+    Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(int projectId, CancellationToken cancellationToken = default);
+    Task ReplaceCalendarItemsAsync(int projectId, IReadOnlyList<ProjectCalendarItem> items, CancellationToken cancellationToken = default);
+
     /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
     Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
 }
