@@ -4,6 +4,59 @@
 
 export const HOME_CLIENT_PROJECT_LIST_OPTIONS_URL = '/api/home/client-project-list/options';
 
+const HOME_LIST_FILTERS_STORAGE_KEY = 'cms.home.listFilters.v2';
+
+export type HomeListFilters = {
+  businessUnit: string;
+  businessClass: string;
+  status: string;
+  online: string;
+  client: string;
+  projectType: string;
+};
+
+const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
+  businessUnit: '',
+  businessClass: '',
+  status: 'Active',
+  online: 'Online',
+  client: '',
+  projectType: '',
+};
+
+function asFilterString(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+/** Restores Main list filters after navigating away (same browser tab). */
+export function loadHomeListFilters(): HomeListFilters {
+  try {
+    const raw = sessionStorage.getItem(HOME_LIST_FILTERS_STORAGE_KEY);
+    if (!raw) {
+      return { ...DEFAULT_HOME_LIST_FILTERS };
+    }
+    const parsed = JSON.parse(raw) as Partial<HomeListFilters>;
+    return {
+      businessUnit: asFilterString(parsed.businessUnit, DEFAULT_HOME_LIST_FILTERS.businessUnit),
+      businessClass: asFilterString(parsed.businessClass, DEFAULT_HOME_LIST_FILTERS.businessClass),
+      status: asFilterString(parsed.status, DEFAULT_HOME_LIST_FILTERS.status),
+      online: asFilterString(parsed.online, DEFAULT_HOME_LIST_FILTERS.online),
+      client: asFilterString(parsed.client, DEFAULT_HOME_LIST_FILTERS.client),
+      projectType: asFilterString(parsed.projectType, DEFAULT_HOME_LIST_FILTERS.projectType),
+    };
+  } catch {
+    return { ...DEFAULT_HOME_LIST_FILTERS };
+  }
+}
+
+export function saveHomeListFilters(filters: HomeListFilters): void {
+  try {
+    sessionStorage.setItem(HOME_LIST_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // Ignore quota / private-mode failures; filters still work for the current visit.
+  }
+}
+
 function appendFilterParams(
   p: URLSearchParams,
   businessUnit: string,

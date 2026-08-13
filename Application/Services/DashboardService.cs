@@ -16,23 +16,9 @@ public sealed class DashboardService : IDashboardService
         CancellationToken cancellationToken = default) =>
         _dashboard.GetDistinctAnalyticsLeadNamesAsync(cancellationToken);
 
-    public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+    public Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBeginMonthAsync(
         string? analyticsLeadName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default) =>
-        _dashboard.GetClientCountByBusinessUnitAsync(analyticsLeadName, cancellationToken);
-
-    public Task<IReadOnlyList<DashboardBusinessUnitCount>> GetProjectCountByBusinessUnitAsync(
-        string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default) =>
-        _dashboard.GetProjectCountByBusinessUnitAsync(analyticsLeadName, cancellationToken);
-
-    public Task<IReadOnlyList<DashboardNamedCount>> GetClientCountByBusinessClassAsync(
-        string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default) =>
-        _dashboard.GetClientCountByBusinessClassAsync(analyticsLeadName, cancellationToken);
-
-    public Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBusinessClassAsync(
-        string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default) =>
-        _dashboard.GetProjectCountByBusinessClassAsync(analyticsLeadName, cancellationToken);
+        _dashboard.GetProjectCountByBeginMonthAsync(analyticsLeadName, isOnline, cancellationToken);
 }

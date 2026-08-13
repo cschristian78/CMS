@@ -1,19 +1,38 @@
-:root {
-    --background: #f5f7fb;
-    --surface: #ffffff;
-    --border: #d9e1ec;
-    --text: #1e2b3c;
-    --muted: #5d6b7d;
-    --primary: #143d6b;
-    --primary-hover: #0d2e52;
-    --danger: #a62727;
-    --danger-hover: #7d1d1d;
-    --success-bg: #e9f7ef;
-    --success-text: #1c6b3a;
-    --error-bg: #fdecec;
-    --error-text: #912525;
+﻿:root {
+    /* BMS / iVision tokens (dark industrial) */
+    --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --font-display: 'Bebas Neue', Impact, sans-serif;
+    --black: #04070c;
+    --background: #04070c;
+    --surface: #0d1522;
+    --surface-deep: #080e18;
+    --card: #0d1522;
+    --border: #1a2d44;
+    --border2: #223550;
+    --text: #c8d8e8;
+    --muted: #5a7080;
+    --white: #e8f0f8;
+    --accent: #f08700;
+    --accent-dim: #b86500;
+    --accent-glow: rgba(240, 135, 0, 0.55);
+    --accent-soft: rgba(240, 135, 0, 0.09);
+    --cyan: #20d4e8;
+    --green: #30d880;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --primary: #f08700;
+    --primary-hover: #ff9a1a;
+    --danger: #ef4444;
+    --danger-hover: #dc2626;
+    --success-bg: rgba(48, 216, 128, 0.12);
+    --success-text: #30d880;
+    --error-bg: rgba(239, 68, 68, 0.12);
+    --error-text: #ef4444;
+    --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.35);
     --app-sidebar-width: 5.25rem;
     --page-shell-inline-pad: 1.5rem;
+    --list-row-light: rgba(125, 186, 233, 0.18);
+    --list-row-dark: rgba(29, 90, 165, 0.28);
 }
 
 * {
@@ -23,9 +42,15 @@
 html, body {
     margin: 0;
     padding: 0;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--font-mono);
     color: var(--text);
     background: var(--background);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+    min-height: 100%;
 }
 
 a {
@@ -205,6 +230,19 @@ main.page-shell.page-shell--home-wide {
     box-sizing: border-box;
 }
 
+/* Project create/edit: full content-column width beside the sidebar */
+main.page-shell.page-shell--project-wide {
+    max-width: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+main.page-shell.page-shell--project-wide .client-workflow-fill,
+main.page-shell.page-shell--project-wide .project-workflow-card {
+    width: 100%;
+    max-width: none;
+}
+
 /* Dashboard: charts use full content-column width */
 main.page-shell.page-shell--dashboard-wide {
     max-width: none;
@@ -329,6 +367,22 @@ main.page-shell--client-workflow > .alert {
     color: var(--muted);
 }
 
+.hero-feedback {
+    margin-top: 0.85rem;
+}
+
+.home-send-feedback-link {
+    color: var(--accent, #f08700);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
+
+.home-send-feedback-link:hover,
+.home-send-feedback-link:focus-visible {
+    color: var(--accent-dim, #b86500);
+}
+
 .tile-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -338,7 +392,31 @@ main.page-shell--client-workflow > .alert {
 }
 
 .tile-grid--home {
-    max-width: 1020px;
+    max-width: min(1200px, 100%);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 1.25rem auto;
+}
+
+.tile-grid--home .workflow-tile {
+    min-height: 0;
+    padding: 0.85rem 1rem;
+    border-radius: 0.75rem;
+}
+
+.tile-grid--home .tile-title {
+    font-size: 1.05rem;
+    margin-bottom: 0.2rem;
+}
+
+.tile-grid--home .tile-stat-value {
+    font-size: 1.45rem;
+    margin: 0.15rem 0;
+}
+
+.tile-grid--home .tile-stat-detail {
+    font-size: 0.8rem;
+    max-height: none;
 }
 
 .workflow-tile--stat {
@@ -877,13 +955,84 @@ textarea {
 .project-workflow-card .project-calendar-table input:not([type]),
 .project-workflow-card .project-calendar-table input[type='date'] {
     width: 100%;
-    min-width: 6.5rem;
+    min-width: 0;
     box-sizing: border-box;
 }
 
-.project-workflow-card .project-calendar-table td:nth-child(2),
+/* Calendar: fixed widths for Type/Title/Owner/Received/Completed; Notes expands; Remove stays one line */
+.project-workflow-card .project-calendar-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(1),
+.project-workflow-card .project-calendar-table td:nth-child(1) {
+    width: 7.75rem;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(2),
+.project-workflow-card .project-calendar-table td:nth-child(2) {
+    width: 12rem;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(3),
+.project-workflow-card .project-calendar-table td:nth-child(3) {
+    width: 11rem;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(4),
+.project-workflow-card .project-calendar-table td:nth-child(4),
+.project-workflow-card .project-calendar-table th:nth-child(5),
+.project-workflow-card .project-calendar-table td:nth-child(5) {
+    width: 8.25rem;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(6),
 .project-workflow-card .project-calendar-table td:nth-child(6) {
-    min-width: 10rem;
+    width: auto;
+    min-width: 0;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(7),
+.project-workflow-card .project-calendar-table td:nth-child(7) {
+    width: 5.75rem;
+    min-width: 5.75rem;
+    max-width: 5.75rem;
+    white-space: nowrap;
+    text-align: center;
+    overflow: visible;
+}
+
+.project-workflow-card .project-calendar-table td:nth-child(6) input {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.project-workflow-card .project-calendar-table tbody td:nth-child(7) .danger-button {
+    margin: 0.25rem 0.15rem;
+    white-space: nowrap;
+    display: inline-block;
+    padding: 0.28rem 0.45rem;
+    font-size: 0.78rem;
+    line-height: 1.2;
+}
+
+.home-modal-dialog.project-calendar-edit-dialog {
+    width: 62.5vw; /* 5/8 of the screen */
+    max-width: 62.5vw;
+}
+
+.project-calendar-edit-dialog .form-grid {
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: 0.65rem 0.85rem;
+    margin-top: 0.75rem;
+}
+
+.project-calendar-edit-dialog textarea {
+    min-height: 5.5rem;
+    resize: vertical;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* Edit project: tab bar spans full card width; each tab gets equal width */
@@ -1661,6 +1810,40 @@ textarea {
     background: #fff;
 }
 
+.admin-usergroup-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-usergroup-list-table tbody tr {
+    cursor: pointer;
+}
+
+.admin-usergroup-list-table .admin-usergroup-pipe-sep {
+    display: inline-block;
+    margin-right: 0.55rem;
+    color: rgb(125, 186, 233);
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+.admin-usergroup-list-table .admin-usergroup-col-id {
+    width: 4.5rem;
+    white-space: nowrap;
+}
+
+.admin-usergroup-list-table .admin-usergroup-col-num {
+    width: 6.5rem;
+    white-space: nowrap;
+}
+
+.admin-usergroup-list-table .admin-usergroup-col-members {
+    width: 7.5rem;
+    white-space: nowrap;
+}
+
 .admin-usergroup-table {
     width: 100%;
     border-collapse: collapse;
@@ -1820,6 +2003,28 @@ textarea {
 
 .dashboard-charts-layout__project-bc {
     grid-area: project-bc;
+}
+
+.dashboard-charts-layout--timeline {
+    grid-template-columns: 1fr;
+    grid-template-areas: none;
+}
+
+.dashboard-charts-layout--timeline .dashboard-chart-card {
+    overflow-x: auto;
+}
+
+.dashboard-charts-layout--timeline .bar-chart--vertical .bar-chart-plot {
+    min-height: 220px;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    padding-bottom: 0.5rem;
+}
+
+.dashboard-charts-layout--timeline .bar-chart--vertical .bar-column-label {
+    writing-mode: horizontal-tb;
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 @media (max-width: 900px) {
@@ -2233,8 +2438,10 @@ textarea {
     word-break: normal;
 }
 
+.dashboard-data-table tbody tr:nth-child(odd),
 .dashboard-data-table tbody tr:nth-child(even) {
-    background: #fafcfe;
+    background: transparent;
+    color: var(--text);
 }
 
 .dashboard-data-table--full td {
@@ -2273,18 +2480,9 @@ textarea {
     user-select: none;
 }
 
-.home-client-project-table tbody tr:hover {
-    background: rgba(24, 54, 89, 0.06) !important;
-}
-
 .home-client-project-table tbody tr.home-project-list-row--selected {
-    background: rgba(24, 54, 89, 0.12) !important;
-    outline: 2px solid var(--primary);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
-}
-
-.home-client-project-table tbody tr.home-project-list-row--selected:hover {
-    background: rgba(24, 54, 89, 0.16) !important;
 }
 
 /* Online / in-progress indicator (far-left column on the home grid) */
@@ -2347,11 +2545,40 @@ button.home-online-dot.home-online-dot--on {
     align-items: center;
     gap: 0.4rem;
     min-height: 2rem;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .project-online-toggle .home-online-dot {
     cursor: default;
     pointer-events: none;
+}
+
+.project-online-toggle-label {
+    font-weight: 600;
+    cursor: pointer;
+    margin: 0;
+}
+
+.project-number-with-online {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    width: 100%;
+    min-width: 0;
+}
+
+.project-number-with-online > input#projectNumber {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.project-number-with-online .project-online-toggle {
+    margin-left: auto;
+}
+
+.project-number-with-online .project-online-toggle input[type='checkbox'] {
+    width: auto;
 }
 
 /* Home client/project grid: keep cell values on one line; scroll horizontally in the wrap */
@@ -2851,4 +3078,1540 @@ button.home-online-dot.home-online-dot--on {
 .admin-user-photo-help {
     margin: 0;
     max-width: 28rem;
+}
+
+/* ============================================================================
+   BMS / iVision theme overlay — dark industrial restyle
+   ============================================================================ */
+
+.bg-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.bg-glow {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 65% 50% at 10% 20%, var(--accent-soft) 0%, transparent 60%),
+        radial-gradient(ellipse 55% 50% at 90% 75%, rgba(99, 102, 241, 0.06) 0%, transparent 55%);
+}
+
+.bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(240, 135, 0, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(240, 135, 0, 0.025) 1px, transparent 1px);
+    background-size: 52px 52px;
+}
+
+.bg-scan {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0, 0, 0, 0.05) 3px,
+        rgba(0, 0, 0, 0.05) 4px
+    );
+}
+
+.app-frame {
+    position: relative;
+    z-index: 1;
+    background: transparent;
+}
+
+.app-content {
+    position: relative;
+    z-index: 1;
+    background: transparent;
+}
+
+.page-shell {
+    position: relative;
+    z-index: 1;
+}
+
+/* —— Sidebar —— */
+.app-sidebar {
+    background: rgba(8, 14, 24, 0.96);
+    color: var(--text);
+    border-right: 1px solid var(--border);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(14px);
+}
+
+.app-sidebar-brand {
+    border-bottom: 1px solid var(--accent-soft);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.app-sidebar-brand-link {
+    color: var(--white);
+}
+
+.app-sidebar-brand-mark {
+    background: transparent;
+    border: 1px solid var(--border2);
+    border-radius: 0.35rem;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    letter-spacing: 0.06em;
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.app-sidebar-brand-mark .logo-accent {
+    color: var(--accent);
+}
+
+.app-sidebar-brand-mark .logo-rest {
+    color: var(--white);
+}
+
+.app-sidebar-brand-sub {
+    font-size: 0.52rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.2;
+    max-width: 4.6rem;
+}
+
+.sidebar-nav-item {
+    color: var(--muted);
+    border-left-color: transparent;
+}
+
+.sidebar-nav-item:hover {
+    background: var(--accent-soft);
+    color: var(--white);
+}
+
+.sidebar-nav-item.active {
+    background: rgba(240, 135, 0, 0.14);
+    border-left-color: var(--accent);
+    color: var(--accent);
+}
+
+.topbar {
+    background: rgba(4, 7, 12, 0.92);
+    border-bottom: 1px solid var(--accent-soft);
+    color: var(--text);
+    box-shadow: none;
+}
+
+.brand a,
+.file-menu a {
+    color: var(--white);
+}
+
+/* —— Typography —— */
+.page-header h1,
+.card-heading,
+.dashboard-chart-title,
+.tile-title {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+    font-weight: 400;
+    color: var(--white);
+}
+
+.page-header p,
+.field-help,
+.tile-text,
+.muted,
+.client-directory-filter-hint {
+    color: var(--muted);
+}
+
+.tile-title {
+    color: var(--accent);
+    font-size: 1.55rem;
+}
+
+/* —— Cards / tiles —— */
+.card,
+.workflow-tile,
+.dashboard-chart-card,
+.home-summary-tile {
+    background: rgba(13, 21, 34, 0.88);
+    border: 1px solid var(--border);
+    border-radius: 0.45rem;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(10px);
+}
+
+.card {
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+}
+
+.workflow-tile:hover,
+.home-summary-tile:hover {
+    border-color: var(--border2);
+    box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow-lg);
+}
+
+/* —— Buttons —— */
+.primary-button,
+.secondary-button,
+.danger-button {
+    border-radius: 0.28rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    min-height: 2.15rem;
+}
+
+.primary-button {
+    background: var(--accent);
+    color: #04070c;
+}
+
+.primary-button:hover {
+    background: var(--primary-hover);
+    color: #04070c;
+}
+
+.primary-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.secondary-button {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border2);
+}
+
+.secondary-button:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-dim);
+    color: var(--white);
+}
+
+.danger-button {
+    background: transparent;
+    color: var(--red);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.danger-button:hover {
+    background: rgba(239, 68, 68, 0.14);
+    color: #fecaca;
+}
+
+/* —— Forms —— */
+input,
+select,
+textarea,
+.form-control,
+.client-directory-search input,
+.search-input {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 0.28rem;
+    caret-color: var(--accent);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.form-control:focus {
+    outline: none;
+    border-color: var(--accent-dim) !important;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--muted);
+}
+
+label,
+.field-label,
+.form-label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+option {
+    background: var(--surface-deep);
+    color: #ffffff;
+}
+
+/* —— Alerts —— */
+.alert-success {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border-color: rgba(48, 216, 128, 0.35);
+}
+
+.alert-error,
+.alert-danger {
+    background: var(--error-bg);
+    color: var(--error-text);
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+/* —— Tables (BMS Vendor Management look) —— */
+.table-wrap,
+.project-tab-table-wrap,
+.dashboard-table-wrap,
+.admin-usergroup-table-wrap,
+.home-project-list-scroll,
+.client-directory-scroll {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--card);
+}
+
+table,
+.data-table,
+.client-directory-table,
+.admin-table,
+.home-list-table,
+.dashboard-data-table,
+.home-client-project-table,
+.home-project-list-table,
+.catalog-table,
+.admin-usergroup-table,
+.admin-services-grid-table,
+.bulk-preview-table,
+.project-calendar-table,
+.project-services-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.72rem;
+    color: var(--text);
+    background: transparent;
+    border-color: var(--border);
+}
+
+table th,
+table td,
+.data-table th,
+.data-table td,
+.client-directory-table th,
+.client-directory-table td,
+.admin-table th,
+.admin-table td,
+.home-list-table th,
+.home-list-table td,
+.dashboard-data-table th,
+.dashboard-data-table td,
+.home-client-project-table th,
+.home-client-project-table td,
+.home-project-list-table th,
+.home-project-list-table td,
+.catalog-table th,
+.catalog-table td,
+.admin-usergroup-table th,
+.admin-usergroup-table td,
+.admin-services-grid-table th,
+.admin-services-grid-table td,
+.bulk-preview-table th,
+.bulk-preview-table td,
+.project-calendar-table th,
+.project-calendar-table td,
+.project-services-table th,
+.project-services-table td {
+    border-bottom: 1px solid var(--border) !important;
+    padding: 0.55rem 0.5rem;
+    text-align: left;
+    vertical-align: middle;
+}
+
+table thead th,
+.data-table thead th,
+.client-directory-table thead th,
+.admin-table thead th,
+.home-list-table thead th,
+.dashboard-data-table thead th,
+.home-client-project-table thead th,
+.home-project-list-table thead th,
+.catalog-table thead th,
+.admin-usergroup-table thead th,
+.admin-services-grid-table thead th,
+.bulk-preview-table thead th,
+.project-calendar-table thead th,
+.project-services-table thead th,
+.admin-usergroup-table th,
+.services-table th,
+.notes-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-deep) !important;
+    color: var(--muted) !important;
+    letter-spacing: 0.08em;
+    text-transform: uppercase !important;
+    font-weight: 500 !important;
+    font-size: 0.72rem !important;
+    box-shadow: none;
+}
+
+table tbody td,
+.data-table tbody td,
+.client-directory-table tbody td,
+.admin-table tbody td,
+.home-list-table tbody td,
+.dashboard-data-table tbody td,
+.home-client-project-table tbody td,
+.home-project-list-table tbody td,
+.catalog-table tbody td,
+.admin-usergroup-table tbody td,
+.admin-services-grid-table tbody td,
+.bulk-preview-table tbody td,
+.project-calendar-table tbody td,
+.project-services-table tbody td,
+table tbody tr:nth-child(odd) td,
+table tbody tr:nth-child(even) td,
+.data-table tbody tr:nth-child(odd) td,
+.data-table tbody tr:nth-child(even) td,
+.client-directory-table tbody tr:nth-child(odd) td,
+.client-directory-table tbody tr:nth-child(even) td,
+.admin-table tbody tr:nth-child(odd) td,
+.admin-table tbody tr:nth-child(even) td,
+.home-list-table tbody tr:nth-child(odd) td,
+.home-list-table tbody tr:nth-child(even) td,
+.dashboard-data-table tbody tr:nth-child(odd) td,
+.dashboard-data-table tbody tr:nth-child(even) td,
+.home-client-project-table tbody tr:nth-child(odd) td,
+.home-client-project-table tbody tr:nth-child(even) td,
+.home-project-list-table tbody tr:nth-child(odd) td,
+.home-project-list-table tbody tr:nth-child(even) td,
+.catalog-table tbody tr:nth-child(odd) td,
+.catalog-table tbody tr:nth-child(even) td,
+.admin-usergroup-table tbody tr:nth-child(odd) td,
+.admin-usergroup-table tbody tr:nth-child(even) td,
+.admin-services-grid-table tbody tr:nth-child(odd) td,
+.admin-services-grid-table tbody tr:nth-child(even) td,
+.bulk-preview-table tbody tr:nth-child(odd) td,
+.bulk-preview-table tbody tr:nth-child(even) td,
+.project-calendar-table tbody tr:nth-child(odd) td,
+.project-calendar-table tbody tr:nth-child(even) td,
+.project-services-table tbody tr:nth-child(odd) td,
+.project-services-table tbody tr:nth-child(even) td {
+    background: transparent !important;
+    color: var(--text) !important;
+    filter: none;
+    font-size: 0.72rem !important;
+}
+
+table tbody tr:hover,
+.data-table tbody tr:hover,
+.client-directory-table tbody tr:hover,
+.admin-table tbody tr:hover,
+.home-list-table tbody tr:hover,
+.dashboard-data-table tbody tr:hover,
+.home-client-project-table tbody tr:hover,
+.home-project-list-table tbody tr:hover,
+.catalog-table tbody tr:hover,
+.admin-usergroup-table tbody tr:hover,
+.admin-services-grid-table tbody tr:hover,
+.bulk-preview-table tbody tr:hover,
+.project-calendar-table tbody tr:hover,
+.project-services-table tbody tr:hover,
+.client-directory-row:hover {
+    background: rgba(240, 135, 0, 0.06) !important;
+}
+
+table tbody tr:hover td,
+.data-table tbody tr:hover td,
+.client-directory-table tbody tr:hover td,
+.admin-table tbody tr:hover td,
+.home-list-table tbody tr:hover td,
+.dashboard-data-table tbody tr:hover td,
+.home-client-project-table tbody tr:hover td,
+.home-project-list-table tbody tr:hover td,
+.catalog-table tbody tr:hover td,
+.admin-usergroup-table tbody tr:hover td,
+.admin-services-grid-table tbody tr:hover td,
+.bulk-preview-table tbody tr:hover td,
+.project-calendar-table tbody tr:hover td,
+.project-services-table tbody tr:hover td,
+.client-directory-row:hover td {
+    background: transparent !important;
+    color: var(--text) !important;
+    filter: none;
+}
+
+table tbody tr.is-selected,
+.client-directory-table tbody tr.is-selected,
+.home-list-table tbody tr.is-selected,
+.home-client-project-table tbody tr.home-project-list-row--selected,
+.home-project-list-table tbody tr.home-project-list-row--selected,
+.client-directory-row-selected,
+.admin-services-grid-table tbody tr.selected,
+.admin-usergroup-table tbody tr.selected {
+    background: rgba(240, 135, 0, 0.14) !important;
+    outline: none;
+    box-shadow: none;
+}
+
+table tbody tr.is-selected td,
+.client-directory-table tbody tr.is-selected td,
+.home-list-table tbody tr.is-selected td,
+.home-client-project-table tbody tr.home-project-list-row--selected td,
+.home-project-list-table tbody tr.home-project-list-row--selected td,
+.client-directory-row-selected td,
+.admin-services-grid-table tbody tr.selected td,
+.admin-usergroup-table tbody tr.selected td {
+    background: transparent !important;
+    color: var(--white) !important;
+    box-shadow: none;
+}
+
+.admin-user-pick-row:nth-child(odd),
+.admin-user-pick-row:nth-child(even) {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+.admin-user-pick-row:hover,
+.admin-user-pick-row.is-selected,
+.admin-user-pick-row[aria-selected='true'],
+.admin-user-pick-row.selected {
+    background: rgba(240, 135, 0, 0.14) !important;
+    color: var(--white) !important;
+    box-shadow: none;
+    border-color: transparent !important;
+}
+
+/* Override remaining light surfaces from legacy rules */
+.panel,
+.list-panel,
+.directory-panel,
+.filter-bar,
+.toolbar,
+.tabs,
+.tab-bar,
+.modal,
+.modal-dialog,
+.popover,
+.dropdown-menu,
+.combo-panel,
+.user-combo-list,
+.admin-panel,
+.admin-section,
+.activity-panel,
+.notes-panel,
+.services-panel,
+.lookup-panel {
+    background: rgba(13, 21, 34, 0.92) !important;
+    border-color: var(--border) !important;
+    color: var(--text) !important;
+}
+
+.tab-button,
+.chip,
+.badge,
+.pill {
+    background: rgba(8, 14, 24, 0.9);
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.tab-button.active,
+.chip.active,
+.pill.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+a.link-button,
+.table-link,
+.inline-link {
+    color: var(--cyan);
+}
+
+a.link-button:hover,
+.table-link:hover,
+.inline-link:hover {
+    color: var(--accent);
+}
+
+/* Charts */
+.bar-track,
+.bar-column-track {
+    background: rgba(26, 45, 68, 0.55) !important;
+}
+
+.bar-label,
+.bar-value,
+.bar-column-label,
+.bar-column-value {
+    color: var(--muted) !important;
+}
+
+.dashboard-chart-card {
+    background: rgba(13, 21, 34, 0.88);
+}
+
+/* CatAI */
+.catai-transcript {
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    padding: 0.85rem;
+    min-height: 360px;
+    max-height: 560px;
+    overflow-y: auto;
+    background: var(--surface-deep);
+    color: var(--text);
+}
+
+/* Scrollbars (WebKit) */
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--black);
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--border2);
+    border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-dim);
+}
+
+/* Selection */
+::selection {
+    background: rgba(240, 135, 0, 0.35);
+    color: var(--white);
+}
+
+/* —— Hardcoded light surfaces remapped —— */
+.admin-user-pick-list,
+.admin-usergroup-table-wrap,
+.home-modal-dialog,
+.cms-listbox,
+.user-pick-list,
+.services-table-wrap,
+.notes-table-wrap {
+    background: var(--card) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+
+.bar-chart--vertical .bar-column-track,
+.bar-track {
+    background: rgba(26, 45, 68, 0.55) !important;
+}
+
+.bar-chart--vertical .bar-column-value {
+    color: var(--accent) !important;
+}
+
+.home-modal-overlay {
+    background: rgba(4, 7, 12, 0.72) !important;
+}
+
+.home-modal-title {
+    color: var(--white) !important;
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+}
+
+.home-modal-body {
+    color: var(--text) !important;
+}
+
+.tile-stat-value {
+    color: var(--accent) !important;
+    font-family: var(--font-display);
+    letter-spacing: 0.03em;
+}
+
+.tile-stat-detail {
+    color: var(--text) !important;
+}
+
+.workflow-tile--stat:hover {
+    box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow-lg);
+}
+
+.admin-user-pick-row.is-selected,
+.admin-user-pick-row[aria-selected='true'] {
+    background: rgba(240, 135, 0, 0.14) !important;
+    color: var(--white) !important;
+    box-shadow: none;
+}
+
+.status-ok,
+.text-success {
+    color: var(--green) !important;
+}
+
+.status-warn {
+    color: var(--amber) !important;
+}
+
+.status-error,
+.text-danger {
+    color: var(--red) !important;
+}
+
+/* Soften remaining pale panels that used light blues */
+.filter-chip,
+.home-filter-bar,
+.dashboard-filters,
+.list-toolbar,
+.client-directory-search,
+.admin-toolbar {
+    background: transparent;
+    color: var(--text);
+}
+
+.page-header h1 {
+    font-size: 2rem;
+    margin-bottom: 0.25rem;
+}
+
+/* —— Edit project form: white surfaces, orange labels, dark-blue values —— */
+.project-workflow-card .admin-edit-card,
+.project-workflow-card .form-grid,
+.project-workflow-card .project-tab-panels > .admin-tab-panel {
+    --project-form-label: #f08700;
+    --project-form-value: rgb(29, 90, 165);
+    --project-form-surface: #ffffff;
+}
+
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) {
+    background: var(--project-form-surface) !important;
+    border: 1px solid rgba(29, 90, 165, 0.25);
+    border-radius: 0.4rem;
+    padding: 1rem 1.1rem;
+    color: var(--project-form-value);
+}
+
+.project-workflow-card .admin-tab-panel > h2 {
+    color: var(--accent);
+}
+
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) label,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) .field-label,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) .form-label,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) .form-grid > label {
+    color: #f08700 !important;
+    font-size: 1rem !important;
+    line-height: 1.5;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    font-weight: 600;
+}
+
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot),
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid select,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid textarea,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid .form-control,
+.project-workflow-card .client-combo input,
+.project-workflow-card .client-combo .combo-input {
+    background: #ffffff !important;
+    color: rgb(29, 90, 165) !important;
+    border: 1px solid rgba(29, 90, 165, 0.35) !important;
+    caret-color: rgb(29, 90, 165);
+    font-size: 1rem !important;
+}
+
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) .field-help,
+.project-workflow-card .admin-tab-panel > .field-help {
+    color: rgb(29, 90, 165) !important;
+    opacity: 0.85;
+}
+
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot):focus,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid select:focus,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid textarea:focus,
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid .form-control:focus {
+    border-color: #f08700 !important;
+    box-shadow: 0 0 0 2px rgba(240, 135, 0, 0.22);
+}
+
+.project-workflow-card input::placeholder,
+.project-workflow-card textarea::placeholder {
+    color: rgba(29, 90, 165, 0.45) !important;
+}
+
+.project-workflow-card option {
+    background: var(--surface-deep);
+    color: #ffffff;
+}
+
+/* Remaining white form panels (Revenue / Notes / etc.) keep dark-blue option text */
+.project-workflow-card .admin-edit-card:not(.project-panel-tab-card) > .form-grid option {
+    background: #ffffff;
+    color: rgb(29, 90, 165);
+}
+
+.project-workflow-card .client-combo,
+.project-workflow-card .combo-panel,
+.project-workflow-card .user-combo-list {
+    background: var(--card) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* Data tables — BMS Vendor Management look */
+.project-workflow-card .project-tab-table-wrap,
+.cms-listbox,
+.admin-user-pick-list,
+.admin-usergroup-table-wrap,
+.user-combo-list {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 4px;
+    color: var(--text) !important;
+}
+
+.project-workflow-card .project-tab-table-wrap {
+    overflow: auto;
+}
+
+.project-workflow-card .project-tab-table-wrap:not(:has(.project-calendar-table)) input:not([type='checkbox']):not([type='radio']),
+.project-workflow-card .project-tab-table-wrap:not(:has(.project-calendar-table)) select {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--border2) !important;
+    font-size: 0.72rem !important;
+    caret-color: #ffffff;
+}
+
+.project-workflow-card .project-calendar-table option,
+.cms-listbox option {
+    background: var(--surface-deep);
+    color: #ffffff;
+}
+
+.cms-listbox option:checked,
+.cms-listbox option:hover {
+    background: rgba(240, 135, 0, 0.18);
+    color: var(--white);
+}
+
+.admin-user-pick-name,
+.admin-user-pick-name-text,
+.admin-user-pick-title,
+.admin-user-pick-meta,
+.admin-user-pick-dept,
+.admin-user-pick-empty,
+.cms-listbox {
+    color: var(--text) !important;
+}
+
+.project-workflow-card .project-services-select-actions .secondary-button {
+    color: rgb(29, 90, 165);
+    border-color: rgba(29, 90, 165, 0.4);
+    background: #ffffff;
+}
+
+.project-workflow-card .project-services-select-actions .secondary-button:hover:not(:disabled) {
+    background: rgba(240, 135, 0, 0.1);
+    border-color: #f08700;
+    color: #f08700;
+}
+
+.project-workflow-card .admin-edit-card th,
+.project-workflow-card .project-tab-table-wrap th,
+.project-workflow-card .admin-edit-card th label,
+.project-workflow-card .project-tab-table-wrap th label {
+    color: var(--muted) !important;
+    font-size: 0.72rem !important;
+}
+
+.project-workflow-card .project-services-table th:nth-child(1),
+.project-workflow-card .project-services-table td:nth-child(1) {
+    width: 2.5rem;
+    min-width: 2.5rem;
+    max-width: 2.5rem;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.project-workflow-card .project-services-table th:nth-child(2),
+.project-workflow-card .project-services-table td:nth-child(2),
+.project-workflow-card .project-services-table th:nth-child(3),
+.project-workflow-card .project-services-table td:nth-child(3) {
+    min-width: 10rem;
+}
+
+/* Services list: normal weight; only form labels stay bold */
+.project-workflow-card #project-tab-services .project-services-table,
+.project-workflow-card #project-tab-services .project-services-table th,
+.project-workflow-card #project-tab-services .project-services-table td,
+.project-workflow-card #project-tab-services .project-tab-table-wrap .dashboard-data-table thead th,
+.project-workflow-card #project-tab-services .project-tab-table-wrap .dashboard-data-table tbody td {
+    font-weight: 400 !important;
+}
+
+.project-workflow-card #project-tab-services .project-panel-tab-card .form-grid > label {
+    font-weight: 600 !important;
+}
+
+/* —— Shared panel look: Project tabs + Admin tabs —— */
+.admin-edit-card.project-panel-tab-card {
+    background: var(--background) !important;
+    border: 1px solid rgb(125, 186, 233) !important;
+    border-radius: 0.45rem;
+    color: var(--text) !important;
+    box-shadow: none;
+    padding: 1rem 1.1rem;
+}
+
+.admin-edit-card.project-panel-tab-card .field-help {
+    color: var(--muted) !important;
+    opacity: 1;
+}
+
+.project-data-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+    width: 100%;
+}
+
+.project-data-listbox-panel {
+    width: 100%;
+}
+
+.project-data-listbox-panel label {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+.project-data-file-listbox {
+    width: 100%;
+    min-height: 16rem;
+    font: inherit;
+}
+
+.project-data-detail-panel {
+    width: 100%;
+}
+
+.project-data-detail-panel h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+}
+
+.project-data-detail-panel .project-file-row-actions {
+    margin-top: 0.85rem;
+}
+
+.project-file-url-cell {
+    max-width: 18rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.project-file-url-cell a {
+    color: var(--accent);
+}
+
+.project-file-choose-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 0.35rem;
+}
+
+.project-file-pending-count {
+    margin: 0;
+}
+
+.project-file-upload-meta {
+    margin: 0.75rem 0 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.project-file-upload-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem 1.25rem;
+    align-items: flex-end;
+}
+
+.project-file-upload-meta-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 10rem;
+    flex: 1 1 12rem;
+}
+
+.project-file-upload-meta-field label {
+    font-weight: 600;
+}
+
+.project-file-upload-meta-row .project-file-upload-meta-field {
+    flex: 1 1 10rem;
+    max-width: 18rem;
+}
+
+.project-file-active-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.project-file-row--active td {
+    background: rgba(46, 125, 50, 0.08) !important;
+}
+
+.project-file-meta-input {
+    width: 6.5rem;
+    min-width: 4rem;
+    max-width: 100%;
+}
+
+.project-file-meta-input--wide {
+    width: 12rem;
+    min-width: 8rem;
+}
+
+.project-file-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.admin-edit-card.project-panel-tab-card .project-notes-pinned-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text) !important;
+    font-weight: 500 !important;
+    cursor: pointer;
+}
+
+.admin-edit-card.project-panel-tab-card .project-notes-pinned-label input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.admin-edit-card.project-panel-tab-card label,
+.admin-edit-card.project-panel-tab-card .field-label,
+.admin-edit-card.project-panel-tab-card .form-label,
+.admin-edit-card.project-panel-tab-card .form-grid > label {
+    color: #f08700 !important;
+    font-size: 1rem !important;
+    line-height: 1.5;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    font-weight: 600;
+}
+
+.admin-edit-card.project-panel-tab-card input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot):not(.project-calendar-cell-input),
+.admin-edit-card.project-panel-tab-card select:not(.project-calendar-cell-input),
+.admin-edit-card.project-panel-tab-card textarea:not(.project-calendar-cell-input),
+.admin-edit-card.project-panel-tab-card .form-control:not(.project-calendar-cell-input) {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(125, 186, 233, 0.45) !important;
+    caret-color: #ffffff;
+    font-size: 1rem !important;
+}
+
+.admin-edit-card.project-panel-tab-card input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot):not(.project-calendar-cell-input):focus,
+.admin-edit-card.project-panel-tab-card select:not(.project-calendar-cell-input):focus,
+.admin-edit-card.project-panel-tab-card textarea:not(.project-calendar-cell-input):focus,
+.admin-edit-card.project-panel-tab-card .form-control:not(.project-calendar-cell-input):focus {
+    border-color: #f08700 !important;
+    box-shadow: 0 0 0 2px rgba(240, 135, 0, 0.22);
+}
+
+.admin-edit-card.project-panel-tab-card option {
+    background: var(--surface-deep);
+    color: #ffffff;
+}
+
+.admin-edit-card.project-panel-tab-card input::placeholder,
+.admin-edit-card.project-panel-tab-card textarea::placeholder {
+    color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.admin-edit-card.project-panel-tab-card .user-combo-input,
+.admin-edit-card.project-panel-tab-card .user-combo .user-combo-input {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(125, 186, 233, 0.45) !important;
+}
+
+.admin-edit-card.project-panel-tab-card .user-combo-list {
+    background: var(--card) !important;
+    border: 1px solid rgb(125, 186, 233) !important;
+    color: #ffffff !important;
+}
+
+.admin-edit-card.project-panel-tab-card .user-combo-option,
+.admin-edit-card.project-panel-tab-card .user-combo-name,
+.admin-edit-card.project-panel-tab-card .user-combo-dept {
+    color: #ffffff !important;
+}
+
+.admin-edit-card.project-panel-tab-card .project-services-select-actions .secondary-button,
+.admin-card .page-header-actions .secondary-button,
+.admin-card .project-services-select-actions .secondary-button {
+    color: #ffffff;
+    border-color: rgba(125, 186, 233, 0.55);
+    background: var(--surface-deep);
+}
+
+.admin-edit-card.project-panel-tab-card .project-services-select-actions .secondary-button:hover:not(:disabled),
+.admin-card .page-header-actions .secondary-button:hover:not(:disabled) {
+    background: rgba(240, 135, 0, 0.14);
+    border-color: #f08700;
+    color: #f08700;
+}
+
+.admin-edit-card.project-panel-tab-card .project-tab-table-wrap {
+    border: 1px solid rgba(125, 186, 233, 0.55) !important;
+    background: var(--card) !important;
+}
+
+.admin-edit-card.project-panel-tab-card .project-tab-table-wrap:not(:has(.project-calendar-table)) input:not([type='checkbox']):not([type='radio']),
+.admin-edit-card.project-panel-tab-card .project-tab-table-wrap:not(:has(.project-calendar-table)) select {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(125, 186, 233, 0.45) !important;
+    caret-color: #ffffff;
+}
+
+.admin-edit-card.project-panel-tab-card .project-calendar-table option {
+    background: var(--surface-deep);
+    color: #ffffff;
+}
+
+/* Admin page chrome: listboxes / pickers / tables match panel look */
+.admin-card {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+}
+
+.admin-card .admin-tab-panel > h2,
+.admin-card .admin-users-toolbar h2 {
+    color: var(--accent);
+}
+
+.admin-card .admin-users-dept-row label,
+.admin-card .admin-layout > label,
+.admin-card .admin-search-label,
+.admin-card .admin-users-filter-row label {
+    color: #f08700 !important;
+    font-size: 1rem !important;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    font-weight: 600;
+}
+
+.admin-card .admin-users-dept-select,
+.admin-card .admin-search-input,
+.admin-card .admin-users-filter-row input,
+.admin-card .admin-layout input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.admin-card .admin-layout select,
+.admin-card .admin-layout textarea {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(125, 186, 233, 0.45) !important;
+    caret-color: #ffffff;
+}
+
+.admin-card .admin-users-dept-select option,
+.admin-card .admin-layout option {
+    background: var(--surface-deep);
+    color: #ffffff;
+}
+
+.admin-card .admin-user-pick-list,
+.admin-card .cms-listbox,
+.admin-card .admin-usergroup-table-wrap,
+.admin-card .admin-usergroup-pick-list,
+.admin-card .user-combo-list {
+    background: var(--background) !important;
+    border: 1px solid rgb(125, 186, 233) !important;
+    color: #ffffff !important;
+    border-radius: 0.45rem;
+}
+
+.admin-card .admin-user-pick-row,
+.admin-card .admin-user-pick-name,
+.admin-card .admin-user-pick-name-text,
+.admin-card .admin-user-pick-title,
+.admin-card .admin-user-pick-meta,
+.admin-card .admin-user-pick-dept,
+.admin-card .admin-user-pick-empty,
+.admin-card .cms-listbox,
+.admin-card .cms-listbox option {
+    color: #ffffff !important;
+}
+
+.admin-card .admin-user-pick-row:hover,
+.admin-card .admin-user-pick-row.selected,
+.admin-card .admin-user-pick-row.is-selected,
+.admin-card .admin-user-pick-row[aria-selected='true'] {
+    background: rgba(240, 135, 0, 0.14) !important;
+    color: #ffffff !important;
+}
+
+.admin-card .admin-usergroup-table,
+.admin-card .admin-services-grid-table,
+.admin-card .admin-businessclass-table,
+.admin-card table.dashboard-data-table {
+    color: var(--text) !important;
+}
+
+.admin-card .admin-usergroup-table-wrap,
+.admin-card .admin-services-grid-wrap,
+.admin-card .dashboard-table-wrap {
+    background: var(--card) !important;
+    border: 1px solid rgba(125, 186, 233, 0.55) !important;
+    border-radius: 0.45rem;
+}
+
+.admin-card .bulk-import-panel.card {
+    background: var(--background) !important;
+    border: 1px solid rgb(125, 186, 233) !important;
+    color: var(--text) !important;
+}
+
+/* Project create/edit tabs: match Home project list table exactly */
+.project-workflow-card .project-tab-table-wrap {
+    overflow: auto;
+    max-height: min(65vh, 560px);
+    border: 1px solid var(--border) !important;
+    border-radius: 0.55rem !important;
+    background: var(--card) !important;
+    margin-top: 0.75rem;
+}
+
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table,
+.project-workflow-card .project-tab-table-wrap .home-client-project-table,
+.project-workflow-card .admin-edit-card .dashboard-data-table {
+    width: 100% !important;
+    min-width: 100%;
+    max-width: none;
+    table-layout: auto;
+    border-collapse: collapse;
+    font-size: 0.88rem !important;
+    color: var(--text) !important;
+    background: transparent !important;
+}
+
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table th,
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table td,
+.project-workflow-card .admin-edit-card .dashboard-data-table th,
+.project-workflow-card .admin-edit-card .dashboard-data-table td {
+    border: 1px solid var(--border) !important;
+    padding: 0.4rem 0.55rem !important;
+    text-align: left;
+    vertical-align: top;
+    font-size: 0.88rem !important;
+}
+
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table thead th,
+.project-workflow-card .admin-edit-card .dashboard-data-table thead th,
+.project-workflow-card .project-tab-table-wrap th label {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-deep) !important;
+    color: var(--muted) !important;
+    font-weight: 700 !important;
+    font-size: 0.88rem !important;
+    letter-spacing: 0.02em;
+    text-transform: none !important;
+    white-space: nowrap;
+}
+
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table tbody td,
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table tbody tr:nth-child(odd) td,
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table tbody tr:nth-child(even) td,
+.project-workflow-card .admin-edit-card .dashboard-data-table tbody td,
+.project-workflow-card .admin-edit-card .dashboard-data-table tbody tr:nth-child(odd) td,
+.project-workflow-card .admin-edit-card .dashboard-data-table tbody tr:nth-child(even) td {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table tbody tr:hover,
+.project-workflow-card .admin-edit-card .dashboard-data-table tbody tr:hover {
+    background: rgba(240, 135, 0, 0.06) !important;
+}
+
+.project-workflow-card .project-tab-table-wrap .dashboard-data-table tbody tr:hover td,
+.project-workflow-card .admin-edit-card .dashboard-data-table tbody tr:hover td {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+/* Non-calendar project tables keep inset field chrome */
+.project-workflow-card .project-tab-table-wrap:not(:has(.project-calendar-table)) input:not([type='checkbox']):not([type='radio']),
+.project-workflow-card .project-tab-table-wrap:not(:has(.project-calendar-table)) select {
+    background: var(--surface-deep) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--border) !important;
+    font-size: 0.88rem !important;
+    caret-color: #ffffff;
+}
+
+/*
+ * Calendar rows: one continuous row of values.
+ * Only table column borders separate cells — inputs/selects are borderless and transparent.
+ * Title (2), Received (4), Completed (5), Notes (6) match Type/Owner.
+ */
+.project-workflow-card .project-calendar-table tbody td {
+    padding: 0 !important;
+    vertical-align: middle !important;
+}
+
+.project-workflow-card .project-calendar-table tbody td .danger-button {
+    margin: 0.3rem 0.4rem;
+}
+
+.project-workflow-card .project-calendar-table .project-calendar-cell-input,
+.admin-edit-card.project-panel-tab-card .project-calendar-table .project-calendar-cell-input,
+.project-workflow-card .project-calendar-table tbody td:nth-child(2) input,
+.project-workflow-card .project-calendar-table tbody td:nth-child(4) input,
+.project-workflow-card .project-calendar-table tbody td:nth-child(5) input,
+.project-workflow-card .project-calendar-table tbody td:nth-child(6) input,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody td:nth-child(2) input,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody td:nth-child(4) input,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody td:nth-child(5) input,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody td:nth-child(6) input,
+.project-workflow-card .project-calendar-table tbody select,
+.project-workflow-card .project-calendar-table tbody input[type='text'],
+.project-workflow-card .project-calendar-table tbody input:not([type]),
+.project-workflow-card .project-calendar-table tbody input[type='date'],
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody select,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody input[type='text'],
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody input:not([type]),
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody input[type='date'] {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 2.15rem;
+    margin: 0 !important;
+    padding: 0.4rem 0.55rem !important;
+    border: 0 !important;
+    border-style: none !important;
+    border-width: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    color: var(--text) !important;
+    font-size: 0.88rem !important;
+    caret-color: var(--white);
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    color-scheme: dark;
+}
+
+/* Keep a usable dropdown arrow on Type / Owner without a field box */
+.project-workflow-card .project-calendar-table .project-calendar-cell-input[type],
+.project-workflow-card .project-calendar-table select.project-calendar-cell-input {
+    background-image: none !important;
+}
+
+.project-workflow-card .project-calendar-table select.project-calendar-cell-input {
+    appearance: auto !important;
+    -webkit-appearance: menulist !important;
+    background-color: transparent !important;
+    border: 0 !important;
+}
+
+.project-workflow-card .project-calendar-table .project-calendar-cell-input:focus,
+.project-workflow-card .project-calendar-table .project-calendar-cell-input:focus-visible,
+.admin-edit-card.project-panel-tab-card .project-calendar-table .project-calendar-cell-input:focus,
+.admin-edit-card.project-panel-tab-card .project-calendar-table .project-calendar-cell-input:focus-visible,
+.project-workflow-card .project-calendar-table tbody select:focus,
+.project-workflow-card .project-calendar-table tbody select:focus-visible,
+.project-workflow-card .project-calendar-table tbody input:focus,
+.project-workflow-card .project-calendar-table tbody input:focus-visible,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody select:focus,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody select:focus-visible,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody input:focus,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody input:focus-visible {
+    background: rgba(240, 135, 0, 0.08) !important;
+    box-shadow: inset 0 0 0 1px rgba(240, 135, 0, 0.4) !important;
+    outline: none !important;
+    border: 0 !important;
+}
+
+.project-workflow-card .project-calendar-table tbody option,
+.admin-edit-card.project-panel-tab-card .project-calendar-table tbody option {
+    background: var(--card);
+    color: var(--text);
+}
+
+.project-workflow-card .project-calendar-table input[type='date'].project-calendar-cell-input::-webkit-calendar-picker-indicator {
+    opacity: 0.55;
+    cursor: pointer;
+    filter: invert(0.85);
+}
+
+/* —— Project Time Tracker (week grid) —— */
+.project-time-week-nav {
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 0.85rem;
+}
+
+.project-time-week-range {
+    color: var(--text);
+    font-weight: 600;
+    margin-right: auto;
+}
+
+.project-time-table-wrap {
+    margin-top: 0.5rem;
+}
+
+.project-time-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.project-time-table th:first-child,
+.project-time-table td:first-child {
+    width: 14rem;
+}
+
+.project-time-table th:not(:first-child),
+.project-time-table td:not(:first-child) {
+    width: 5.5rem;
+    text-align: center;
+}
+
+.project-time-day-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    align-items: center;
+    line-height: 1.2;
+}
+
+.project-time-day-date {
+    font-weight: 500;
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.project-time-task-title {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.project-time-task-type {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.15rem;
+}
+
+.project-time-hours-input {
+    width: 100% !important;
+    min-width: 0 !important;
+    text-align: center;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    padding: 0.35rem 0.2rem !important;
+    font-size: 0.88rem !important;
+}
+
+.project-time-hours-input--allocated {
+    color: var(--accent) !important;
+    font-style: italic;
+}
+
+.project-time-hours-input:focus,
+.project-time-hours-input:focus-visible {
+    background: rgba(240, 135, 0, 0.08) !important;
+    box-shadow: inset 0 0 0 1px rgba(240, 135, 0, 0.4) !important;
+    outline: none !important;
+}
+
+.project-time-total {
+    font-weight: 700;
+    color: var(--accent) !important;
+}
+
+.project-time-day-totals td {
+    border-top: 1px solid rgba(125, 186, 233, 0.45) !important;
+    font-weight: 600;
+}
+
+.project-time-block-panel {
+    margin-top: 1.25rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--border);
+}
+
+.project-time-block-title {
+    margin: 0 0 0.35rem;
+    color: var(--accent);
+    font-size: 1.05rem;
+}
+
+.project-time-block-grid {
+    margin-top: 0.75rem;
+}
+
+.project-time-block-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.project-time-block-task {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text) !important;
+    font-weight: 500 !important;
+    cursor: pointer;
+}
+
+.project-time-block-task input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
 }

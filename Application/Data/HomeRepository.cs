@@ -39,6 +39,7 @@ public sealed class HomeRepository : IHomeRepository
 
         totalsSql.Append(ActiveClientProjectPredicate);
 
+        // Distinct-project counts still respect the Main list filters (BU / status / online / etc.).
         var parameters = new List<SqlParameter>();
         ClientProjectListFilterSql.AppendFilters(
             totalsSql,
@@ -60,11 +61,7 @@ public sealed class HomeRepository : IHomeRepository
                     FROM filtered AS f
                     WHERE f.ProjectID IS NOT NULL
                 ) AS int) AS DistinctProjectCount,
-                CAST(ISNULL((
-                    SELECT SUM(CAST(f.LatestRevenue AS float))
-                    FROM filtered AS f
-                    WHERE f.LatestRevenue IS NOT NULL
-                ), 0) AS float) AS TotalProjectRevenue
+                CAST(0 AS float) AS TotalProjectRevenue
             """);
 
         var totals = await _db.QueryTextAsync(
@@ -84,6 +81,32 @@ public sealed class HomeRepository : IHomeRepository
             ? totals[0]
             : new { UniqueClientCount = 0, DistinctProjectCount = 0, TotalProjectRevenue = 0d };
 
+        // Total Revenue tile: sum latest revenue for ALL Active projects (Active client + Active
+        // project). Intentionally ignores Main list filters (including Online) so the tile is not
+        // reduced when Online defaults to "Online".
+        const string totalRevenueSql = """
+            SELECT CAST(ISNULL(SUM(perProject.LatestRevenue), 0) AS float) AS TotalProjectRevenue
+            FROM (
+                SELECT v.ProjectID, MAX(CAST(v.LatestRevenue AS float)) AS LatestRevenue
+                FROM dbo.vProject_Current AS v
+                WHERE v.ProjectID IS NOT NULL
+                  AND v.LatestRevenue IS NOT NULL
+                  AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
+                  AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
+                GROUP BY v.ProjectID
+            ) AS perProject
+            """;
+
+        var totalRevenueRows = await _db.QueryTextAsync(
+            totalRevenueSql,
+            static r => r.IsDBNull(r.GetOrdinal("TotalProjectRevenue"))
+                ? 0d
+                : r.GetDouble(r.GetOrdinal("TotalProjectRevenue")),
+            null,
+            cancellationToken);
+
+        var totalProjectRevenue = totalRevenueRows.Count > 0 ? totalRevenueRows[0] : 0d;
+
         const string activeClientCountSql = """
             SELECT CAST(COUNT(DISTINCT c.ClientID) AS int) AS UniqueClientCount
               FROM dbo.tClient AS c
@@ -99,6 +122,47 @@ public sealed class HomeRepository : IHomeRepository
             cancellationToken);
 
         var uniqueClientCount = activeClientCount.Count > 0 ? activeClientCount[0] : 0;
+
+        // Global online roll-ups (same Active client/project scope as revenue; ignore list filters
+        // so the Online Projects tile is not zeroed by the Online/Offline dropdown).
+        const string onlineTotalsSql = """
+            SELECT
+                CAST((
+                    SELECT COUNT(DISTINCT v.ProjectID)
+                    FROM dbo.vProject_Current AS v
+                    INNER JOIN dbo.tProject AS p ON p.ProjectID = v.ProjectID
+                    WHERE v.ProjectID IS NOT NULL
+                      AND ISNULL(p.IsOnline, 0) = 1
+                      AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
+                      AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
+                ) AS int) AS OnlineProjectCount,
+                CAST(ISNULL((
+                    SELECT SUM(CAST(v.LatestRevenue AS float))
+                    FROM dbo.vProject_Current AS v
+                    INNER JOIN dbo.tProject AS p ON p.ProjectID = v.ProjectID
+                    WHERE v.ProjectID IS NOT NULL
+                      AND ISNULL(p.IsOnline, 0) = 1
+                      AND v.LatestRevenue IS NOT NULL
+                      AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
+                      AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
+                ), 0) AS float) AS OnlineProjectRevenue
+            """;
+
+        var onlineTotals = await _db.QueryTextAsync(
+            onlineTotalsSql,
+            static r => new
+            {
+                OnlineProjectCount = r.GetInt32(r.GetOrdinal("OnlineProjectCount")),
+                OnlineProjectRevenue = r.IsDBNull(r.GetOrdinal("OnlineProjectRevenue"))
+                    ? 0d
+                    : r.GetDouble(r.GetOrdinal("OnlineProjectRevenue"))
+            },
+            null,
+            cancellationToken);
+
+        var onlineRow = onlineTotals.Count > 0
+            ? onlineTotals[0]
+            : new { OnlineProjectCount = 0, OnlineProjectRevenue = 0d };
 
         var byTypeSql = new StringBuilder(
             """
@@ -146,7 +210,9 @@ public sealed class HomeRepository : IHomeRepository
         {
             UniqueClientCount = uniqueClientCount,
             DistinctProjectCount = row.DistinctProjectCount,
-            TotalProjectRevenue = row.TotalProjectRevenue,
+            TotalProjectRevenue = totalProjectRevenue,
+            OnlineProjectCount = onlineRow.OnlineProjectCount,
+            OnlineProjectRevenue = onlineRow.OnlineProjectRevenue,
             ProjectTypeCounts = byType
         };
     }

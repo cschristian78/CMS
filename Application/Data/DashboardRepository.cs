@@ -354,6 +354,96 @@ public sealed class DashboardRepository : IDashboardRepository
         return _db.QueryTextAsync(sql, MapNamedCount, parameters, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBeginMonthAsync(
+        string? analyticsLeadName = null,
+        bool? isOnline = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Fixed calendar-year monthly view (January–December of the current year).
+        var year = DateTime.UtcNow.Year;
+        var yearStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var yearEndExclusive = yearStart.AddYears(1);
+
+        var sql = new StringBuilder($"""
+            SELECT
+                CONVERT(char(7), p.CreatedDate, 126) AS Label,
+                CAST(COUNT(DISTINCT v.ProjectID) AS int) AS Count,
+                CAST(NULL AS nvarchar(100)) AS ColorKey
+            FROM dbo.vProject_Current AS v
+            INNER JOIN dbo.tProject AS p ON p.ProjectID = v.ProjectID
+            WHERE v.ProjectID IS NOT NULL
+              AND p.CreatedDate IS NOT NULL
+              AND p.CreatedDate >= @YearStart
+              AND p.CreatedDate < @YearEndExclusive
+            """);
+
+        var parameters = new List<SqlParameter>
+        {
+            SqlParameterFactory.DateTime2("@YearStart", yearStart),
+            SqlParameterFactory.DateTime2("@YearEndExclusive", yearEndExclusive)
+        };
+
+        if (!string.IsNullOrWhiteSpace(analyticsLeadName))
+        {
+            sql.Append($"""
+                 AND LTRIM(RTRIM(CAST(v.[{AnalyticsLeadColumn}] AS nvarchar(500))))
+                     = LTRIM(RTRIM(@AnalyticsLeadName))
+                """);
+            parameters.Add(SqlParameterFactory.NVarChar("@AnalyticsLeadName", 500, analyticsLeadName.Trim()));
+        }
+
+        if (isOnline.HasValue)
+        {
+            // Keep a trailing space — C# raw strings drop the newline before the closing """.
+            sql.Append(" AND CAST(ISNULL(p.IsOnline, 0) AS BIT) = @IsOnline ");
+            parameters.Add(SqlParameterFactory.Bit("@IsOnline", isOnline.Value));
+        }
+
+        sql.Append("""
+             GROUP BY CONVERT(char(7), p.CreatedDate, 126)
+             ORDER BY Label;
+            """);
+
+        var rows = await _db.QueryTextAsync(
+            sql.ToString(),
+            MapNamedCount,
+            parameters,
+            cancellationToken);
+
+        return FillJanuaryThroughDecember(year, rows);
+    }
+
+    /// <summary>Always returns 12 months (January–December) for <paramref name="year"/>; missing months are count 0.</summary>
+    private static IReadOnlyList<DashboardNamedCount> FillJanuaryThroughDecember(
+        int year,
+        IReadOnlyList<DashboardNamedCount> rows)
+    {
+        var byMonth = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            var key = (row.Label ?? string.Empty).Trim();
+            if (key.Length > 0)
+            {
+                byMonth[key] = row.Count;
+            }
+        }
+
+        var filled = new List<DashboardNamedCount>(12);
+        for (var month = 1; month <= 12; month++)
+        {
+            var key = $"{year:D4}-{month:D2}";
+            byMonth.TryGetValue(key, out var count);
+            filled.Add(new DashboardNamedCount
+            {
+                Label = key,
+                Count = count,
+                ColorKey = null
+            });
+        }
+
+        return filled;
+    }
+
     public Task RefreshClientProjectListAsync(CancellationToken cancellationToken = default) =>
         _db.ExecuteAsync("dbo.usp_Create_vProject_Current", null, cancellationToken);
 
@@ -410,7 +500,16 @@ public sealed class DashboardRepository : IDashboardRepository
         var sql = new StringBuilder("""
             SELECT
                 CAST(ISNULL(tp.IsOnline, 0) AS BIT) AS ProjectOnline,
-                v.*
+                v.*,
+                CAST(ISNULL((
+                    SELECT SUM(te.Hours)
+                      FROM dbo.tProjectTimeEntry AS te
+                      INNER JOIN dbo.tProjectRef AS pr
+                              ON pr.ProjectRefID = te.ProjectRefID
+                             AND pr.IsActive = 1
+                     WHERE pr.ProjectID = v.ProjectID
+                       AND te.IsActive = 1
+                ), 0) AS DECIMAL(12,2)) AS TotalHours
             FROM dbo.vProject_Current AS v
             LEFT JOIN dbo.tProject AS tp ON tp.ProjectID = v.ProjectID
             WHERE 1 = 1
@@ -443,7 +542,7 @@ public sealed class DashboardRepository : IDashboardRepository
         {
             Label = r.GetNullableString("Label"),
             Count = r.GetInt32OrDefault("Count"),
-            ColorKey = r.GetNullableString("ColorKey")
+            ColorKey = r.TryGetNullableString("ColorKey")
         };
 
     private static bool IsClientProjectListFilterColumn(string columnName) =>

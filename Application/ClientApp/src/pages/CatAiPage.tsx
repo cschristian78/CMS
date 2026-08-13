@@ -83,17 +83,7 @@ export default function CatAiPage() {
         {error ? <div className="alert alert-error">{error}</div> : null}
 
         <div style={{ display: 'grid', gap: 12 }}>
-          <div
-            style={{
-              border: '1px solid #d0d7de',
-              borderRadius: 8,
-              padding: 12,
-              minHeight: 360,
-              maxHeight: 560,
-              overflowY: 'auto',
-              background: '#fff',
-            }}
-          >
+          <div className="catai-transcript">
             {messages.map((m, idx) => (
               <div key={idx} style={{ marginBottom: 12 }}>
                 <strong>{m.role === 'user' ? 'You' : 'CatAI'}:</strong>

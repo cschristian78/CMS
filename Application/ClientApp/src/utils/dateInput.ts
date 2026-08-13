@@ -41,12 +41,15 @@ export function toInputDateValue(value: string | Date | null | undefined): strin
   return formatYmd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
 }
 
-/** Locale display for a calendar date (no time component). */
+/** Display a calendar date as MM/DD/YYYY (no time component). */
 export function formatCalendarDateDisplay(value: string | null | undefined): string {
   const iso = toInputDateValue(value);
   if (!iso) {
     return '—';
   }
-  const [y, m, day] = iso.split('-').map(Number);
-  return new Date(y, m - 1, day).toLocaleDateString();
+  const [y, m, day] = iso.split('-');
+  if (!y || !m || !day) {
+    return '—';
+  }
+  return `${m}/${day}/${y}`;
 }

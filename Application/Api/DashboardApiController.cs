@@ -36,91 +36,53 @@ public sealed class DashboardApiController : ControllerBase
         }
     }
 
-    [HttpGet("clients-by-business-unit")]
-    public async Task<ActionResult<IReadOnlyList<DashboardBusinessUnitCount>>> GetClientsByBusinessUnitAsync(
+    /// <summary>
+    /// Bar-chart series: distinct project counts by begin month (<c>tProject.CreatedDate</c>).
+    /// Query: <c>analyticsLeadName</c>, <c>onlineStatus</c>=Online|All.
+    /// </summary>
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [HttpGet("projects-by-begin-month")]
+    public async Task<ActionResult<IReadOnlyList<DashboardNamedCount>>> GetProjectsByBeginMonthAsync(
         [FromQuery] string? analyticsLeadName = null,
+        [FromQuery] string? onlineStatus = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var rows = await _dashboardService.GetClientCountByBusinessUnitAsync(
+            var rows = await _dashboardService.GetProjectCountByBeginMonthAsync(
                 analyticsLeadName,
+                ParseOnlineStatus(onlineStatus),
                 cancellationToken);
             return Ok(rows);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Dashboard clients-by-business-unit failed.");
+            _logger.LogError(ex, "Dashboard projects-by-begin-month failed.");
+            var root = ex.GetBaseException();
             return Problem(
-                detail: "Could not load client counts by business unit.",
+                detail: $"Could not load project counts by begin month. {root.GetType().Name}: {root.Message}",
                 title: "Operation failed",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    [HttpGet("projects-by-business-unit")]
-    public async Task<ActionResult<IReadOnlyList<DashboardBusinessUnitCount>>> GetProjectsByBusinessUnitAsync(
-        [FromQuery] string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default)
+    /// <summary>Online → true; All / empty / unknown → null (no IsOnline filter).</summary>
+    private static bool? ParseOnlineStatus(string? onlineStatus)
     {
-        try
+        if (string.IsNullOrWhiteSpace(onlineStatus))
         {
-            var rows = await _dashboardService.GetProjectCountByBusinessUnitAsync(
-                analyticsLeadName,
-                cancellationToken);
-            return Ok(rows);
+            return null;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Dashboard projects-by-business-unit failed.");
-            return Problem(
-                detail: "Could not load project counts by business unit.",
-                title: "Operation failed",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
-    }
 
-    [HttpGet("clients-by-business-class")]
-    public async Task<ActionResult<IReadOnlyList<DashboardNamedCount>>> GetClientsByBusinessClassAsync(
-        [FromQuery] string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default)
-    {
-        try
+        var value = onlineStatus.Trim();
+        if (value.Equals("Online", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("1", StringComparison.OrdinalIgnoreCase))
         {
-            var rows = await _dashboardService.GetClientCountByBusinessClassAsync(
-                analyticsLeadName,
-                cancellationToken);
-            return Ok(rows);
+            return true;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Dashboard clients-by-business-class failed.");
-            return Problem(
-                detail: "Could not load client counts by business class.",
-                title: "Operation failed",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
-    }
 
-    [HttpGet("projects-by-business-class")]
-    public async Task<ActionResult<IReadOnlyList<DashboardNamedCount>>> GetProjectsByBusinessClassAsync(
-        [FromQuery] string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var rows = await _dashboardService.GetProjectCountByBusinessClassAsync(
-                analyticsLeadName,
-                cancellationToken);
-            return Ok(rows);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Dashboard projects-by-business-class failed.");
-            return Problem(
-                detail: "Could not load project counts by business class.",
-                title: "Operation failed",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
+        // All (and Offline-as-all for this dashboard) → no filter
+        return null;
     }
 }

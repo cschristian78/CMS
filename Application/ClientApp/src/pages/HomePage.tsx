@@ -10,7 +10,10 @@ import {
   buildHomeClientProjectListUrl,
   buildHomeSummaryUrl,
   HOME_CLIENT_PROJECT_LIST_OPTIONS_URL,
+  loadHomeListFilters,
+  saveHomeListFilters,
 } from '../workflows/homeClientProjectListWorkflow';
+import { formatCalendarDateDisplay } from '../utils/dateInput';
 
 function normalizeColumnName(name: string): string {
   return name.replace(/[\s_\-.]/g, '').toLowerCase();
@@ -134,6 +137,8 @@ interface HomeSummary {
   /** Distinct ProjectID in filtered list scope; omitted or zero when summary is global (unfiltered). */
   distinctProjectCount?: number;
   totalProjectRevenue: number;
+  onlineProjectCount?: number;
+  onlineProjectRevenue?: number;
   projectTypeCounts: HomeProjectTypeCount[];
 }
 
@@ -184,9 +189,61 @@ interface HomeBulkCommitResult {
   rowErrors: string[];
 }
 
-function formatTableCell(value: string | number | boolean | null | undefined): string {
+function formatUsdAmount(n: number, maximumFractionDigits = 2): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits,
+  }).format(n);
+}
+
+function isLatestRevenueColumn(columnName: string): boolean {
+  const n = normalizeColumnName(columnName);
+  // Home grid: LatestRevenue; avoid RevenueTier / LatestRevenueID / EffectiveDate.
+  return n === 'latestrevenue' || n === 'revenueamount' || n === 'revenue';
+}
+
+function isTotalHoursColumn(columnName: string): boolean {
+  const n = normalizeColumnName(columnName);
+  return n === 'totalhours' || n === 'hours';
+}
+
+function isDateColumn(columnName: string): boolean {
+  const n = normalizeColumnName(columnName);
+  return n.includes('date');
+}
+
+function formatTableCell(
+  value: string | number | boolean | null | undefined,
+  columnName?: string,
+): string {
   if (value === null || value === undefined) {
     return '';
+  }
+  if (columnName && isLatestRevenueColumn(columnName)) {
+    const n =
+      typeof value === 'number' ?
+        value
+      : Number(String(value).replace(/[$,\s]/g, ''));
+    if (!Number.isFinite(n)) {
+      return String(value);
+    }
+    return formatUsdAmount(n);
+  }
+  if (columnName && isTotalHoursColumn(columnName)) {
+    const n =
+      typeof value === 'number' ?
+        value
+      : Number(String(value).replace(/[,\s]/g, ''));
+    if (!Number.isFinite(n)) {
+      return String(value);
+    }
+    const rounded = Math.round(n * 100) / 100;
+    return rounded === 0 ? '0' : String(rounded);
+  }
+  if (columnName && isDateColumn(columnName)) {
+    const formatted = formatCalendarDateDisplay(String(value));
+    return formatted === '—' ? '' : formatted;
   }
   if (typeof value === 'number' && !Number.isInteger(value)) {
     return String(Math.round(value * 100) / 100);
@@ -235,15 +292,17 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
 
   const [filterOptions, setFilterOptions] = useState<ClientProjectListFilterOptions | null>(null);
   const [filterOptionsError, setFilterOptionsError] = useState<string | null>(null);
-  const [filterBusinessUnit, setFilterBusinessUnit] = useState('');
-  const [filterBusinessClass, setFilterBusinessClass] = useState('');
-  // Home opens with the Status filter pre-set to "Active" so the initial list shows only active rows.
-  const [filterStatus, setFilterStatus] = useState('Active');
+  // Restore persisted Main filters on mount (survives navigating away and back in this tab).
+  const initialHomeFilters = useMemo(() => loadHomeListFilters(), []);
+  const [filterBusinessUnit, setFilterBusinessUnit] = useState(initialHomeFilters.businessUnit);
+  const [filterBusinessClass, setFilterBusinessClass] = useState(initialHomeFilters.businessClass);
+  // Default Status "Active" / Online "Online" unless a prior Main visit saved something else.
+  const [filterStatus, setFilterStatus] = useState(initialHomeFilters.status);
   /** '' = all, 'Online', or 'Offline' — filters by dbo.tProject.IsOnline. */
-  const [filterOnline, setFilterOnline] = useState('');
-  const [clientNameSearch, setClientNameSearch] = useState('');
+  const [filterOnline, setFilterOnline] = useState(initialHomeFilters.online);
+  const [clientNameSearch, setClientNameSearch] = useState(initialHomeFilters.client);
   // ProjectType filter is sourced from unique PTDescription values in dbo.vProject_Current.
-  const [filterProjectType, setFilterProjectType] = useState('');
+  const [filterProjectType, setFilterProjectType] = useState(initialHomeFilters.projectType);
   const [gridEditPrompt, setGridEditPrompt] = useState<HomeGridEditPromptState | null>(null);
 
   const [bulkWizardOpen, setBulkWizardOpen] = useState(false);
@@ -313,9 +372,28 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
 
   useEffect(() => {
     void loadProjectList(true);
-    // Initial load only — changing Business Unit / Status / Client name requires Apply filters or Refresh.
+    // Initial load (and remount after navigating back) — Apply filters / Refresh for mid-page changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep Main filters across navigation until the user changes them again.
+  useEffect(() => {
+    saveHomeListFilters({
+      businessUnit: filterBusinessUnit,
+      businessClass: filterBusinessClass,
+      status: filterStatus,
+      online: filterOnline,
+      client: clientNameSearch,
+      projectType: filterProjectType,
+    });
+  }, [
+    filterBusinessUnit,
+    filterBusinessClass,
+    filterStatus,
+    filterOnline,
+    clientNameSearch,
+    filterProjectType,
+  ]);
 
   // Once the Status filter options come back from the API, snap our default
   // "Active" value to the canonical casing the database uses (e.g. "ACTIVE",
@@ -332,20 +410,13 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     }
   }, [filterOptions, filterStatus]);
 
-  const revenueLabel =
-    summary != null
-      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(summary.totalProjectRevenue)
-      : '—';
+  const formatUsd = (n: number) => formatUsdAmount(n, 0);
 
-  const byTypeLines =
-    summary?.projectTypeCounts?.length ?
-      summary.projectTypeCounts
-        .map((x) => {
-          const label = (x.projectTypeDescription?.trim() || 'Unspecified').trim();
-          return `${label}: ${x.projectCount}`;
-        })
-        .join(' · ')
-    : '—';
+  const revenueLabel = summary != null ? formatUsd(summary.totalProjectRevenue) : '—';
+  const onlineRevenueLabel =
+    summary != null ? formatUsd(summary.onlineProjectRevenue ?? 0) : '—';
+  const onlineProjectCountLabel =
+    summary != null ? String(summary.onlineProjectCount ?? 0) : '…';
 
   const projectIdColumnIndex = useMemo(() => {
     if (!list?.columns?.length) {
@@ -754,6 +825,14 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         <p>
           Manage clients, projects, advisory services, administrative data, and dashboard reporting.
         </p>
+        <p className="hero-feedback">
+          <a
+            className="home-send-feedback-link"
+            href="mailto:scott.christian@bmsgroup.com?cc=catbottest%40bmsgroup.com&subject=CMS%20Feedback"
+          >
+            Send Feedback
+          </a>
+        </p>
       </section>
 
       {summaryError ? <div className="alert alert-error narrow-card">{summaryError}</div> : null}
@@ -766,11 +845,17 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Total Revenue (USD)">
           <span className="tile-title">Total Revenue (USD)</span>
           <span className="tile-stat-value">{summary != null ? revenueLabel : '…'}</span>
-          <span className="tile-stat-detail">Active clients &amp; projects</span>
+          <span className="tile-stat-detail">All Active projects</span>
         </div>
-        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Active projects by type">
-          <span className="tile-title">Active projects by type</span>
-          <span className="tile-stat-detail">{summary != null ? byTypeLines : '…'}</span>
+        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Online Projects">
+          <span className="tile-title">Online Projects</span>
+          <span className="tile-stat-value">{onlineProjectCountLabel}</span>
+          <span className="tile-stat-detail">Currently online</span>
+        </div>
+        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Online Revenue">
+          <span className="tile-title">Online Revenue</span>
+          <span className="tile-stat-value">{summary != null ? onlineRevenueLabel : '…'}</span>
+          <span className="tile-stat-detail">Online projects</span>
         </div>
       </section>
 
@@ -797,10 +882,6 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               </label>
             </div>
           </div>
-          <p className="field-help home-client-project-list-intro">
-            Use <strong>Bulk import</strong> to load clients and projects from CSV, click a column header to sort, or
-            click a row and <strong>Edit</strong> (double-click a row to open the project).
-          </p>
 
           {listError ? <div className="alert alert-error">{listError}</div> : null}
           {filterOptionsError ? <div className="alert alert-error">{filterOptionsError}</div> : null}
@@ -1030,7 +1111,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                       </td>
                       {visibleColumnIndexes.map((ci) => (
                         <td key={ci} className={homeProjectListCellClass(list.columns[ci] ?? '')}>
-                          {formatTableCell(row[ci])}
+                          {formatTableCell(row[ci], list.columns[ci])}
                         </td>
                       ))}
                     </tr>

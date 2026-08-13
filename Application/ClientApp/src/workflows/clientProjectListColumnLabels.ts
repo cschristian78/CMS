@@ -16,6 +16,12 @@ export function clientProjectListColumnHeaderForDisplay(columnName: string): str
   if (compact === 'revenuetier') {
     return 'Revenue Tier';
   }
+  if (compact === 'latestrevenue') {
+    return 'Latest Revenue';
+  }
+  if (compact === 'totalhours') {
+    return 'Hours';
+  }
   if (compact === 'businessclassname') {
     return 'Business Class';
   }

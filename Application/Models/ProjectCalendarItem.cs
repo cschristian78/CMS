@@ -13,8 +13,13 @@ public sealed class ProjectCalendarItem
     public string Title { get; set; } = string.Empty;
     public int? OwnerUserID { get; set; }
     public string? OwnerFullName { get; set; }
+
+    /// <summary>Date-only; JSON typically posts as <c>yyyy-MM-dd</c>.</summary>
     public DateTime? ReceivedDate { get; set; }
+
+    /// <summary>Date-only; JSON typically posts as <c>yyyy-MM-dd</c>.</summary>
     public DateTime? CompletedDate { get; set; }
+
     public string? Notes { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;

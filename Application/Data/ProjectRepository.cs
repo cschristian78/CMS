@@ -449,16 +449,8 @@ public sealed class ProjectRepository : IProjectRepository
     {
         var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
         var existing = await ListCalendarItemsAsync(projectId, cancellationToken);
-        foreach (var row in existing)
-        {
-            await _db.ExecuteAsync(
-                "dbo.usp_ProjectCalendarItem_SoftDelete",
-                [
-                    SqlParameterFactory.Int("@CalendarItemID", row.CalendarItemID),
-                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
-                ],
-                cancellationToken);
-        }
+        var existingIds = existing.Select(row => row.CalendarItemID).ToHashSet();
+        var keptIds = new HashSet<int>();
 
         var sort = 0;
         foreach (var item in items)
@@ -470,26 +462,281 @@ public sealed class ProjectRepository : IProjectRepository
             }
 
             var itemType = NormalizeCalendarItemType(item.ItemType);
-            var output = SqlParameterFactory.OutputInt("@NewCalendarItemID");
+            // Prefer client-provided order, but never drop SortOrder 0 (first row).
+            var sortOrder = item.SortOrder >= 0 ? item.SortOrder : sort;
+            var ownerUserId = item.OwnerUserID is > 0 ? item.OwnerUserID : null;
+            var receivedDate = NormalizeCalendarDate(item.ReceivedDate);
+            var completedDate = NormalizeCalendarDate(item.CompletedDate);
+            var notes = string.IsNullOrWhiteSpace(item.Notes) ? null : item.Notes.Trim();
+
+            if (item.CalendarItemID > 0 && existingIds.Contains(item.CalendarItemID))
+            {
+                await _db.ExecuteAsync(
+                    "dbo.usp_ProjectCalendarItem_Update",
+                    [
+                        SqlParameterFactory.Int("@CalendarItemID", item.CalendarItemID),
+                        SqlParameterFactory.VarChar("@ItemType", 30, itemType),
+                        SqlParameterFactory.NVarChar("@Title", 200, title),
+                        SqlParameterFactory.Int("@OwnerUserID", ownerUserId),
+                        SqlParameterFactory.Date("@ReceivedDate", receivedDate),
+                        SqlParameterFactory.Date("@CompletedDate", completedDate),
+                        SqlParameterFactory.NVarChar("@Notes", -1, notes),
+                        SqlParameterFactory.Int("@SortOrder", sortOrder),
+                        SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+                    ],
+                    cancellationToken);
+                keptIds.Add(item.CalendarItemID);
+            }
+            else
+            {
+                var output = SqlParameterFactory.OutputInt("@NewCalendarItemID");
+                await _db.ExecuteWithOutputIntAsync(
+                    "dbo.usp_ProjectCalendarItem_Create",
+                    [
+                        SqlParameterFactory.Int("@ProjectRefID", projectRefId),
+                        SqlParameterFactory.VarChar("@ItemType", 30, itemType),
+                        SqlParameterFactory.NVarChar("@Title", 200, title),
+                        SqlParameterFactory.Int("@OwnerUserID", ownerUserId),
+                        SqlParameterFactory.Date("@ReceivedDate", receivedDate),
+                        SqlParameterFactory.Date("@CompletedDate", completedDate),
+                        SqlParameterFactory.NVarChar("@Notes", -1, notes),
+                        SqlParameterFactory.Int("@SortOrder", sortOrder),
+                        SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                        output
+                    ],
+                    "@NewCalendarItemID",
+                    cancellationToken);
+            }
+
+            sort++;
+        }
+
+        foreach (var row in existing)
+        {
+            if (keptIds.Contains(row.CalendarItemID))
+            {
+                continue;
+            }
+
+            await _db.ExecuteAsync(
+                "dbo.usp_ProjectCalendarItem_SoftDelete",
+                [
+                    SqlParameterFactory.Int("@CalendarItemID", row.CalendarItemID),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+                ],
+                cancellationToken);
+        }
+    }
+
+    public Task<IReadOnlyList<ProjectTimeEntry>> ListTimeEntriesForWeekAsync(
+        int projectId,
+        DateTime weekStartDate,
+        int? userId = null,
+        CancellationToken cancellationToken = default)
+        => _db.QueryAsync(
+            "dbo.usp_ProjectTimeEntry_ListByProjectWeek",
+            MapTimeEntry,
+            [
+                SqlParameterFactory.Int("@ProjectID", projectId),
+                SqlParameterFactory.Date("@WeekStartDate", weekStartDate.Date),
+                SqlParameterFactory.Int("@UserID", userId)
+            ],
+            cancellationToken);
+
+    public async Task SaveTimeEntriesForWeekAsync(
+        int projectId,
+        DateTime weekStartDate,
+        IReadOnlyList<ProjectTimeEntry> entries,
+        CancellationToken cancellationToken = default)
+    {
+        var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
+        var monday = weekStartDate.Date;
+        var sunday = monday.AddDays(6);
+
+        // Clear cells not present / zero by upserting every submitted cell (0 hours soft-deletes).
+        // Also clear existing week cells that were omitted from the payload.
+        var existing = await ListTimeEntriesForWeekAsync(projectId, monday, CmsDefaults.ActingUserId, cancellationToken);
+        var submittedKeys = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var entry in entries)
+        {
+            if (entry.CalendarItemID <= 0)
+            {
+                continue;
+            }
+
+            var workDate = entry.WorkDate.Date;
+            if (workDate < monday || workDate > sunday)
+            {
+                continue;
+            }
+
+            var hours = entry.Hours < 0m ? 0m : (entry.Hours > 24m ? 24m : entry.Hours);
+            var mode = string.Equals(entry.EntryMode, "Allocated", StringComparison.OrdinalIgnoreCase)
+                ? "Allocated"
+                : "Exact";
+
+            submittedKeys.Add($"{entry.CalendarItemID}|{workDate:yyyy-MM-dd}");
+
+            var output = SqlParameterFactory.OutputInt("@NewTimeEntryID");
             await _db.ExecuteWithOutputIntAsync(
-                "dbo.usp_ProjectCalendarItem_Create",
+                "dbo.usp_ProjectTimeEntry_Upsert",
                 [
                     SqlParameterFactory.Int("@ProjectRefID", projectRefId),
-                    SqlParameterFactory.VarChar("@ItemType", 30, itemType),
-                    SqlParameterFactory.NVarChar("@Title", 200, title),
-                    SqlParameterFactory.Int("@OwnerUserID", item.OwnerUserID is > 0 ? item.OwnerUserID : null),
-                    SqlParameterFactory.Date("@ReceivedDate", item.ReceivedDate),
-                    SqlParameterFactory.Date("@CompletedDate", item.CompletedDate),
-                    SqlParameterFactory.NVarChar("@Notes", -1, item.Notes),
-                    SqlParameterFactory.Int("@SortOrder", item.SortOrder > 0 ? item.SortOrder : sort),
+                    SqlParameterFactory.Int("@CalendarItemID", entry.CalendarItemID),
+                    SqlParameterFactory.Date("@WorkDate", workDate),
+                    SqlParameterFactory.Decimal("@Hours", hours),
+                    SqlParameterFactory.VarChar("@EntryMode", 20, mode),
+                    SqlParameterFactory.NVarChar("@Notes", 500, entry.Notes),
                     SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
                     output
                 ],
-                "@NewCalendarItemID",
+                "@NewTimeEntryID",
                 cancellationToken);
-            sort++;
+        }
+
+        foreach (var row in existing)
+        {
+            var key = $"{row.CalendarItemID}|{row.WorkDate:yyyy-MM-dd}";
+            if (submittedKeys.Contains(key))
+            {
+                continue;
+            }
+
+            var output = SqlParameterFactory.OutputInt("@NewTimeEntryID");
+            await _db.ExecuteWithOutputIntAsync(
+                "dbo.usp_ProjectTimeEntry_Upsert",
+                [
+                    SqlParameterFactory.Int("@ProjectRefID", projectRefId),
+                    SqlParameterFactory.Int("@CalendarItemID", row.CalendarItemID),
+                    SqlParameterFactory.Date("@WorkDate", row.WorkDate.Date),
+                    SqlParameterFactory.Decimal("@Hours", 0m),
+                    SqlParameterFactory.VarChar("@EntryMode", 20, "Exact"),
+                    SqlParameterFactory.NVarChar("@Notes", 500, null),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                    output
+                ],
+                "@NewTimeEntryID",
+                cancellationToken);
         }
     }
+
+    public Task<IReadOnlyList<ProjectFile>> ListFilesAsync(
+        int projectId,
+        CancellationToken cancellationToken = default)
+        => _db.QueryAsync(
+            "dbo.usp_ProjectFile_ListByProject",
+            MapProjectFile,
+            [SqlParameterFactory.Int("@ProjectID", projectId)],
+            cancellationToken);
+
+    public async Task<ProjectFile?> GetFileAsync(
+        int projectFileId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _db.QueryAsync(
+            "dbo.usp_ProjectFile_GetById",
+            MapProjectFile,
+            [SqlParameterFactory.Int("@ProjectFileID", projectFileId)],
+            cancellationToken);
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    public async Task<int> AddFileAsync(ProjectFile file, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        var projectRefId = file.ProjectRefID > 0
+            ? file.ProjectRefID
+            : await ResolveProjectRefIdForProjectAsync(file.ProjectID, cancellationToken);
+
+        var category = NormalizeFileCategory(file.Category);
+        var uploadedBy = file.UploadedByUserID > 0 ? file.UploadedByUserID : CmsDefaults.ActingUserId;
+        var output = SqlParameterFactory.OutputInt("@NewProjectFileID");
+
+        await _db.ExecuteWithOutputIntAsync(
+            "dbo.usp_ProjectFile_Create",
+            [
+                SqlParameterFactory.Int("@ProjectRefID", projectRefId),
+                SqlParameterFactory.NVarChar("@OriginalFileName", 260, file.OriginalFileName),
+                SqlParameterFactory.NVarChar("@ContentType", 150, file.ContentType),
+                SqlParameterFactory.BigInt("@ByteLength", file.ByteLength),
+                SqlParameterFactory.NVarChar("@BlobPath", 500, file.BlobPath),
+                SqlParameterFactory.NVarChar("@BlobUrl", 1000, file.BlobUrl),
+                SqlParameterFactory.VarChar("@Category", 40, category),
+                SqlParameterFactory.NVarChar("@Description", 1000, file.Description),
+                SqlParameterFactory.NVarChar("@VersionLabel", 40, file.VersionLabel),
+                SqlParameterFactory.Date("@DataAsOf", file.DataAsOf),
+                SqlParameterFactory.Bit("@IsCurrent", file.IsCurrent),
+                SqlParameterFactory.Int("@UploadedByUserID", uploadedBy),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                output
+            ],
+            "@NewProjectFileID",
+            cancellationToken);
+
+        return Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
+    }
+
+    public Task UpdateFileMetadataAsync(
+        int projectFileId,
+        string? description,
+        string? versionLabel,
+        DateTime? dataAsOf,
+        CancellationToken cancellationToken = default)
+        => _db.ExecuteAsync(
+            "dbo.usp_ProjectFile_UpdateMetadata",
+            [
+                SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.NVarChar("@Description", 1000, description),
+                SqlParameterFactory.NVarChar("@VersionLabel", 40, versionLabel),
+                SqlParameterFactory.Date("@DataAsOf", dataAsOf),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+
+    public Task SetFileCurrentAsync(
+        int projectFileId,
+        bool isCurrent,
+        CancellationToken cancellationToken = default)
+        => _db.ExecuteAsync(
+            "dbo.usp_ProjectFile_SetCurrent",
+            [
+                SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.Bit("@IsCurrent", isCurrent),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+
+    public async Task SoftDeleteFileAsync(int projectFileId, CancellationToken cancellationToken = default)
+    {
+        await _db.ExecuteAsync(
+            "dbo.usp_ProjectFile_SoftDelete",
+            [
+                SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+    }
+
+    private static string NormalizeFileCategory(string? category)
+    {
+        var value = (category ?? string.Empty).Trim();
+        return value switch
+        {
+            "SourceData" or "ExposureData" or "LossData" or "ClaimsData" => value,
+            "Source Data" => "SourceData",
+            "Exposure Data" => "ExposureData",
+            "Loss Data" => "LossData",
+            "Claims Data" => "ClaimsData",
+            // Legacy values mapped forward
+            "ClientData" or "Contract" or "Invoice" or "Other" => "SourceData",
+            _ => "SourceData"
+        };
+    }
+
+    private static DateTime? NormalizeCalendarDate(DateTime? value)
+        => value.HasValue ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Unspecified) : null;
 
     private static string NormalizeCalendarItemType(string? itemType)
     {
@@ -944,6 +1191,46 @@ public sealed class ProjectRepository : IProjectRepository
         CompletedDate = r.TryGetNullableDateTime("CompletedDate"),
         Notes = r.TryGetNullableString("Notes"),
         SortOrder = r.GetInt32OrDefault("SortOrder"),
+        IsActive = r.TryGetNullableBoolean("IsActive") ?? true,
+        CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
+        ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
+    };
+
+    private static ProjectTimeEntry MapTimeEntry(SqlDataReader r) => new()
+    {
+        TimeEntryID = r.GetInt32OrDefault("TimeEntryID"),
+        ProjectID = r.GetInt32OrDefault("ProjectID"),
+        ProjectRefID = r.GetInt32OrDefault("ProjectRefID"),
+        CalendarItemID = r.GetInt32OrDefault("CalendarItemID"),
+        CalendarItemTitle = r.TryGetNullableString("CalendarItemTitle"),
+        CalendarItemType = r.TryGetNullableString("CalendarItemType"),
+        WorkDate = r.GetDateTimeOrDefault("WorkDate"),
+        Hours = r.GetNullableDecimal("Hours") ?? 0m,
+        EntryMode = r.GetNullableString("EntryMode") ?? "Exact",
+        Notes = r.TryGetNullableString("Notes"),
+        UserID = r.GetInt32OrDefault("UserID"),
+        IsActive = r.TryGetNullableBoolean("IsActive") ?? true,
+        CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
+        ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
+    };
+
+    private static ProjectFile MapProjectFile(SqlDataReader r) => new()
+    {
+        ProjectFileID = r.GetInt32OrDefault("ProjectFileID"),
+        ProjectID = r.GetInt32OrDefault("ProjectID"),
+        ProjectRefID = r.GetInt32OrDefault("ProjectRefID"),
+        OriginalFileName = r.GetNullableString("OriginalFileName") ?? string.Empty,
+        ContentType = r.TryGetNullableString("ContentType"),
+        ByteLength = r.GetInt64OrDefault("ByteLength"),
+        BlobPath = r.GetNullableString("BlobPath") ?? string.Empty,
+        BlobUrl = r.GetNullableString("BlobUrl") ?? string.Empty,
+        Category = r.GetNullableString("Category") ?? "SourceData",
+        Description = r.TryGetNullableString("Description"),
+        VersionLabel = r.TryGetNullableString("VersionLabel"),
+        DataAsOf = r.TryGetNullableDateTime("DataAsOf"),
+        IsCurrent = r.TryGetNullableBoolean("IsCurrent") ?? false,
+        UploadedByUserID = r.GetInt32OrDefault("UploadedByUserID"),
+        UploadedByName = r.TryGetNullableString("UploadedByName"),
         IsActive = r.TryGetNullableBoolean("IsActive") ?? true,
         CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")

@@ -49,6 +49,11 @@ public static class SqlParameterFactory
         Value = value.HasValue ? value.Value : DBNull.Value
     };
 
+    public static SqlParameter BigInt(string name, long value) => new(name, SqlDbType.BigInt)
+    {
+        Value = value
+    };
+
     public static SqlParameter Date(string name, DateTime? value) => new(name, SqlDbType.Date)
     {
         Value = value.HasValue ? value.Value.Date : DBNull.Value

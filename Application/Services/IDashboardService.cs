@@ -7,19 +7,9 @@ public interface IDashboardService
     Task<IReadOnlyList<string>> GetAnalyticsLeadFilterOptionsAsync(
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
+    /// <summary>Project counts by begin month (<c>tProject.CreatedDate</c>), optional Analytics Lead and Online filters.</summary>
+    Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBeginMonthAsync(
         string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<DashboardBusinessUnitCount>> GetProjectCountByBusinessUnitAsync(
-        string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<DashboardNamedCount>> GetClientCountByBusinessClassAsync(
-        string? analyticsLeadName = null,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBusinessClassAsync(
-        string? analyticsLeadName = null,
+        bool? isOnline = null,
         CancellationToken cancellationToken = default);
 }

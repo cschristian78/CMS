@@ -97,7 +97,7 @@ public sealed class ProjectFormViewModel
     /// <summary>Selected <c>dbo.tService.ServiceID</c> values for this project.</summary>
     public List<int> SelectedServiceIds { get; set; } = [];
 
-    /// <summary>Analytics Calendar rows (New Project drafts; persisted on save).</summary>
+    /// <summary>Analytics Calendar rows persisted to <c>dbo.tProjectCalendarItem</c> on save.</summary>
     public List<ProjectCalendarItem> CalendarItems { get; set; } = [];
 
     public IReadOnlyList<SelectListItem> ClientOptions { get; set; } = [];

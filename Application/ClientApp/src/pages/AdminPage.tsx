@@ -1,7 +1,8 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import type { FlashFn } from '../App';
 import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
+import { formatCalendarDateDisplay } from '../utils/dateInput';
 
 interface ServerDraft {
   server: string;
@@ -265,11 +266,7 @@ const emptyServiceForm = (): ServiceFormState => ({
 });
 
 function formatServiceDateDisplay(iso: string | null | undefined): string {
-  if (!iso) {
-    return '—';
-  }
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+  return formatCalendarDateDisplay(iso);
 }
 
 /** Map a catalog row + lookup tables to form state so dropdowns match the service's tServiceRef. */
@@ -374,21 +371,21 @@ const clientRefTag = (c: AdminClient): { label: string; kind: ClientRefTagKind }
 // Distinct, readable colors assigned to departments by their sorted position. Reused by the
 // header count chips and the per-row department badge so a department is always the same color.
 const DEPT_PALETTE: { bg: string; fg: string }[] = [
-  { bg: '#dbeafe', fg: '#1e40af' },
-  { bg: '#dcfce7', fg: '#166534' },
-  { bg: '#fef3c7', fg: '#92400e' },
-  { bg: '#fae8ff', fg: '#86198f' },
-  { bg: '#ffe4e6', fg: '#9f1239' },
-  { bg: '#cffafe', fg: '#155e75' },
-  { bg: '#ede9fe', fg: '#5b21b6' },
-  { bg: '#fee2e2', fg: '#991b1b' },
-  { bg: '#d1fae5', fg: '#065f46' },
-  { bg: '#fef9c3', fg: '#854d0e' },
-  { bg: '#e0e7ff', fg: '#3730a3' },
-  { bg: '#ffedd5', fg: '#9a3412' },
+  { bg: 'rgba(32, 212, 232, 0.18)', fg: '#20d4e8' },
+  { bg: 'rgba(48, 216, 128, 0.16)', fg: '#30d880' },
+  { bg: 'rgba(240, 135, 0, 0.18)', fg: '#f08700' },
+  { bg: 'rgba(99, 102, 241, 0.2)', fg: '#a5b4fc' },
+  { bg: 'rgba(244, 63, 94, 0.18)', fg: '#fb7185' },
+  { bg: 'rgba(14, 165, 233, 0.18)', fg: '#38bdf8' },
+  { bg: 'rgba(168, 85, 247, 0.18)', fg: '#c084fc' },
+  { bg: 'rgba(239, 68, 68, 0.18)', fg: '#f87171' },
+  { bg: 'rgba(16, 185, 129, 0.16)', fg: '#34d399' },
+  { bg: 'rgba(245, 158, 11, 0.18)', fg: '#fbbf24' },
+  { bg: 'rgba(99, 102, 241, 0.22)', fg: '#818cf8' },
+  { bg: 'rgba(249, 115, 22, 0.18)', fg: '#fb923c' },
 ];
 
-const NO_DEPT_COLOR = { bg: '#e6eaf0', fg: '#5a6470' };
+const NO_DEPT_COLOR = { bg: 'rgba(90, 112, 128, 0.2)', fg: '#8aa0b0' };
 
 const deptColorByIndex = (index: number) =>
   index < 0 ? NO_DEPT_COLOR : DEPT_PALETTE[index % DEPT_PALETTE.length];
@@ -457,7 +454,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
   };
 
   const selectedLabel = selected
-    ? `${comboUserLabel(selected)}${comboUserDept(selected) ? ` — ${comboUserDept(selected)}` : ''}`
+    ? `${comboUserLabel(selected)}${comboUserDept(selected) ? ` â€” ${comboUserDept(selected)}` : ''}`
     : '';
 
   return (
@@ -470,7 +467,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
         aria-expanded={open}
         aria-controls={`${id}-list`}
         autoComplete="off"
-        placeholder={placeholder ?? 'Type a name or department…'}
+        placeholder={placeholder ?? 'Type a name or departmentâ€¦'}
         value={open ? query : selectedLabel}
         onFocus={() => {
           setOpen(true);
@@ -499,7 +496,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
               choose(0);
             }}
           >
-            — None —
+            â€” None â€”
           </li>
           {filtered.length === 0 ? (
             <li className="user-combo-empty" role="status">
@@ -528,7 +525,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
   );
 }
 
-/** Row from GET /api/admin (Clients) — dbo.tClient joined to its primary dbo.tClientRef. */
+/** Row from GET /api/admin (Clients) â€” dbo.tClient joined to its primary dbo.tClientRef. */
 interface AdminClient {
   clientID: number;
   clientName?: string | null;
@@ -656,7 +653,7 @@ interface ServiceImportRow {
   /** Comma- or semicolon-separated list of tag names; resolved via usp_Tag_GetOrCreate. */
   tags: string;
   isActive: boolean;
-  /** ISO date from server; omit or null on insert → SQL uses GETDATE() */
+  /** ISO date from server; omit or null on insert â†’ SQL uses GETDATE() */
   createdDate?: string | null;
 }
 
@@ -689,7 +686,7 @@ type TabId =
   | 'services'
   | 'serviceCategories';
 
-/** US states and DC — two-letter postal codes for the user address State field. */
+/** US states and DC â€” two-letter postal codes for the user address State field. */
 const US_STATE_CODES: readonly string[] = [
   'AL',
   'AK',
@@ -899,7 +896,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [selectedCtId, setSelectedCtId] = useState<number | ''>('');
   const [ctForm, setCtForm] = useState({ clientTypeID: 0, ctName: '', ctDescription: '', isActive: true });
 
-  // Services (tService) — CMS_PhaseI_All: ServiceCategoryID FK + N:N tags via tServiceTag
+  // Services (tService) â€” CMS_PhaseI_All: ServiceCategoryID FK + N:N tags via tServiceTag
   const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [serviceForm, setServiceForm] = useState<ServiceFormState>(() => emptyServiceForm());
@@ -994,7 +991,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   // Populates the right-hand form from vUser-backed list fields (tUser) plus address lines
   // from tUserAddress. The admin index may embed primaryAddress (OUTER APPLY in the repo);
-  // we always re-query GET /api/admin/users/{id}/addresses → usp_User_ListAddresses so the
+  // we always re-query GET /api/admin/users/{id}/addresses â†’ usp_User_ListAddresses so the
   // form matches the database even if the bulk payload omitted or shaped address data differently.
   const applyUserToForm = async (u: AdminUser) => {
     if (!admin) {
@@ -1612,10 +1609,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const userPickerLabel = (u: AdminUser) => {
     const base = (u.username?.trim() || u.email?.trim() || u.displayName || `User ${u.userID}`).trim();
     const t = u.title?.trim();
-    return t ? `${base} — ${t}` : base;
+    return t ? `${base} â€” ${t}` : base;
   };
 
-  // Used by the UserGroup → "Find user" listbox, which should show only the user's first + last name.
+  // Used by the UserGroup â†’ "Find user" listbox, which should show only the user's first + last name.
   const userFirstLastLabel = (u: AdminUser) => {
     const fn = (u.firstName ?? '').trim();
     const ln = (u.lastName ?? '').trim();
@@ -1899,7 +1896,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   }, [filteredUsersForDirectory, selectedUserId, admin]);
 
   // In this schema dbo.tBusinessClass is global (no BU column); the BU/BC/Type association lives on
-  // dbo.tClientRef. So Business Class is NOT scoped to a Business Unit — show every class.
+  // dbo.tClientRef. So Business Class is NOT scoped to a Business Unit â€” show every class.
   const businessClassOptions = useMemo(() => admin?.businessClasses ?? [], [admin]);
 
   const clientStatusOptions = useMemo<ClientStatus[]>(() => {
@@ -2037,16 +2034,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   }, [filteredRolesForGroup, addMemberRoleId]);
 
-  const formatJoinedDate = (d?: string | null) => {
-    if (!d) {
-      return '—';
-    }
-    const trimmed = d.trim();
-    if (!trimmed) {
-      return '—';
-    }
-    return trimmed.length >= 10 ? trimmed.slice(0, 10) : trimmed;
-  };
+  const formatJoinedDate = (d?: string | null) => formatCalendarDateDisplay(d);
 
   const userGroupListLabel = (g: UserGroupListRow) => {
     const num = g.userGroupNumber?.trim() || '—';
@@ -2064,19 +2052,19 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       `User ${m.userID}`;
     const roleId = m.userRoleID ?? '—';
     const r = m.userRoleName?.trim() || `Role ${roleId}`;
-    return `Grp ${m.ugid} | User ${m.userID}: ${u} | Role ${roleId}: ${r} | Joined ${formatJoinedDate(m.joinedDate)}`;
+    return `Grp ${m.ugid}  |  User ${m.userID}: ${u}  |  Role ${roleId}: ${r}  |  Joined ${formatJoinedDate(m.joinedDate)}`;
   };
 
   const pendingMemberLabel = (p: PendingGroupMember) => {
     const grpId = groupEditUgid > 0 ? groupEditUgid : '(new)';
     if (!admin) {
-      return `Grp ${grpId} | User ${p.userID} | Role ${p.userRoleID} | Joined — (not saved)`;
+      return `Grp ${grpId}  |  User ${p.userID}  |  Role ${p.userRoleID}  |  Joined — (not saved)`;
     }
     const u = admin.bmsUsers.find((x) => x.userID === p.userID);
     const r = admin.userRoles.find((x) => x.userRoleID === p.userRoleID);
     const un = u ? userPickerLabel(u) : `User ${p.userID}`;
     const rn = r ? rolePickerLabel(r) : `Role ${p.userRoleID}`;
-    return `Grp ${grpId} | User ${p.userID}: ${un} | Role ${p.userRoleID}: ${rn} | Joined — (not saved)`;
+    return `Grp ${grpId}  |  User ${p.userID}: ${un}  |  Role ${p.userRoleID}: ${rn}  |  Joined — (not saved)`;
   };
 
   const groupMemberComboExists = (userID: number, userRoleID: number) =>
@@ -2615,11 +2603,11 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       return;
     }
     if (!serviceForm.serviceCategoryID || serviceForm.serviceCategoryID <= 0) {
-      flash('error', 'Select a service category — required for the tServiceRef link.');
+      flash('error', 'Select a service category â€” required for the tServiceRef link.');
       return;
     }
     if (!serviceForm.serviceGroupID || serviceForm.serviceGroupID <= 0) {
-      flash('error', 'Select a service group — required for the tServiceRef link.');
+      flash('error', 'Select a service group â€” required for the tServiceRef link.');
       return;
     }
     const category = (admin?.serviceCategories ?? []).find(
@@ -2801,7 +2789,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   const formatServiceCell = (v: string | number | boolean | null | undefined) => {
     if (v === null || v === undefined || v === '') {
-      return '—';
+      return 'â€”';
     }
     return String(v);
   };
@@ -2816,7 +2804,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   }
 
   if (!admin) {
-    return <p>Loading…</p>;
+    return <p>Loadingâ€¦</p>;
   }
 
   const tabBtn = (id: TabId, label: string) => (
@@ -2857,7 +2845,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
         <div id="admin-tab-server" className={'admin-tab-panel' + (tab === 'server' ? ' active' : '')}>
           <h2>Server</h2>
-          <form className="admin-edit-card" onSubmit={(e) => void handleServerSave(e)}>
+          <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void handleServerSave(e)}>
             <div className="form-grid">
               <label htmlFor="srv-server">Server</label>
               <select
@@ -2998,7 +2986,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   id="admin-user-directory-search"
                   type="search"
                   className="admin-search-input"
-                  placeholder="Search by first name, last name, or email…"
+                  placeholder="Search by first name, last name, or emailâ€¦"
                   value={userDirectorySearch}
                   onChange={(e) => setUserDirectorySearch(e.target.value)}
                   aria-controls="admin-user-pick-list"
@@ -3022,7 +3010,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   filteredUsersForDirectory.map((u) => {
                     const first = (u.firstName ?? '').trim();
                     const last = (u.lastName ?? '').trim();
-                    const fullName = [first, last].filter((x) => x !== '').join(' ') || '—';
+                    const fullName = [first, last].filter((x) => x !== '').join(' ') || 'â€”';
                     const titleLine = (u.title ?? '').trim();
                     const emailLine = (u.email ?? '').trim() || (u.displayName ?? '').trim();
                     const phone = (u.phone ?? '').trim();
@@ -3075,7 +3063,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </div>
 
-            <form className="admin-edit-card" onSubmit={(e) => void submitUser(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void submitUser(e)}>
               <input
                 ref={userPhotoInputRef}
                 type="file"
@@ -3155,7 +3143,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onChange={(e) => setUserForm({ ...userForm, department: e.target.value })}
                   aria-label="Department"
                 >
-                  <option value="">— Select Department —</option>
+                  <option value="">â€” Select Department â€”</option>
                   {userFormDepartmentOptions.map((d) => (
                     <option key={d} value={d}>
                       {d}
@@ -3220,7 +3208,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onChange={(e) => setUserForm({ ...userForm, state: e.target.value })}
                   aria-label="State (US postal code)"
                 >
-                  <option value="">—</option>
+                  <option value="">â€”</option>
                   {US_STATE_CODES.map((code) => (
                     <option key={code} value={code}>
                       {code}
@@ -3319,7 +3307,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </button>
               </div>
             </div>
-            <form className="admin-edit-card" onSubmit={(e) => void saveRole(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveRole(e)}>
               <div className="form-grid compact-grid">
                 <label>Role Name</label>
                 <input
@@ -3362,7 +3350,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               <input
                 type="search"
                 className="admin-search-input"
-                placeholder="Search groups by name or number…"
+                placeholder="Search groups by name or numberâ€¦"
                 value={groupSearchInput}
                 onChange={(e) => setGroupSearchInput(e.target.value)}
                 disabled={groupPanelBusy}
@@ -3394,29 +3382,73 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
           <div className="admin-layout">
             <div>
-              <select
-                id="lstbxUserGroup"
-                className="cms-listbox"
-                size={25}
-                value={selectedUserGroupId === '' ? '' : String(selectedUserGroupId)}
-                onChange={(e) => setSelectedUserGroupId(e.target.value ? Number(e.target.value) : '')}
-                onDoubleClick={editGroupFromSelection}
-                disabled={groupPanelBusy}
-                aria-label="User groups"
-              >
-                {displayedUserGroupRows.map((g) => (
-                  <option key={g.ugid} value={g.ugid}>
-                    {userGroupListLabel(g)}
-                  </option>
-                ))}
-              </select>
-              {displayedUserGroupRows.length === 0 ? (
-                <p className="field-help" role="status">
-                  {groupListUseSearchResults
-                    ? 'No groups in this search result.'
-                    : 'No group summaries loaded yet. Use Search or reload the page.'}
-                </p>
-              ) : null}
+              <div className="admin-usergroup-table-wrap">
+                <table
+                  id="lstbxUserGroup"
+                  className="admin-usergroup-table admin-usergroup-list-table"
+                  aria-label="User groups"
+                >
+                  <caption className="sr-only">User groups (UGID | Number | Name | Members)</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">UGID</th>
+                      <th scope="col">Group #</th>
+                      <th scope="col">Name</th>
+                      <th scope="col">Members</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedUserGroupRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4}>
+                          {groupListUseSearchResults
+                            ? 'No groups in this search result.'
+                            : 'No group summaries loaded yet. Use Search or reload the page.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      displayedUserGroupRows.map((g) => {
+                        const num = g.userGroupNumber?.trim() || '—';
+                        const name = g.ugName?.trim() || '—';
+                        const members = `${g.memberCount} member${g.memberCount === 1 ? '' : 's'}`;
+                        return (
+                          <tr
+                            key={g.ugid}
+                            className={selectedUserGroupId === g.ugid ? 'selected' : ''}
+                            onClick={() => !groupPanelBusy && setSelectedUserGroupId(g.ugid)}
+                            onDoubleClick={() => {
+                              if (!groupPanelBusy) {
+                                selectUserGroupByNumber(g.ugid, g);
+                              }
+                            }}
+                            title={userGroupListLabel(g)}
+                          >
+                            <td className="admin-usergroup-col-id">{g.ugid}</td>
+                            <td className="admin-usergroup-col-num">
+                              <span className="admin-usergroup-pipe-sep" aria-hidden="true">
+                                |
+                              </span>
+                              {num}
+                            </td>
+                            <td className="admin-usergroup-col-name">
+                              <span className="admin-usergroup-pipe-sep" aria-hidden="true">
+                                |
+                              </span>
+                              {name}
+                            </td>
+                            <td className="admin-usergroup-col-members">
+                              <span className="admin-usergroup-pipe-sep" aria-hidden="true">
+                                |
+                              </span>
+                              {members}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
               <div className="button-row wrap-buttons">
                 <button
                   type="button"
@@ -3437,7 +3469,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </div>
 
-            <div id="lstbxNewUserGroup" className="admin-edit-card admin-usergroup-new-panel">
+            <div id="lstbxNewUserGroup" className="admin-edit-card project-panel-tab-card admin-usergroup-new-panel">
               <p className="field-help">
                 {isCreatingGroup
                   ? 'New group: enter a name, pick users and roles, then save. Group number is assigned automatically.'
@@ -3476,7 +3508,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     id="ug-filter-user"
                     type="search"
                     className="admin-usergroup-filter-input admin-usergroup-filter-input--full"
-                    placeholder="Search by name, email, city, company…"
+                    placeholder="Search by name, email, city, companyâ€¦"
                     value={newGroupUserFilterDraft}
                     onChange={(e) => setNewGroupUserFilterDraft(e.target.value)}
                     disabled={groupPanelBusy}
@@ -3492,7 +3524,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     onChange={(e) => setAddMemberUserId(e.target.value ? Number(e.target.value) : '')}
                     disabled={groupPanelBusy}
                   >
-                    <option value="">— Select user —</option>
+                    <option value="">â€” Select user â€”</option>
                     {filteredBmsUsersForGroup.map((u) => (
                       <option key={u.userID} value={u.userID}>
                         {userFirstLastLabel(u)}
@@ -3516,7 +3548,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     onChange={(e) => setAddMemberRoleId(e.target.value ? Number(e.target.value) : '')}
                     disabled={groupPanelBusy}
                   >
-                    <option value="">— Select role —</option>
+                    <option value="">â€” Select role â€”</option>
                     {filteredRolesForGroup.map((r) => (
                       <option key={r.userRoleID} value={r.userRoleID}>
                         {rolePickerLabel(r)}
@@ -3575,8 +3607,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   {loadedGroupMembers.length === 0 && pendingGroupMembers.length === 0 ? (
                     <option value="">
                       {isCreatingGroup || groupEditUgid > 0
-                        ? '— No members yet —'
-                        : '— Select a group and choose Edit —'}
+                        ? 'â€” No members yet â€”'
+                        : 'â€” Select a group and choose Edit â€”'}
                     </option>
                   ) : null}
                   {loadedGroupMembers.map((m) => (
@@ -3648,7 +3680,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </button>
               </div>
             </div>
-            <form className="admin-edit-card" onSubmit={(e) => void savePt(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void savePt(e)}>
               <div className="form-grid compact-grid">
                 <label>Code</label>
                 <input
@@ -3705,7 +3737,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </button>
               </div>
             </div>
-            <form className="admin-edit-card" onSubmit={(e) => void saveSeg(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveSeg(e)}>
               <div className="form-grid compact-grid">
                 <label>Name</label>
                 <input
@@ -3764,9 +3796,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             onDoubleClick={() => editBcFromSelection(c)}
                           >
                             <td className="admin-businessclass-num">{c.businessClassID}</td>
-                            <td>{(c.businessClassName ?? '').trim() || '—'}</td>
+                            <td>{(c.businessClassName ?? '').trim() || 'â€”'}</td>
                             <td className="admin-businessclass-desc" title={desc || undefined}>
-                              {desc || '—'}
+                              {desc || 'â€”'}
                             </td>
                           </tr>
                         );
@@ -3787,7 +3819,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </button>
               </div>
             </div>
-            <form className="admin-edit-card" onSubmit={(e) => void saveBc(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveBc(e)}>
               <div className="form-grid compact-grid">
                 <label htmlFor="bc-business-unit">Business Unit</label>
                 <select
@@ -3805,7 +3837,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onClick={(e) => e.stopPropagation()}
                   aria-label="Owning Business Unit"
                 >
-                  <option value="">— Select Business Unit —</option>
+                  <option value="">â€” Select Business Unit â€”</option>
                   {admin.businessUnits.map((u) => (
                     <option key={u.businessUnitID} value={String(u.businessUnitID)}>
                       {u.businessUnitName?.trim() || `BU ${u.businessUnitID}`}
@@ -3872,9 +3904,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             onDoubleClick={() => editCtFromSelection(c)}
                           >
                             <td className="admin-businessclass-num">{c.clientTypeID}</td>
-                            <td>{(c.ctName ?? '').trim() || '—'}</td>
+                            <td>{(c.ctName ?? '').trim() || 'â€”'}</td>
                             <td className="admin-businessclass-desc" title={desc || undefined}>
-                              {desc || '—'}
+                              {desc || 'â€”'}
                             </td>
                             <td>{(c.isActive ?? true) ? 'True' : 'False'}</td>
                           </tr>
@@ -3896,7 +3928,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </button>
               </div>
             </div>
-            <form className="admin-edit-card" onSubmit={(e) => void saveCt(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveCt(e)}>
               <div className="form-grid compact-grid">
                 <label htmlFor="ct-name">Name</label>
                 <input
@@ -4009,7 +4041,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   id="svc-directory-search"
                   type="search"
                   className="admin-user-search-input"
-                  placeholder="Search by name, description, category, or group…"
+                  placeholder="Search by name, description, category, or groupâ€¦"
                   value={serviceDirectorySearch}
                   onChange={(e) => setServiceDirectorySearch(e.target.value)}
                   aria-controls="admin-service-pick-list"
@@ -4115,10 +4147,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             {desc || '\u00a0'}
                           </span>
                           <span className="admin-user-pick-meta">
-                            {groupName ? `Service Group: ${groupName}` : 'Service Group: —'}
+                            {groupName ? `Service Group: ${groupName}` : 'Service Group: â€”'}
                           </span>
                           <span className="admin-user-pick-meta">
-                            {serviceName !== '—' ? `Service Name: ${serviceName}` : 'Service Name: —'}
+                            {serviceName !== 'â€”' ? `Service Name: ${serviceName}` : 'Service Name: â€”'}
                           </span>
                         </button>
                       </div>
@@ -4128,7 +4160,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </div>
 
-            <form className="admin-edit-card" noValidate onSubmit={(e) => void submitService(e)}>
+            <form className="admin-edit-card project-panel-tab-card" noValidate onSubmit={(e) => void submitService(e)}>
               <p className="field-help admin-services-form-lead">
                 Tick services for bulk actions (e.g. deactivate), or click a row to bind Save to that
                 service. Use <strong>Select all services</strong> or <strong>Select all shown</strong> to
@@ -4305,7 +4337,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </button>
               </div>
             </div>
-            <form className="admin-edit-card" onSubmit={(e) => void saveSc(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveSc(e)}>
               <div className="form-grid compact-grid">
                 <label>Category Name</label>
                 <input
@@ -4421,7 +4453,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   id="admin-client-search"
                   type="search"
                   className="admin-search-input"
-                  placeholder="Search by name, short name, AE, analytics lead…"
+                  placeholder="Search by name, short name, AE, analytics leadâ€¦"
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
                   aria-controls="admin-client-pick-list"
@@ -4465,7 +4497,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     const classLine = [c.businessUnitName, (c.businessClassName ?? '').trim()]
                       .map((x) => (x ?? '').trim())
                       .filter((x) => x !== '')
-                      .join(' • ');
+                      .join(' â€¢ ');
                     const peopleLine = [
                       c.accountExecutiveName ? `AE: ${c.accountExecutiveName}` : '',
                       c.analyticsLeadName ? `AL: ${c.analyticsLeadName}` : '',
@@ -4492,8 +4524,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             className={`admin-user-pick-status admin-user-pick-status--${tag.kind}`}
                             title={
                               tag.kind === 'needupdate'
-                                ? 'No classification row (dbo.tClientRef) yet — needs update'
-                                : `${tag.label} (from tClientRef → tStatus)`
+                                ? 'No classification row (dbo.tClientRef) yet â€” needs update'
+                                : `${tag.label} (from tClientRef â†’ tStatus)`
                             }
                           >
                             {tag.label}
@@ -4511,7 +4543,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </div>
 
-            <form className="admin-edit-card" onSubmit={(e) => void submitClient(e)}>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void submitClient(e)}>
               <div className="form-grid compact-grid">
                 <label htmlFor="client-name">Client Name</label>
                 <input
@@ -4545,7 +4577,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     setClientForm({ ...clientForm, businessUnitID: e.target.value ? Number(e.target.value) : 0 })
                   }
                 >
-                  <option value="">— Select Business Unit —</option>
+                  <option value="">â€” Select Business Unit â€”</option>
                   {admin.businessUnits.map((u) => (
                     <option key={u.businessUnitID} value={String(u.businessUnitID)}>
                       {u.businessUnitName?.trim() || `BU ${u.businessUnitID}`}
@@ -4561,7 +4593,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     setClientForm({ ...clientForm, businessClassID: e.target.value ? Number(e.target.value) : 0 })
                   }
                 >
-                  <option value="">— Select Business Class —</option>
+                  <option value="">â€” Select Business Class â€”</option>
                   {businessClassOptions.map((bc) => (
                     <option key={bc.businessClassID} value={String(bc.businessClassID)}>
                       {bc.businessClassDescription?.trim() || bc.businessClassName?.trim() || `BC ${bc.businessClassID}`}
@@ -4577,7 +4609,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     setClientForm({ ...clientForm, clientTypeID: e.target.value ? Number(e.target.value) : 0 })
                   }
                 >
-                  <option value="">— Select Client Type —</option>
+                  <option value="">â€” Select Client Type â€”</option>
                   {(admin.clientTypes ?? []).map((ct) => (
                     <option key={ct.clientTypeID} value={String(ct.clientTypeID)}>
                       {ct.ctDescription?.trim() || ct.ctName?.trim() || `Type ${ct.clientTypeID}`}
@@ -4618,7 +4650,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
               <p className="field-help">
                 Business Unit, Business Class, and Client Type are stored on dbo.tClientRef. You can set any of them
-                individually — whatever is left blank is saved as NULL and can be filled in later. The client status is
+                individually â€” whatever is left blank is saved as NULL and can be filled in later. The client status is
                 also written to that row so a client can carry a different status per business unit. Account Executive
                 and Analytics Lead are stored on dbo.tClient.
               </p>
@@ -4690,9 +4722,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             {userBulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  ✓
+                  âœ“
                 </span>
-                <span>Verification passed — you can select Import to insert rows via dbo.usp_User_CreateWithPrimaryAddress.</span>
+                <span>Verification passed â€” you can select Import to insert rows via dbo.usp_User_CreateWithPrimaryAddress.</span>
               </div>
             ) : null}
 
@@ -4808,7 +4840,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             <p className="field-help">
               Required columns: <strong>ServiceName</strong>, <strong>ServiceDescription</strong>. Optional{' '}
               <strong>ServiceCategory</strong> (or <strong>CategoryName</strong>), <strong>ServiceCategoryDescription</strong>,{' '}
-              <strong>ServiceGroupName</strong> — when supplied, a <code>tServiceRef</code> row links the service to{' '}
+              <strong>ServiceGroupName</strong> â€” when supplied, a <code>tServiceRef</code> row links the service to{' '}
               <code>tServiceCategory</code> and/or <code>tServiceGroup</code>. Also optional: <strong>ServiceID</strong>{' '}
               (0 or omit = insert), <strong>Tags</strong>, <strong>StatusID</strong>.
               {serviceBulkSkippedEmpty > 0
@@ -4819,9 +4851,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             {serviceBulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  ✓
+                  âœ“
                 </span>
-                <span>Verification passed — you can import rows into tService (tServiceRef when category/group are present).</span>
+                <span>Verification passed â€” you can import rows into tService (tServiceRef when category/group are present).</span>
               </div>
             ) : null}
 
@@ -4934,9 +4966,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             {clientBulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  ✓
+                  âœ“
                 </span>
-                <span>Verification passed — you can select Import to load rows into tClient / tClientRef.</span>
+                <span>Verification passed â€” you can select Import to load rows into tClient / tClientRef.</span>
               </div>
             ) : null}
 

@@ -11,4 +11,8 @@ PhaseII_MVC_Delivery.zip
 
 # Accidental local publish / test output under Application
 Application/cms_test/
+Application/publish-temp/
+Application/_pub_run.*
+Application/_run_test.*
+Application/wwwroot/assets/*.lockbak
 .nuget-packages/

@@ -62,6 +62,7 @@ function inferSortKind(columnName: string): 'date' | 'number' | 'text' {
   if (
     key.includes('revenue') ||
     key.includes('amount') ||
+    key.includes('hours') ||
     key.endsWith('id') ||
     key.includes('count')
   ) {

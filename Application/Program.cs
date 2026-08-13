@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ClientManagementSystem.Data;
+using ClientManagementSystem.Models;
 using ClientManagementSystem.Security;
 using ClientManagementSystem.Services;
 using Microsoft.AspNetCore.DataProtection;
@@ -40,6 +41,18 @@ builder.Services.AddSingleton<IUserPhotoStorage>(sp =>
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     return new UserPhotoFileStorage(env.ContentRootPath);
 });
+builder.Services.Configure<AzureBlobOptions>(builder.Configuration.GetSection(AzureBlobOptions.SectionName));
+builder.Services.AddSingleton<IProjectBlobStorage, AzureProjectBlobStorage>();
+builder.Services.AddSingleton<IProjectFileUploadSessionStore, ProjectFileUploadSessionStore>();
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 209_715_200;
+    options.ValueLengthLimit = int.MaxValue;
+});
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 209_715_200;
+});
 builder.Services.AddScoped<ISqlConnectionFactory, SqlConnectionFactory>();
 builder.Services.AddScoped<IDbExecutor, DbExecutor>();
 
@@ -51,7 +64,7 @@ builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IHomeRepository, HomeRepository>();
 
 builder.Services.AddScoped<IClientService, ClientService>();
-builder.Services.AddScoped<IProjectService, ProjectService>();
+builder.Services.AddScoped<IProjectService, ClientManagementSystem.Services.ProjectService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IClientProjectListService, ClientProjectListService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
@@ -61,9 +74,39 @@ builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
+// Always handle unhandled exceptions (JSON ProblemDetails for /api) so a bad
+// endpoint cannot take down page navigation with an HTML developer crash page.
+app.UseExceptionHandler(exceptionApp =>
+{
+    exceptionApp.Run(async context =>
+    {
+        var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+        var ex = feature?.Error;
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("UnhandledException");
+        logger?.LogError(ex, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.ContentType = "application/problem+json";
+            await context.Response.WriteAsJsonAsync(new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Operation failed",
+                Detail = app.Environment.IsDevelopment()
+                    ? ex?.GetBaseException().Message
+                    : "An unexpected error occurred."
+            });
+            return;
+        }
+
+        context.Response.ContentType = "text/plain; charset=utf-8";
+        await context.Response.WriteAsync("An unexpected error occurred.");
+    });
+});
+
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
 

@@ -44,10 +44,89 @@ public sealed class ClientProjectListService : IClientProjectListService
             projectTypeName,
             isOnline,
             cancellationToken);
+
+        var positioned = PlaceTotalHoursAfterProjectName(raw);
         return new ClientProjectListViewModel
         {
-            Columns = raw.Columns,
-            Rows = raw.Rows
+            Columns = positioned.Columns,
+            Rows = positioned.Rows
+        };
+    }
+
+    /// <summary>
+    /// Ensures <c>TotalHours</c> appears immediately after <c>ProjectName</c> (project description)
+    /// on the Main grid, regardless of SELECT column order.
+    /// </summary>
+    private static RawSqlTableResult PlaceTotalHoursAfterProjectName(RawSqlTableResult raw)
+    {
+        var columns = raw.Columns.ToList();
+        var hoursIdx = columns.FindIndex(c => string.Equals(c, "TotalHours", StringComparison.OrdinalIgnoreCase));
+        if (hoursIdx < 0)
+        {
+            return raw;
+        }
+
+        var projectNameIdx = columns.FindIndex(c => string.Equals(c, "ProjectName", StringComparison.OrdinalIgnoreCase));
+        // Fallback: treat ProjectNumber as description anchor if ProjectName is missing.
+        if (projectNameIdx < 0)
+        {
+            projectNameIdx = columns.FindIndex(c => string.Equals(c, "ProjectNumber", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var targetIdx = projectNameIdx >= 0 ? projectNameIdx + 1 : columns.Count;
+        if (hoursIdx == targetIdx || (projectNameIdx >= 0 && hoursIdx == projectNameIdx + 1))
+        {
+            return raw;
+        }
+
+        var hoursName = columns[hoursIdx];
+        columns.RemoveAt(hoursIdx);
+        if (hoursIdx < targetIdx)
+        {
+            targetIdx--;
+        }
+
+        if (targetIdx < 0)
+        {
+            targetIdx = 0;
+        }
+
+        if (targetIdx > columns.Count)
+        {
+            targetIdx = columns.Count;
+        }
+
+        columns.Insert(targetIdx, hoursName);
+
+        var rows = raw.Rows.Select(row =>
+        {
+            var cells = row.ToList();
+            while (cells.Count < raw.Columns.Count)
+            {
+                cells.Add(null);
+            }
+
+            if (hoursIdx >= cells.Count)
+            {
+                return (IReadOnlyList<object?>)cells;
+            }
+
+            var hoursValue = cells[hoursIdx];
+            cells.RemoveAt(hoursIdx);
+            var insertAt = targetIdx;
+            if (insertAt > cells.Count)
+            {
+                insertAt = cells.Count;
+            }
+
+            cells.Insert(insertAt, hoursValue);
+            return (IReadOnlyList<object?>)cells;
+        }).ToList();
+
+        return new RawSqlTableResult
+        {
+            Columns = columns,
+            Rows = rows
         };
     }
 

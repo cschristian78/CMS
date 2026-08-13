@@ -41,7 +41,26 @@ public interface IProjectService
     Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(int projectId, CancellationToken cancellationToken = default);
+    Task<int> SaveCalendarItemsAsync(int projectId, IReadOnlyList<ProjectCalendarItem> items, CancellationToken cancellationToken = default);
+    Task<ProjectTimeWeekResponse> GetTimeWeekAsync(int projectId, DateTime weekStartDate, CancellationToken cancellationToken = default);
+    Task<int> SaveTimeWeekAsync(int projectId, ProjectTimeWeekRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(int ugid, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ProjectFile>> ListFilesAsync(int projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectFile>> UploadFilesAsync(
+        int projectId,
+        IReadOnlyList<(Stream Content, string FileName, string? ContentType, long Length)> files,
+        string category = "SourceData",
+        string? description = null,
+        string? versionLabel = null,
+        DateTime? dataAsOf = null,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectFile>> UpdateFileAsync(
+        int projectId,
+        int projectFileId,
+        ProjectFileUpdateRequest request,
+        CancellationToken cancellationToken = default);
+    Task SoftDeleteFileAsync(int projectId, int projectFileId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ActivityLog>> GetActivityAsync(int projectId, int top = 100, CancellationToken cancellationToken = default);
 }

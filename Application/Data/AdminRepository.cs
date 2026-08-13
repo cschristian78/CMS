@@ -981,13 +981,29 @@ public sealed class AdminRepository : IAdminRepository
             SqlParameterFactory.NVarChar("@NewValue", -1, newValue)
         ], cancellationToken);
 
-    public Task<IReadOnlyList<ActivityLog>> GetActivityForEntityAsync(string entityType, int entityId, int top = 100, CancellationToken cancellationToken = default)
-        => _db.QueryAsync("dbo.usp_ActivityLog_GetByEntity", MapActivityLog,
-        [
-            SqlParameterFactory.VarChar("@EntityType", 50, entityType),
-            SqlParameterFactory.Int("@EntityID", entityId),
-            SqlParameterFactory.Int("@Top", top)
-        ], cancellationToken);
+    public async Task<IReadOnlyList<ActivityLog>> GetActivityForEntityAsync(
+        string entityType,
+        int entityId,
+        int top = 100,
+        CancellationToken cancellationToken = default)
+    {
+        // Live USP signature: @EntityType, @EntityID, @FromDate, @ToDate (no @Top).
+        var rows = await _db.QueryAsync(
+            "dbo.usp_ActivityLog_GetByEntity",
+            MapActivityLog,
+            [
+                SqlParameterFactory.VarChar("@EntityType", 50, entityType),
+                SqlParameterFactory.Int("@EntityID", entityId)
+            ],
+            cancellationToken);
+
+        if (top <= 0 || rows.Count <= top)
+        {
+            return rows;
+        }
+
+        return rows.Take(top).ToList();
+    }
 
     // -- HELPERS ---------------------------------------------------------
 

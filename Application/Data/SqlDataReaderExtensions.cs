@@ -125,6 +125,18 @@ public static class SqlDataReaderExtensions
     public static long GetInt64OrDefault(this SqlDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
-        return reader.IsDBNull(ordinal) ? 0L : reader.GetInt64(ordinal);
+        if (reader.IsDBNull(ordinal))
+        {
+            return 0L;
+        }
+
+        var value = reader.GetValue(ordinal);
+        return value switch
+        {
+            long l => l,
+            int i => i,
+            decimal d => (long)d,
+            _ => Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)
+        };
     }
 }

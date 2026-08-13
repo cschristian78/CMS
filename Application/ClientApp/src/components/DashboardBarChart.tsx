@@ -28,10 +28,13 @@ export default function DashboardBarChart({
 
   const barHeightPx = (value: number): number => {
     const v = Number.isFinite(value) ? Math.max(0, value) : 0;
-    if (max <= 0) {
-      return v > 0 ? 12 : 6;
+    if (v <= 0) {
+      return 0;
     }
-    return Math.max(v > 0 ? 8 : 4, Math.round((v / max) * plotHeightPx));
+    if (max <= 0) {
+      return 12;
+    }
+    return Math.max(8, Math.round((v / max) * plotHeightPx));
   };
 
   if (orientation === 'horizontal') {
@@ -50,9 +53,11 @@ export default function DashboardBarChart({
                 <div className="bar-row" key={`${item.label}-${item.colorKey ?? ''}`}>
                   <span className="bar-label">{item.label}</span>
                   <div className="bar-track" aria-hidden>
-                    <div className="bar-fill" style={{ width: `${widthPct}%`, background: fill }} />
+                    {item.value > 0 ?
+                      <div className="bar-fill" style={{ width: `${widthPct}%`, background: fill }} />
+                    : null}
                   </div>
-                  <span className="bar-value">{item.value}</span>
+                  <span className="bar-value">{item.value > 0 ? item.value : ''}</span>
                 </div>
               );
             })}
@@ -76,12 +81,14 @@ export default function DashboardBarChart({
               const h = barHeightPx(item.value);
               return (
                 <div className="bar-column" key={`${item.label}-${item.colorKey ?? ''}`}>
-                  <span className="bar-column-value">{item.value}</span>
+                  <span className="bar-column-value">{item.value > 0 ? item.value : ''}</span>
                   <div className="bar-column-track" aria-hidden>
-                    <div
-                      className="bar-column-fill"
-                      style={{ height: `${h}px`, background: fill }}
-                    />
+                    {item.value > 0 ?
+                      <div
+                        className="bar-column-fill"
+                        style={{ height: `${h}px`, background: fill }}
+                      />
+                    : null}
                   </div>
                   <span className="bar-column-label">{item.label}</span>
                 </div>

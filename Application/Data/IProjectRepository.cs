@@ -48,6 +48,31 @@ public interface IProjectRepository
     Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(int projectId, CancellationToken cancellationToken = default);
     Task ReplaceCalendarItemsAsync(int projectId, IReadOnlyList<ProjectCalendarItem> items, CancellationToken cancellationToken = default);
 
+    // Time tracker
+    Task<IReadOnlyList<ProjectTimeEntry>> ListTimeEntriesForWeekAsync(
+        int projectId,
+        DateTime weekStartDate,
+        int? userId = null,
+        CancellationToken cancellationToken = default);
+    Task SaveTimeEntriesForWeekAsync(
+        int projectId,
+        DateTime weekStartDate,
+        IReadOnlyList<ProjectTimeEntry> entries,
+        CancellationToken cancellationToken = default);
+
+    // Project files (Azure Blob metadata)
+    Task<IReadOnlyList<ProjectFile>> ListFilesAsync(int projectId, CancellationToken cancellationToken = default);
+    Task<ProjectFile?> GetFileAsync(int projectFileId, CancellationToken cancellationToken = default);
+    Task<int> AddFileAsync(ProjectFile file, CancellationToken cancellationToken = default);
+    Task UpdateFileMetadataAsync(
+        int projectFileId,
+        string? description,
+        string? versionLabel,
+        DateTime? dataAsOf,
+        CancellationToken cancellationToken = default);
+    Task SetFileCurrentAsync(int projectFileId, bool isCurrent, CancellationToken cancellationToken = default);
+    Task SoftDeleteFileAsync(int projectFileId, CancellationToken cancellationToken = default);
+
     /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
     Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
 }

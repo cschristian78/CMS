@@ -98,9 +98,11 @@ export default function AppSidebar() {
       <div className="app-sidebar-brand">
         <Link to="/" className="app-sidebar-brand-link" title="Client Management System">
           <span className="app-sidebar-brand-mark" aria-hidden="true">
-            CMS
+            <span className="logo-accent">C</span>
+            <span className="logo-rest">MS</span>
           </span>
         </Link>
+        <span className="app-sidebar-brand-sub">Client Mgmt</span>
       </div>
       <nav className="sidebar-nav">
         {navItems.map((item) => {

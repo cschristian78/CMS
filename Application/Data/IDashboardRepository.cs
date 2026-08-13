@@ -10,6 +10,12 @@ public interface IDashboardRepository
     Task<IReadOnlyList<string>> GetDistinctAnalyticsLeadNamesAsync(
         CancellationToken cancellationToken = default);
 
+    /// <summary>Distinct project counts by project begin month (<c>tProject.CreatedDate</c>).</summary>
+    Task<IReadOnlyList<DashboardNamedCount>> GetProjectCountByBeginMonthAsync(
+        string? analyticsLeadName = null,
+        bool? isOnline = null,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<DashboardBusinessUnitCount>> GetClientCountByBusinessUnitAsync(
         string? analyticsLeadName = null,
         CancellationToken cancellationToken = default);

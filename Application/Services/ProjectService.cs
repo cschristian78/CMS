@@ -21,6 +21,7 @@ public sealed class ProjectService : IProjectService
     private readonly IReferenceDataRepository _referenceData;
     private readonly IAdminRepository _admin;
     private readonly IDashboardRepository _dashboard;
+    private readonly IProjectBlobStorage _blobs;
     private readonly ILogger<ProjectService>? _logger;
 
     public ProjectService(
@@ -29,6 +30,7 @@ public sealed class ProjectService : IProjectService
         IReferenceDataRepository referenceData,
         IAdminRepository admin,
         IDashboardRepository dashboard,
+        IProjectBlobStorage blobs,
         ILogger<ProjectService>? logger = null)
     {
         _projects = projects;
@@ -36,6 +38,7 @@ public sealed class ProjectService : IProjectService
         _referenceData = referenceData;
         _admin = admin;
         _dashboard = dashboard;
+        _blobs = blobs;
         _logger = logger;
     }
 
@@ -207,10 +210,14 @@ public sealed class ProjectService : IProjectService
             cancellationToken);
 
         model.CalendarItems ??= [];
-        // New Project only for now — Edit Calendar tab comes after confirmation.
-        if (existing is null)
+        try
         {
             await _projects.ReplaceCalendarItemsAsync(projectId, model.CalendarItems, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Calendar replace failed for ProjectID {ProjectID} ({Count} items).", projectId, model.CalendarItems.Count);
+            throw;
         }
 
         // Explicit ActivityLog: status transitions and creation.
@@ -368,6 +375,284 @@ public sealed class ProjectService : IProjectService
         int projectId,
         CancellationToken cancellationToken = default)
         => _projects.ListCalendarItemsAsync(projectId, cancellationToken);
+
+    public async Task<int> SaveCalendarItemsAsync(
+        int projectId,
+        IReadOnlyList<ProjectCalendarItem> items,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        var existing = await _projects.GetAsync(projectId, cancellationToken);
+        if (existing is null)
+        {
+            throw new InvalidOperationException($"Project {projectId} was not found.");
+        }
+
+        items ??= Array.Empty<ProjectCalendarItem>();
+        await _projects.ReplaceCalendarItemsAsync(projectId, items, cancellationToken);
+        var saved = items.Count(i => !string.IsNullOrWhiteSpace(i.Title));
+        _logger?.LogInformation("Saved {Count} calendar item(s) for ProjectID {ProjectID}.", saved, projectId);
+        return saved;
+    }
+
+    public async Task<ProjectTimeWeekResponse> GetTimeWeekAsync(
+        int projectId,
+        DateTime weekStartDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        var monday = StartOfWeekMonday(weekStartDate);
+        var tasks = await _projects.ListCalendarItemsAsync(projectId, cancellationToken);
+        var entries = await _projects.ListTimeEntriesForWeekAsync(
+            projectId,
+            monday,
+            CmsDefaults.ActingUserId,
+            cancellationToken);
+
+        return new ProjectTimeWeekResponse
+        {
+            WeekStartDate = monday,
+            WeekEndDate = monday.AddDays(6),
+            Tasks = tasks,
+            Entries = entries
+        };
+    }
+
+    public async Task<int> SaveTimeWeekAsync(
+        int projectId,
+        ProjectTimeWeekRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        ArgumentNullException.ThrowIfNull(request);
+
+        var existing = await _projects.GetAsync(projectId, cancellationToken);
+        if (existing is null)
+        {
+            throw new InvalidOperationException($"Project {projectId} was not found.");
+        }
+
+        var monday = StartOfWeekMonday(request.WeekStartDate);
+        request.Entries ??= [];
+        await _projects.SaveTimeEntriesForWeekAsync(projectId, monday, request.Entries, cancellationToken);
+        var saved = request.Entries.Count(e => e.CalendarItemID > 0 && e.Hours > 0m);
+        _logger?.LogInformation("Saved {Count} time entry cell(s) for ProjectID {ProjectID} week {Week}.", saved, projectId, monday);
+        return saved;
+    }
+
+    public async Task<IReadOnlyList<ProjectFile>> ListFilesAsync(
+        int projectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        var rows = await _projects.ListFilesAsync(projectId, cancellationToken);
+        foreach (var row in rows)
+        {
+            row.DownloadUrl = _blobs.BuildDownloadUrl(row.BlobPath);
+        }
+
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<ProjectFile>> UploadFilesAsync(
+        int projectId,
+        IReadOnlyList<(Stream Content, string FileName, string? ContentType, long Length)> files,
+        string category = "SourceData",
+        string? description = null,
+        string? versionLabel = null,
+        DateTime? dataAsOf = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        ArgumentNullException.ThrowIfNull(files);
+        if (files.Count == 0)
+        {
+            throw new InvalidOperationException("Choose at least one file to upload.");
+        }
+
+        var existing = await _projects.GetAsync(projectId, cancellationToken);
+        if (existing is null)
+        {
+            throw new InvalidOperationException($"Project {projectId} was not found.");
+        }
+
+        var uploaded = new List<ProjectFile>();
+        foreach (var file in files)
+        {
+            if (file.Length <= 0 || string.IsNullOrWhiteSpace(file.FileName))
+            {
+                continue;
+            }
+
+            if (file.Length > _blobs.MaxUploadBytes)
+            {
+                throw new InvalidOperationException(
+                    $"'{file.FileName}' exceeds the maximum size ({_blobs.MaxUploadBytes / (1024 * 1024)} MB).");
+            }
+
+            var (blobPath, blobUrl) = await _blobs.UploadAsync(
+                projectId,
+                file.FileName,
+                file.ContentType,
+                file.Content,
+                file.Length,
+                cancellationToken);
+
+            try
+            {
+                var meta = new ProjectFile
+                {
+                    ProjectID = projectId,
+                    OriginalFileName = Path.GetFileName(file.FileName),
+                    ContentType = file.ContentType,
+                    ByteLength = file.Length,
+                    BlobPath = blobPath,
+                    BlobUrl = blobUrl,
+                    Category = category,
+                    Description = description,
+                    VersionLabel = versionLabel,
+                    DataAsOf = dataAsOf,
+                    IsCurrent = false,
+                    UploadedByUserID = CmsDefaults.ActingUserId
+                };
+
+                var newId = await _projects.AddFileAsync(meta, cancellationToken);
+                meta.ProjectFileID = newId;
+                meta.UploadedByName = null;
+                meta.CreatedDate = DateTime.UtcNow;
+                meta.DownloadUrl = _blobs.BuildDownloadUrl(blobPath);
+                uploaded.Add(meta);
+            }
+            catch
+            {
+                try
+                {
+                    await _blobs.DeleteAsync(blobPath, cancellationToken);
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger?.LogWarning(cleanupEx, "Failed to clean up blob {BlobPath} after DB insert failure.", blobPath);
+                }
+
+                throw;
+            }
+        }
+
+        if (uploaded.Count == 0)
+        {
+            throw new InvalidOperationException("No valid files were uploaded.");
+        }
+
+        // Reload so uploader display name comes from SQL join.
+        return await ListFilesAsync(projectId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProjectFile>> UpdateFileAsync(
+        int projectId,
+        int projectFileId,
+        ProjectFileUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        if (projectFileId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectFileId));
+        }
+
+        ArgumentNullException.ThrowIfNull(request);
+
+        var file = await _projects.GetFileAsync(projectFileId, cancellationToken);
+        if (file is null || file.ProjectID != projectId)
+        {
+            throw new InvalidOperationException("Project file was not found.");
+        }
+
+        // Null means leave unchanged; empty string clears the field.
+        if (request.Description is not null || request.VersionLabel is not null || request.DataAsOf.HasValue || request.ClearDataAsOf)
+        {
+            var nextDataAsOf = request.ClearDataAsOf
+                ? null
+                : (request.DataAsOf.HasValue ? request.DataAsOf : file.DataAsOf);
+
+            await _projects.UpdateFileMetadataAsync(
+                projectFileId,
+                request.Description is not null ? request.Description : file.Description,
+                request.VersionLabel is not null ? request.VersionLabel : file.VersionLabel,
+                nextDataAsOf,
+                cancellationToken);
+        }
+
+        if (request.IsCurrent.HasValue)
+        {
+            await _projects.SetFileCurrentAsync(projectFileId, request.IsCurrent.Value, cancellationToken);
+        }
+
+        return await ListFilesAsync(projectId, cancellationToken);
+    }
+
+    public async Task SoftDeleteFileAsync(
+        int projectId,
+        int projectFileId,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        if (projectFileId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectFileId));
+        }
+
+        var file = await _projects.GetFileAsync(projectFileId, cancellationToken);
+        if (file is null || file.ProjectID != projectId)
+        {
+            throw new InvalidOperationException("Project file was not found.");
+        }
+
+        await _projects.SoftDeleteFileAsync(projectFileId, cancellationToken);
+
+        try
+        {
+            await _blobs.DeleteAsync(file.BlobPath, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Soft-deleted ProjectFileID {FileId} but blob delete failed for {BlobPath}.", projectFileId, file.BlobPath);
+        }
+    }
+
+    private static DateTime StartOfWeekMonday(DateTime date)
+    {
+        var d = date.Date;
+        var diff = ((int)d.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        return d.AddDays(-diff);
+    }
 
     public async Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(
         int ugid,

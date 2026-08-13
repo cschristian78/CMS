@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   applyGridRowToProjectModel,
@@ -8,7 +8,8 @@ import {
 import { formatBusinessClassDisplay } from '../utils/businessClassDisplay';
 import { formatCalendarDateDisplay, toInputDateValue } from '../utils/dateInput';
 import type { FlashFn } from '../App';
-import { ApiError, apiDelete, apiGet, apiPostJson } from '../api';
+import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
+import ProjectTimeTrackerTab from '../components/ProjectTimeTrackerTab';
 
 interface SelectOption {
   value: string;
@@ -176,18 +177,94 @@ interface ProjectNoteRow {
   createdDate?: string | null;
 }
 
-interface ActivityLogRow {
-  logID: number;
-  entityType: string;
-  entityID: number;
-  actionDate?: string | null;
-  action: string;
-  fieldName?: string | null;
-  oldValue?: string | null;
-  newValue?: string | null;
+interface ProjectFileRow {
+  projectFileID: number;
+  projectID: number;
+  originalFileName: string;
+  contentType?: string | null;
+  byteLength: number;
+  category?: string | null;
+  description?: string | null;
+  versionLabel?: string | null;
+  dataAsOf?: string | null;
+  /** Process-Active: the file currently marked for processing. */
+  isCurrent?: boolean;
+  uploadedByUserID: number;
+  uploadedByName?: string | null;
+  createdDate?: string | null;
+  downloadUrl?: string | null;
+  blobUrl?: string | null;
 }
 
-type ProjectTab = 'client' | 'project' | 'services' | 'calendar' | 'revenue' | 'notes' | 'activity';
+type ProjectTab = 'client' | 'project' | 'projectData' | 'services' | 'calendar' | 'time' | 'revenue' | 'notes';
+
+const PROJECT_DATA_CATEGORIES = [
+  { value: 'SourceData', label: 'Source Data' },
+  { value: 'ExposureData', label: 'Exposure Data' },
+  { value: 'LossData', label: 'Loss Data' },
+  { value: 'ClaimsData', label: 'Claims Data' },
+] as const;
+
+const PROJECT_DATA_VERSIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
+
+type ProjectDataCategory = (typeof PROJECT_DATA_CATEGORIES)[number]['value'];
+
+function formatProjectDataCategory(category?: string | null): string {
+  const match = PROJECT_DATA_CATEGORIES.find((c) => c.value === category);
+  return match?.label ?? (category?.trim() || 'Source Data');
+}
+
+function normalizeProjectDataVersion(value?: string | null): string {
+  const trimmed = (value ?? '').trim();
+  if (PROJECT_DATA_VERSIONS.includes(trimmed)) {
+    return trimmed;
+  }
+  const asNum = Number.parseInt(trimmed.replace(/^v/i, ''), 10);
+  if (Number.isFinite(asNum) && asNum >= 1 && asNum <= 20) {
+    return String(asNum);
+  }
+  return '1';
+}
+
+function formatFileBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return '—';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function mapCalendarItemFromApi(row: {
+  calendarItemID: number;
+  itemType?: string | null;
+  title?: string | null;
+  ownerUserID?: number | null;
+  receivedDate?: string | null;
+  completedDate?: string | null;
+  notes?: string | null;
+  sortOrder?: number;
+}): ProjectCalendarItemDraft {
+  const rawType = (row.itemType ?? 'Task').trim();
+  const itemType = (CALENDAR_ITEM_TYPES as string[]).includes(rawType)
+    ? (rawType as ProjectCalendarItemDraft['itemType'])
+    : 'Task';
+  return {
+    tempId: `cal-${row.calendarItemID}`,
+    calendarItemID: row.calendarItemID,
+    itemType,
+    title: row.title ?? '',
+    ownerUserID: row.ownerUserID && row.ownerUserID > 0 ? row.ownerUserID : '',
+    receivedDate: toInputDateValue(row.receivedDate),
+    completedDate: toInputDateValue(row.completedDate),
+    notes: row.notes ?? '',
+    sortOrder: row.sortOrder ?? 0,
+  };
+}
 
 /** Matches admin/client Client Type dropdown (name and description). */
 function optionTextForValue(options: SelectOption[] | undefined, value: number | '' | null | undefined): string {
@@ -390,7 +467,25 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [revenueHistory, setRevenueHistory] = useState<ProjectRevenueRow[]>([]);
   const [subresourcesLoaded, setSubresourcesLoaded] = useState(false);
   const [notes, setNotes] = useState<ProjectNoteRow[]>([]);
-  const [activity, setActivity] = useState<ActivityLogRow[]>([]);
+  const [projectFiles, setProjectFiles] = useState<ProjectFileRow[]>([]);
+  const [projectFilesBusy, setProjectFilesBusy] = useState(false);
+  const [projectFileUploadMeta, setProjectFileUploadMeta] = useState<{
+    category: ProjectDataCategory;
+    description: string;
+    versionLabel: string;
+    dataAsOf: string;
+  }>({
+    category: 'SourceData',
+    description: '',
+    versionLabel: '1',
+    dataAsOf: '',
+  });
+  const [pendingProjectFiles, setPendingProjectFiles] = useState<File[]>([]);
+  const [selectedProjectFileId, setSelectedProjectFileId] = useState<number | ''>('');
+  const [projectFileDrafts, setProjectFileDrafts] = useState<
+    Record<number, { description: string; versionLabel: string; dataAsOf: string }>
+  >({});
+  const projectFilesInputRef = useRef<HTMLInputElement | null>(null);
   const [noteDraft, setNoteDraft] = useState<{ noteType: string; noteText: string; isPinned: boolean }>({
     noteType: 'General',
     noteText: '',
@@ -402,6 +497,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [clientTypeFilter, setClientTypeFilter] = useState<number | ''>('');
   const [clientStatusFilter, setClientStatusFilter] = useState<number | ''>('');
   const [calendarItems, setCalendarItems] = useState<ProjectCalendarItemDraft[]>([]);
+  const [calendarEditTempId, setCalendarEditTempId] = useState<string | null>(null);
+  const [calendarEditDraft, setCalendarEditDraft] = useState<ProjectCalendarItemDraft | null>(null);
   const [ownerOptions, setOwnerOptions] = useState<UserGroupMemberOption[]>([]);
 
   const applyClientFromRow = useCallback((row: ClientDirectoryRow) => {
@@ -572,7 +669,17 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     if (serviceCategoryFilter !== '') {
       rows = rows.filter((r) => r.serviceCategoryID === serviceCategoryFilter);
     }
-    return rows;
+    return [...rows].sort((a, b) => {
+      const catCmp = (a.categoryName ?? '').localeCompare(b.categoryName ?? '', undefined, {
+        sensitivity: 'base',
+      });
+      if (catCmp !== 0) {
+        return catCmp;
+      }
+      return (a.serviceName ?? '').localeCompare(b.serviceName ?? '', undefined, {
+        sensitivity: 'base',
+      });
+    });
   }, [catalog, serviceFunctionFilter, serviceCategoryFilter]);
 
   useEffect(() => {
@@ -733,13 +840,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   }, [isEdit, projectId]);
 
-  // Preload edit-mode sub-resource tabs (revenue, notes, activity) on open.
+  // Preload edit-mode sub-resource tabs (revenue, notes, calendar) on open.
   useEffect(() => {
     if (!isEdit || !projectId) {
       setSubresourcesLoaded(false);
+      if (!isEdit) {
+        setCalendarItems([]);
+      }
       return;
     }
     setRevenueHistory([]);
+    setCalendarItems([]);
+    setProjectFiles([]);
     setSubresourcesLoaded(false);
     let cancelled = false;
     void (async () => {
@@ -751,16 +863,32 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         (data) => ({ ok: true as const, data }),
         () => ({ ok: false as const, data: [] as ProjectNoteRow[] }),
       );
-      const activityResult = await apiGet<ActivityLogRow[]>(
-        `/api/projects/${projectId}/activity?top=100`,
-      ).then(
+      const filesResult = await apiGet<ProjectFileRow[]>(`/api/projects/${projectId}/files`).then(
         (data) => ({ ok: true as const, data }),
-        () => ({ ok: false as const, data: [] as ActivityLogRow[] }),
+        () => ({ ok: false as const, data: [] as ProjectFileRow[] }),
+      );
+      const calendarResult = await apiGet<
+        {
+          calendarItemID: number;
+          itemType?: string | null;
+          title?: string | null;
+          ownerUserID?: number | null;
+          receivedDate?: string | null;
+          completedDate?: string | null;
+          notes?: string | null;
+          sortOrder?: number;
+        }[]
+      >(`/api/projects/${projectId}/calendar`).then(
+        (data) => ({ ok: true as const, data }),
+        () => ({ ok: false as const, data: [] }),
       );
       if (!cancelled) {
         setRevenueHistory(revResult.data);
         setNotes(notesResult.data);
-        setActivity(activityResult.data);
+        syncProjectFiles(Array.isArray(filesResult.data) ? filesResult.data : []);
+        setCalendarItems(
+          (Array.isArray(calendarResult.data) ? calendarResult.data : []).map(mapCalendarItemFromApi),
+        );
         setSubresourcesLoaded(true);
       }
     })();
@@ -865,6 +993,47 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     setModel({ ...model, selectedServiceIds: [] });
   };
 
+  const handleAddServicesToProject = () => {
+    if (!model || model.selectedServiceIds.length === 0) {
+      return;
+    }
+
+    const selectedRows = catalog.filter((row) => model.selectedServiceIds.includes(row.serviceID));
+    if (selectedRows.length === 0) {
+      return;
+    }
+
+    setCalendarItems((prev) => {
+      const existingTitles = new Set(
+        prev.map((row) => row.title.trim().toLowerCase()).filter((t) => t.length > 0),
+      );
+      const next = [...prev];
+      for (const service of selectedRows) {
+        const title = (service.serviceName ?? '').trim();
+        if (!title) {
+          continue;
+        }
+        const key = title.toLowerCase();
+        if (existingTitles.has(key)) {
+          continue;
+        }
+        existingTitles.add(key);
+        next.push({
+          ...newCalendarDraft(next.length),
+          itemType: 'Deliverable',
+          title,
+        });
+      }
+      return next;
+    });
+
+    flash(
+      'success',
+      `${selectedRows.length} service${selectedRows.length === 1 ? '' : 's'} added to the Calendar. Save the project to persist.`,
+    );
+    setActiveTab('calendar');
+  };
+
   useEffect(() => {
     const ugid = model?.ugid ?? 0;
     if (ugid <= 0) {
@@ -901,7 +1070,56 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
   const removeCalendarItem = (tempId: string) => {
     setCalendarItems((prev) => prev.filter((row) => row.tempId !== tempId));
+    if (calendarEditTempId === tempId) {
+      setCalendarEditTempId(null);
+      setCalendarEditDraft(null);
+    }
   };
+
+  const openCalendarEdit = (row: ProjectCalendarItemDraft) => {
+    setCalendarEditTempId(row.tempId);
+    setCalendarEditDraft({ ...row });
+  };
+
+  const closeCalendarEdit = () => {
+    setCalendarEditTempId(null);
+    setCalendarEditDraft(null);
+  };
+
+  const applyCalendarEdit = () => {
+    if (!calendarEditTempId || !calendarEditDraft) {
+      return;
+    }
+    const title = calendarEditDraft.title.trim();
+    if (!title) {
+      flash('error', 'Calendar item title is required.');
+      return;
+    }
+    updateCalendarItem(calendarEditTempId, {
+      itemType: calendarEditDraft.itemType,
+      title,
+      ownerUserID: calendarEditDraft.ownerUserID,
+      receivedDate: calendarEditDraft.receivedDate,
+      completedDate: calendarEditDraft.completedDate,
+      notes: calendarEditDraft.notes,
+    });
+    closeCalendarEdit();
+  };
+
+  const buildCalendarPayload = () =>
+    calendarItems
+      .filter((row) => row.title.trim().length > 0)
+      .map((row, index) => ({
+        calendarItemID: row.calendarItemID && row.calendarItemID > 0 ? row.calendarItemID : 0,
+        itemType: row.itemType,
+        title: row.title.trim(),
+        ownerUserID: typeof row.ownerUserID === 'number' && row.ownerUserID > 0 ? row.ownerUserID : null,
+        receivedDate: row.receivedDate ? row.receivedDate : null,
+        completedDate: row.completedDate ? row.completedDate : null,
+        notes: row.notes.trim().length > 0 ? row.notes.trim() : null,
+        sortOrder: index,
+        isActive: true,
+      }));
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -911,20 +1129,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     setValidationMessage(null);
 
     try {
-      const calendarPayload = !isEdit
-        ? calendarItems
-            .filter((row) => row.title.trim().length > 0)
-            .map((row, index) => ({
-              calendarItemID: row.calendarItemID ?? 0,
-              itemType: row.itemType,
-              title: row.title.trim(),
-              ownerUserID: row.ownerUserID === '' ? null : row.ownerUserID,
-              receivedDate: row.receivedDate || null,
-              completedDate: row.completedDate || null,
-              notes: row.notes.trim() || null,
-              sortOrder: index,
-            }))
-        : undefined;
+      const calendarPayload = buildCalendarPayload();
 
       const payload: ProjectFormModel = {
         ...model,
@@ -935,11 +1140,47 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         calendarItems: calendarPayload as ProjectFormModel['calendarItems'],
       } as ProjectFormModel;
       const result = await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
-      flash('success', result.message);
       const savedId = result.projectId;
+
+      // Explicit calendar save — do not rely only on nested form binding (edit path was previously skipped).
+      try {
+        const calResult = await apiPostJson<{ savedCount: number; message: string }>(
+          `/api/projects/${savedId}/calendar`,
+          { items: calendarPayload, calendarItems: calendarPayload },
+        );
+        flash(
+          'success',
+          `${result.message} ${calResult.message ?? `Saved ${calendarPayload.length} calendar item(s).`}`.trim(),
+        );
+      } catch (calErr) {
+        flash(
+          'error',
+          calErr instanceof ApiError
+            ? `Project saved, but calendar save failed: ${calErr.message}`
+            : 'Project saved, but calendar save failed.',
+        );
+      }
+
       if (isEdit && projectId !== undefined) {
         await load();
         await refreshRevenueHistory();
+        try {
+          const cal = await apiGet<
+            {
+              calendarItemID: number;
+              itemType?: string | null;
+              title?: string | null;
+              ownerUserID?: number | null;
+              receivedDate?: string | null;
+              completedDate?: string | null;
+              notes?: string | null;
+              sortOrder?: number;
+            }[]
+          >(`/api/projects/${projectId}/calendar`);
+          setCalendarItems((Array.isArray(cal) ? cal : []).map(mapCalendarItemFromApi));
+        } catch {
+          /* keep local calendar state if reload fails */
+        }
       } else {
         navigate(`/projects/${savedId}`, { replace: true });
         await load();
@@ -1016,6 +1257,174 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
+  const syncProjectFiles = (rows: ProjectFileRow[]) => {
+    const list = Array.isArray(rows) ? rows : [];
+    setProjectFiles(list);
+    setProjectFileDrafts(
+      Object.fromEntries(
+        list.map((f) => [
+          f.projectFileID,
+          {
+            description: f.description ?? '',
+            versionLabel: normalizeProjectDataVersion(f.versionLabel),
+            dataAsOf: toInputDateValue(f.dataAsOf),
+          },
+        ]),
+      ),
+    );
+    setSelectedProjectFileId((prev) => {
+      if (prev !== '' && list.some((f) => f.projectFileID === prev)) {
+        return prev;
+      }
+      return list.length > 0 ? list[0].projectFileID : '';
+    });
+  };
+
+  const handleProjectFilesSelected = (fileList: FileList | null) => {
+    setPendingProjectFiles(fileList && fileList.length > 0 ? Array.from(fileList) : []);
+  };
+
+  const handleUploadProjectFiles = async () => {
+    if (!isEdit || projectId === undefined || pendingProjectFiles.length === 0) {
+      return;
+    }
+
+    if (!projectFileUploadMeta.dataAsOf.trim()) {
+      flash('error', 'Data As Of is required before uploading.');
+      return;
+    }
+
+    const files = pendingProjectFiles;
+    setProjectFilesBusy(true);
+    try {
+      let lastRows: ProjectFileRow[] | null = null;
+      for (const file of files) {
+        const start = await apiPostJson<{
+          sessionId: string;
+          chunkSizeBytes: number;
+          maxUploadBytes: number;
+        }>(`/api/projects/${projectId}/files/sessions`, {
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          byteLength: file.size,
+          category: projectFileUploadMeta.category,
+          description: projectFileUploadMeta.description.trim() || null,
+          versionLabel: normalizeProjectDataVersion(projectFileUploadMeta.versionLabel),
+          dataAsOf: projectFileUploadMeta.dataAsOf.trim(),
+        });
+
+        const chunkSize = start.chunkSizeBytes > 0 ? start.chunkSizeBytes : 4 * 1024 * 1024;
+        let offset = 0;
+        let chunkIndex = 0;
+        while (offset < file.size) {
+          const blob = file.slice(offset, offset + chunkSize);
+          const formData = new FormData();
+          formData.append('chunkIndex', String(chunkIndex));
+          formData.append('chunk', blob, `${file.name}.part${chunkIndex}`);
+          await apiPostFormData(
+            `/api/projects/${projectId}/files/sessions/${start.sessionId}/chunks`,
+            formData,
+          );
+          offset += chunkSize;
+          chunkIndex += 1;
+        }
+
+        lastRows = await apiPostJson<ProjectFileRow[]>(
+          `/api/projects/${projectId}/files/sessions/${start.sessionId}/complete`,
+          {},
+        );
+      }
+
+      if (lastRows) {
+        syncProjectFiles(lastRows);
+      } else {
+        syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${projectId}/files`));
+      }
+      setProjectFileUploadMeta({
+        category: projectFileUploadMeta.category,
+        description: '',
+        versionLabel: '1',
+        dataAsOf: '',
+      });
+      setPendingProjectFiles([]);
+      flash('success', `Uploaded ${files.length} file(s).`);
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'File upload failed.');
+    } finally {
+      setProjectFilesBusy(false);
+      if (projectFilesInputRef.current) {
+        projectFilesInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDeleteProjectFile = async (fileId: number) => {
+    if (!isEdit || projectId === undefined) {
+      return;
+    }
+    if (!window.confirm('Remove this file from the project?')) {
+      return;
+    }
+
+    setProjectFilesBusy(true);
+    try {
+      await apiDelete(`/api/projects/${projectId}/files/${fileId}`);
+      syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${projectId}/files`));
+      flash('success', 'File removed.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not remove file.');
+    } finally {
+      setProjectFilesBusy(false);
+    }
+  };
+
+  const handleSetProjectFileActive = async (fileId: number, makeActive: boolean) => {
+    if (!isEdit || projectId === undefined) {
+      return;
+    }
+
+    setProjectFilesBusy(true);
+    try {
+      const rows = await apiPostJson<ProjectFileRow[]>(`/api/projects/${projectId}/files/${fileId}`, {
+        isCurrent: makeActive,
+      });
+      syncProjectFiles(rows);
+      flash('success', makeActive ? 'File marked Active for processing.' : 'Active tag cleared.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not update Active tag.');
+    } finally {
+      setProjectFilesBusy(false);
+    }
+  };
+
+  const handleSaveProjectFileMetadata = async (fileId: number) => {
+    if (!isEdit || projectId === undefined) {
+      return;
+    }
+
+    const draft = projectFileDrafts[fileId] ?? { description: '', versionLabel: '1', dataAsOf: '' };
+    if (!draft.dataAsOf.trim()) {
+      flash('error', 'Data As Of is required.');
+      return;
+    }
+
+    setProjectFilesBusy(true);
+    try {
+      const rows = await apiPostJson<ProjectFileRow[]>(`/api/projects/${projectId}/files/${fileId}`, {
+        description: draft.description,
+        versionLabel: normalizeProjectDataVersion(draft.versionLabel),
+        dataAsOf: draft.dataAsOf.trim(),
+        clearDataAsOf: false,
+      });
+      syncProjectFiles(rows);
+      flash('success', 'File metadata saved.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not save file metadata.');
+    } finally {
+      setProjectFilesBusy(false);
+    }
+  };
+
   const handleDeleteRevenue = async (revenueId: number) => {
     if (!window.confirm('Delete this revenue entry? It will be removed from the project history.')) {
       return;
@@ -1028,6 +1437,21 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       flash('error', err instanceof ApiError ? err.message : 'Could not delete revenue entry.');
     }
   };
+
+  // Must stay above early returns — Rules of Hooks.
+  const groupOptions = useMemo(() => {
+    const base =
+      userGroupOptionsForClient.length > 0 ? userGroupOptionsForClient : (model?.userGroupOptions ?? []);
+    if (!model || model.ugid <= 0) {
+      return base;
+    }
+    const selected = String(model.ugid);
+    if (base.some((o) => o.value === selected)) {
+      return base;
+    }
+    // Keep the current assignment visible even if it is inactive / missing from the list.
+    return [{ value: selected, text: `User Group ${selected}` }, ...base];
+  }, [userGroupOptionsForClient, model?.userGroupOptions, model?.ugid]);
 
   if (loadError) {
     return (
@@ -1051,19 +1475,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     );
   }
 
-  const groupOptions = useMemo(() => {
-    const base =
-      userGroupOptionsForClient.length > 0 ? userGroupOptionsForClient : (model?.userGroupOptions ?? []);
-    if (!model || model.ugid <= 0) {
-      return base;
-    }
-    const selected = String(model.ugid);
-    if (base.some((o) => o.value === selected)) {
-      return base;
-    }
-    // Keep the current assignment visible even if it is inactive / missing from the list.
-    return [{ value: selected, text: `User Group ${selected}` }, ...base];
-  }, [userGroupOptionsForClient, model?.userGroupOptions, model?.ugid]);
   const title = isEdit ? 'Edit Project' : 'New Project';
 
   const projectTabClass = (tab: ProjectTab) => 'admin-tab-panel' + (activeTab === tab ? ' active' : '');
@@ -1082,13 +1493,116 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   );
 
   return (
+    <>
+      {calendarEditDraft ?
+        <div
+          className="home-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="project-calendar-edit-title"
+          onClick={closeCalendarEdit}
+        >
+          <div
+            className="home-modal-dialog project-calendar-edit-dialog"
+            onClick={(e: MouseEvent) => e.stopPropagation()}
+          >
+            <h2 id="project-calendar-edit-title" className="home-modal-title">
+              Edit calendar item
+            </h2>
+            <p className="home-modal-body">
+              Update this service / calendar row. Click <strong>Apply</strong>, then <strong>Save Project</strong> to
+              persist changes to <code>dbo.tProjectCalendarItem</code>.
+            </p>
+            <div className="form-grid">
+              <label htmlFor="cal-edit-type">Type</label>
+              <select
+                id="cal-edit-type"
+                value={calendarEditDraft.itemType}
+                onChange={(e) =>
+                  setCalendarEditDraft({
+                    ...calendarEditDraft,
+                    itemType: e.target.value as ProjectCalendarItemDraft['itemType'],
+                  })
+                }
+              >
+                {CALENDAR_ITEM_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="cal-edit-title">Title</label>
+              <input
+                id="cal-edit-title"
+                value={calendarEditDraft.title}
+                onChange={(e) => setCalendarEditDraft({ ...calendarEditDraft, title: e.target.value })}
+                maxLength={200}
+              />
+
+              <label htmlFor="cal-edit-owner">Owner</label>
+              <select
+                id="cal-edit-owner"
+                value={calendarEditDraft.ownerUserID === '' ? '' : String(calendarEditDraft.ownerUserID)}
+                onChange={(e) =>
+                  setCalendarEditDraft({
+                    ...calendarEditDraft,
+                    ownerUserID: e.target.value ? Number(e.target.value) : '',
+                  })
+                }
+                disabled={!model || model.ugid <= 0}
+              >
+                <option value="">-- Owner --</option>
+                {ownerOptions.map((o) => (
+                  <option key={o.userID} value={o.userID}>
+                    {o.userFullName}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="cal-edit-received">Received</label>
+              <input
+                id="cal-edit-received"
+                type="date"
+                value={calendarEditDraft.receivedDate}
+                onChange={(e) => setCalendarEditDraft({ ...calendarEditDraft, receivedDate: e.target.value })}
+              />
+
+              <label htmlFor="cal-edit-completed">Completed</label>
+              <input
+                id="cal-edit-completed"
+                type="date"
+                value={calendarEditDraft.completedDate}
+                onChange={(e) => setCalendarEditDraft({ ...calendarEditDraft, completedDate: e.target.value })}
+              />
+
+              <label htmlFor="cal-edit-notes">Notes</label>
+              <textarea
+                id="cal-edit-notes"
+                value={calendarEditDraft.notes}
+                onChange={(e) => setCalendarEditDraft({ ...calendarEditDraft, notes: e.target.value })}
+                rows={5}
+              />
+            </div>
+            <div className="home-modal-actions">
+              <button type="button" className="secondary-button" onClick={closeCalendarEdit}>
+                Cancel
+              </button>
+              <button type="button" className="primary-button" onClick={applyCalendarEdit}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      : null}
+
     <div className="client-workflow-fill">
       <section className="page-header client-workflow-header">
         <div className="page-header-top">
           <h1>{title}</h1>
         </div>
         <p>
-          Project header lives in <code>dbo.tProject</code>; revenue/notes/services/activity are sub-resources.
+          Project header lives in <code>dbo.tProject</code>; revenue, notes, services, and calendar are sub-resources.
         </p>
       </section>
 
@@ -1096,11 +1610,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         <div className="admin-tabs" role="tablist" aria-label="Project tabs">
           {projectTabBtn('client', 'Client Info')}
           {projectTabBtn('project', 'Project Info')}
+          {isEdit ? projectTabBtn('projectData', 'Project Data') : null}
           {projectTabBtn('services', 'Services')}
-          {!isEdit ? projectTabBtn('calendar', 'Calendar') : null}
+          {projectTabBtn('calendar', 'Calendar')}
+          {isEdit ? projectTabBtn('time', 'Time tracker') : null}
           {isEdit ? projectTabBtn('revenue', 'Revenue history') : null}
           {isEdit ? projectTabBtn('notes', 'Notes') : null}
-          {isEdit ? projectTabBtn('activity', 'Activity') : null}
         </div>
 
         <form autoComplete="off" onSubmit={(e) => void handleSubmit(e)}>
@@ -1109,7 +1624,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           <div className="project-tab-panels">
           <div id="project-tab-client" className={projectTabClass('client')}>
             <h2>Client Info</h2>
-            <div className="admin-edit-card">
+            <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               {isEdit
                 ? 'This project is tied to the client below. You can update business unit, class, client type, and status from the dropdowns.'
@@ -1226,16 +1741,53 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
           <div id="project-tab-project" className={projectTabClass('project')}>
             <h2>Project Info</h2>
-            <div className="admin-edit-card">
+            <div className="admin-edit-card project-panel-tab-card">
             <div className="form-grid">
               <label htmlFor="projectNumber">Project Number</label>
-              <input
-                id="projectNumber"
-                value={model.projectNumber}
-                onChange={(e) => setModel({ ...model, projectNumber: e.target.value })}
-                required
-                maxLength={50}
-              />
+              <div className="project-number-with-online">
+                <input
+                  id="projectNumber"
+                  value={model.projectNumber}
+                  onChange={(e) => setModel({ ...model, projectNumber: e.target.value })}
+                  required
+                  maxLength={50}
+                />
+                <span className="project-online-toggle">
+                  <input
+                    id="isOnline"
+                    type="checkbox"
+                    checked={!!model.isOnline}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setModel({ ...model, isOnline: next });
+                      if (isEdit && projectId !== undefined) {
+                        void (async () => {
+                          try {
+                            const r = await apiPostJson<{ message: string }>(
+                              `/api/projects/${projectId}/online`,
+                              { isOnline: next },
+                            );
+                            flash('success', r.message ?? (next ? 'Project is now Online.' : 'Project is now Offline.'));
+                          } catch (err) {
+                            setModel({ ...model, isOnline: !next });
+                            flash(
+                              'error',
+                              err instanceof ApiError ? err.message : 'Could not update online status.',
+                            );
+                          }
+                        })();
+                      }
+                    }}
+                  />{' '}
+                  <span
+                    className={'home-online-dot' + (model.isOnline ? ' home-online-dot--on' : ' home-online-dot--off')}
+                    aria-hidden="true"
+                  />{' '}
+                  <label htmlFor="isOnline" className="project-online-toggle-label">
+                    {model.isOnline ? 'Online (in progress)' : 'Offline'}
+                  </label>
+                </span>
+              </div>
 
               <label htmlFor="projectName">Project Name</label>
               <input
@@ -1308,41 +1860,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 ))}
               </select>
 
-              <label htmlFor="isOnline">Online</label>
-              <span className="project-online-toggle">
-                <input
-                  id="isOnline"
-                  type="checkbox"
-                  checked={!!model.isOnline}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setModel({ ...model, isOnline: next });
-                    if (isEdit && projectId !== undefined) {
-                      void (async () => {
-                        try {
-                          const r = await apiPostJson<{ message: string }>(
-                            `/api/projects/${projectId}/online`,
-                            { isOnline: next },
-                          );
-                          flash('success', r.message ?? (next ? 'Project is now Online.' : 'Project is now Offline.'));
-                        } catch (err) {
-                          setModel({ ...model, isOnline: !next });
-                          flash(
-                            'error',
-                            err instanceof ApiError ? err.message : 'Could not update online status.',
-                          );
-                        }
-                      })();
-                    }
-                  }}
-                />{' '}
-                <span
-                  className={'home-online-dot' + (model.isOnline ? ' home-online-dot--on' : ' home-online-dot--off')}
-                  aria-hidden="true"
-                />{' '}
-                {model.isOnline ? 'Online (in progress)' : 'Offline'}
-              </span>
-
               <label htmlFor="revenueAmount">Revenue</label>
               <input
                 id="revenueAmount"
@@ -1383,12 +1900,295 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             </div>
           </div>
 
+          {isEdit ? (
+          <div id="project-tab-project-data" className={projectTabClass('projectData')}>
+            <h2>Project Data</h2>
+            <div className="admin-edit-card project-panel-tab-card">
+              <p className="field-help">
+                Upload project data files to Azure Blob storage and classify them as Source, Exposure, Loss, or Claims
+                data. Mark one file <strong>Active</strong> per classification so the team knows which file to process.
+              </p>
+
+              <div className="page-header-actions project-services-select-actions project-file-choose-row">
+                <input
+                  ref={projectFilesInputRef}
+                  id="projectClientDataFiles"
+                  type="file"
+                  multiple
+                  disabled={projectFilesBusy}
+                  onChange={(e) => handleProjectFilesSelected(e.target.files)}
+                />
+                {pendingProjectFiles.length > 0 ? (
+                  <span className="field-help project-file-pending-count">
+                    {pendingProjectFiles.length} file(s) selected
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={projectFilesBusy || pendingProjectFiles.length === 0}
+                  onClick={() => void handleUploadProjectFiles()}
+                >
+                  {projectFilesBusy ? 'Uploading…' : 'Upload'}
+                </button>
+              </div>
+
+              <div className="project-file-upload-meta">
+                <div className="project-file-upload-meta-row">
+                  <div className="project-file-upload-meta-field">
+                    <label htmlFor="projectFileUploadCategory">Classification</label>
+                    <select
+                      id="projectFileUploadCategory"
+                      value={projectFileUploadMeta.category}
+                      onChange={(e) =>
+                        setProjectFileUploadMeta({
+                          ...projectFileUploadMeta,
+                          category: e.target.value as ProjectDataCategory,
+                        })
+                      }
+                      disabled={projectFilesBusy}
+                    >
+                      {PROJECT_DATA_CATEGORIES.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="project-file-upload-meta-field">
+                    <label htmlFor="projectFileUploadVersion">Version</label>
+                    <select
+                      id="projectFileUploadVersion"
+                      value={normalizeProjectDataVersion(projectFileUploadMeta.versionLabel)}
+                      onChange={(e) =>
+                        setProjectFileUploadMeta({ ...projectFileUploadMeta, versionLabel: e.target.value })
+                      }
+                      disabled={projectFilesBusy}
+                    >
+                      {PROJECT_DATA_VERSIONS.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="project-file-upload-meta-field">
+                    <label htmlFor="projectFileUploadDataAsOf">Data As Of</label>
+                    <input
+                      id="projectFileUploadDataAsOf"
+                      type="date"
+                      required
+                      value={projectFileUploadMeta.dataAsOf}
+                      onChange={(e) =>
+                        setProjectFileUploadMeta({ ...projectFileUploadMeta, dataAsOf: e.target.value })
+                      }
+                      disabled={projectFilesBusy}
+                    />
+                  </div>
+                </div>
+                <div className="project-file-upload-meta-field">
+                  <label htmlFor="projectFileUploadDescription">Description (optional)</label>
+                  <input
+                    id="projectFileUploadDescription"
+                    value={projectFileUploadMeta.description}
+                    onChange={(e) =>
+                      setProjectFileUploadMeta({ ...projectFileUploadMeta, description: e.target.value })
+                    }
+                    maxLength={1000}
+                    placeholder="Short note about this upload"
+                    disabled={projectFilesBusy}
+                  />
+                </div>
+              </div>
+
+              <div className="project-data-browser">
+                <div className="project-data-listbox-panel">
+                  <label htmlFor="projectDataFileList">Uploaded files</label>
+                  <select
+                    id="projectDataFileList"
+                    className="project-data-file-listbox"
+                    size={12}
+                    value={selectedProjectFileId === '' ? '' : String(selectedProjectFileId)}
+                    onChange={(e) =>
+                      setSelectedProjectFileId(e.target.value ? Number(e.target.value) : '')
+                    }
+                  >
+                    {projectFiles.map((f) => {
+                      const version = normalizeProjectDataVersion(f.versionLabel);
+                      const label = [
+                        f.isCurrent ? 'Active' : null,
+                        formatProjectDataCategory(f.category),
+                        f.originalFileName,
+                        `v:${version}`,
+                        f.dataAsOf ? `as of ${toInputDateValue(f.dataAsOf)}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ');
+                      return (
+                        <option key={f.projectFileID} value={f.projectFileID}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {projectFiles.length === 0 ? (
+                    <p className="field-help">No project data files uploaded yet.</p>
+                  ) : null}
+                </div>
+
+                {(() => {
+                  const selected =
+                    selectedProjectFileId === ''
+                      ? null
+                      : projectFiles.find((f) => f.projectFileID === selectedProjectFileId) ?? null;
+                  if (!selected) {
+                    return (
+                      <div className="project-data-detail-panel">
+                        <p className="field-help">Select a file from the list to view or edit its metadata.</p>
+                      </div>
+                    );
+                  }
+                  const draft = projectFileDrafts[selected.projectFileID] ?? {
+                    description: selected.description ?? '',
+                    versionLabel: normalizeProjectDataVersion(selected.versionLabel),
+                    dataAsOf: toInputDateValue(selected.dataAsOf),
+                  };
+                  const url = selected.downloadUrl || selected.blobUrl || '';
+                  const isProcessActive = !!selected.isCurrent;
+                  return (
+                    <div className="project-data-detail-panel">
+                      <h3>{selected.originalFileName}</h3>
+                      <p className="field-help">
+                        {formatProjectDataCategory(selected.category)}
+                        {' · '}
+                        {formatFileBytes(selected.byteLength)}
+                        {' · '}
+                        uploaded by{' '}
+                        {selected.uploadedByName?.trim() ||
+                          (selected.uploadedByUserID > 0
+                            ? `User ${selected.uploadedByUserID}`
+                            : '—')}
+                        {selected.createdDate
+                          ? ` · ${new Date(selected.createdDate).toLocaleString()}`
+                          : ''}
+                      </p>
+                      <div className="form-grid">
+                        <label>Active</label>
+                        <span className="project-online-toggle">
+                          <input
+                            type="checkbox"
+                            checked={isProcessActive}
+                            disabled={projectFilesBusy}
+                            onChange={(e) =>
+                              void handleSetProjectFileActive(selected.projectFileID, e.target.checked)
+                            }
+                          />
+                          {isProcessActive
+                            ? 'Active for this classification'
+                            : 'Not active'}
+                        </span>
+
+                        <label htmlFor="projectDataDetailVersion">Version</label>
+                        <select
+                          id="projectDataDetailVersion"
+                          value={normalizeProjectDataVersion(draft.versionLabel)}
+                          disabled={projectFilesBusy}
+                          onChange={(e) =>
+                            setProjectFileDrafts((prev) => ({
+                              ...prev,
+                              [selected.projectFileID]: {
+                                ...draft,
+                                versionLabel: e.target.value,
+                              },
+                            }))
+                          }
+                        >
+                          {PROJECT_DATA_VERSIONS.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+
+                        <label htmlFor="projectDataDetailDataAsOf">Data As Of</label>
+                        <input
+                          id="projectDataDetailDataAsOf"
+                          type="date"
+                          required
+                          value={draft.dataAsOf}
+                          disabled={projectFilesBusy}
+                          onChange={(e) =>
+                            setProjectFileDrafts((prev) => ({
+                              ...prev,
+                              [selected.projectFileID]: {
+                                ...draft,
+                                dataAsOf: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+
+                        <label htmlFor="projectDataDetailDescription">Description</label>
+                        <input
+                          id="projectDataDetailDescription"
+                          value={draft.description}
+                          maxLength={1000}
+                          disabled={projectFilesBusy}
+                          onChange={(e) =>
+                            setProjectFileDrafts((prev) => ({
+                              ...prev,
+                              [selected.projectFileID]: {
+                                ...draft,
+                                description: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+
+                        <label>Download URL</label>
+                        <div className="project-file-url-cell">
+                          {url ? (
+                            <a href={url} target="_blank" rel="noreferrer" title={url}>
+                              {url.length > 72 ? `${url.slice(0, 72)}…` : url}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </div>
+                      </div>
+                      <div className="project-file-row-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={projectFilesBusy}
+                          onClick={() => void handleSaveProjectFileMetadata(selected.projectFileID)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-button"
+                          disabled={projectFilesBusy}
+                          onClick={() => void handleDeleteProjectFile(selected.projectFileID)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+          ) : null}
+
           <div id="project-tab-services" className={projectTabClass('services')}>
             <h2>Services</h2>
-            <div className="admin-edit-card">
+            <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
-              Filter by service function and category, then tick services to link on this project (
-              <code>dbo.tProjectService</code>). Use <strong>Select all</strong> to add every service, or the
+              Filter by service function and category, tick services to include, then choose{' '}
+              <strong>Add to Project</strong> to link them and create matching calendar rows for scheduling (
+              <code>dbo.tProjectService</code> / calendar). Use <strong>Select all</strong> for every service, or the
               header checkbox to toggle all services shown in the list.
             </p>
             <div className="form-grid">
@@ -1442,9 +2242,17 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               >
                 Clear all
               </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!model?.selectedServiceIds.length}
+                onClick={handleAddServicesToProject}
+              >
+                Add to Project
+              </button>
             </div>
             <div className="project-tab-table-wrap">
-              <table className="client-directory-table">
+              <table className="dashboard-data-table dashboard-data-table--full home-client-project-table project-services-table">
                 <thead>
                   <tr>
                     <th>
@@ -1461,17 +2269,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                         aria-label="Select or clear all services shown in the list"
                       />
                     </th>
+                    <th>Service Category</th>
                     <th>Service</th>
                   </tr>
                 </thead>
                 <tbody>
                   {catalog.length === 0 ? (
                     <tr>
-                      <td colSpan={2}>No services in dbo.tService.</td>
+                      <td colSpan={3}>No services in dbo.tService.</td>
                     </tr>
                   ) : filteredCatalogServices.length === 0 ? (
                     <tr>
-                      <td colSpan={2}>No services match the selected filters.</td>
+                      <td colSpan={3}>No services match the selected filters.</td>
                     </tr>
                   ) : (
                     filteredCatalogServices.map((row) => (
@@ -1484,6 +2293,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                             aria-label={`Toggle service ${row.serviceName}`}
                           />
                         </td>
+                        <td>{(row.categoryName ?? '').trim() || '—'}</td>
                         <td>{row.serviceName}</td>
                       </tr>
                     ))
@@ -1494,13 +2304,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             </div>
           </div>
 
-          {!isEdit ? (
-            <div id="project-tab-calendar" className={projectTabClass('calendar')}>
+          <div id="project-tab-calendar" className={projectTabClass('calendar')}>
               <h2>Analytics Calendar</h2>
-              <div className="admin-edit-card">
+              <div className="admin-edit-card project-panel-tab-card">
                 <p className="field-help">
-                  Document deliverables, meetings, and tasks for this project. Ownership is limited to members of the
-                  selected <strong>User Group</strong> on Project Info. Rows with a title are saved with the project.
+                  Project services and other deliverables live here. Use <strong>Add to Project</strong> on the Services
+                  tab to pull selected services into this calendar, or add rows manually. Double-click a row to edit in a
+                  popup. Ownership is limited to members of the selected <strong>User Group</strong> on Project Info.
+                  Changes are stored in <code>dbo.tProjectCalendarItem</code> when you save the project.
                 </p>
                 <div className="page-header-actions project-services-select-actions">
                   <button type="button" className="secondary-button" onClick={addCalendarItem}>
@@ -1513,7 +2324,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   </p>
                 ) : null}
                 <div className="project-tab-table-wrap">
-                  <table className="catalog-table project-calendar-table">
+                  <table className="dashboard-data-table dashboard-data-table--full home-client-project-table project-calendar-table">
                     <thead>
                       <tr>
                         <th>Type</th>
@@ -1528,19 +2339,26 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     <tbody>
                       {calendarItems.length === 0 ? (
                         <tr>
-                          <td colSpan={7}>No calendar items yet. Click Add row to begin.</td>
+                          <td colSpan={7}>No calendar items yet. Click Add row, or add services from the Services tab.</td>
                         </tr>
                       ) : (
                         calendarItems.map((row) => (
-                          <tr key={row.tempId}>
+                          <tr
+                            key={row.tempId}
+                            onDoubleClick={() => openCalendarEdit(row)}
+                            title="Double-click to edit"
+                            style={{ cursor: 'pointer' }}
+                          >
                             <td>
                               <select
+                                className="project-calendar-cell-input"
                                 value={row.itemType}
                                 onChange={(e) =>
                                   updateCalendarItem(row.tempId, {
                                     itemType: e.target.value as ProjectCalendarItemDraft['itemType'],
                                   })
                                 }
+                                onClick={(e) => e.stopPropagation()}
                                 aria-label="Calendar item type"
                               >
                                 {CALENDAR_ITEM_TYPES.map((t) => (
@@ -1552,8 +2370,13 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                             </td>
                             <td>
                               <input
+                                className="project-calendar-cell-input"
                                 value={row.title}
                                 onChange={(e) => updateCalendarItem(row.tempId, { title: e.target.value })}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  openCalendarEdit(row);
+                                }}
                                 maxLength={200}
                                 placeholder="Deliverable / meeting / task"
                                 aria-label="Calendar item title"
@@ -1561,12 +2384,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                             </td>
                             <td>
                               <select
+                                className="project-calendar-cell-input"
                                 value={row.ownerUserID === '' ? '' : String(row.ownerUserID)}
                                 onChange={(e) =>
                                   updateCalendarItem(row.tempId, {
                                     ownerUserID: e.target.value ? Number(e.target.value) : '',
                                   })
                                 }
+                                onClick={(e) => e.stopPropagation()}
                                 disabled={model.ugid <= 0}
                                 aria-label="Calendar item owner"
                               >
@@ -1580,24 +2405,39 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                             </td>
                             <td>
                               <input
+                                className="project-calendar-cell-input"
                                 type="date"
                                 value={row.receivedDate}
                                 onChange={(e) => updateCalendarItem(row.tempId, { receivedDate: e.target.value })}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  openCalendarEdit(row);
+                                }}
                                 aria-label="Received date"
                               />
                             </td>
                             <td>
                               <input
+                                className="project-calendar-cell-input"
                                 type="date"
                                 value={row.completedDate}
                                 onChange={(e) => updateCalendarItem(row.tempId, { completedDate: e.target.value })}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  openCalendarEdit(row);
+                                }}
                                 aria-label="Completed date"
                               />
                             </td>
                             <td>
                               <input
+                                className="project-calendar-cell-input"
                                 value={row.notes}
                                 onChange={(e) => updateCalendarItem(row.tempId, { notes: e.target.value })}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  openCalendarEdit(row);
+                                }}
                                 placeholder="Notes"
                                 aria-label="Calendar item notes"
                               />
@@ -1606,7 +2446,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                               <button
                                 type="button"
                                 className="danger-button"
-                                onClick={() => removeCalendarItem(row.tempId)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeCalendarItem(row.tempId);
+                                }}
                               >
                                 Remove
                               </button>
@@ -1619,17 +2462,36 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 </div>
               </div>
             </div>
+
+          {isEdit && projectId !== undefined ? (
+            <div id="project-tab-time" className={projectTabClass('time')}>
+              <h2>Time tracker</h2>
+              <ProjectTimeTrackerTab
+                projectId={projectId}
+                isActive={activeTab === 'time'}
+                flash={flash}
+                fallbackTasks={calendarItems
+                  .filter((row) => (row.calendarItemID ?? 0) > 0 && row.title.trim().length > 0)
+                  .map((row) => ({
+                    calendarItemID: row.calendarItemID as number,
+                    itemType: row.itemType,
+                    title: row.title.trim(),
+                    sortOrder: row.sortOrder ?? 0,
+                  }))}
+              />
+            </div>
           ) : null}
 
           {isEdit ? (
             <div id="project-tab-revenue" className={projectTabClass('revenue')}>
             <h2>Revenue history</h2>
-            <div className="admin-edit-card">
+            <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               Active rows from <code>dbo.tProjectRevenue</code> for this project, newest effective date first
               (same order as the home grid Latest Revenue). Delete marks a row inactive.
             </p>
-            <table className="catalog-table">
+            <div className="project-tab-table-wrap">
+              <table className="dashboard-data-table dashboard-data-table--full home-client-project-table catalog-table">
               <thead>
                 <tr>
                   <th>Effective Date</th>
@@ -1668,13 +2530,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </tbody>
             </table>
             </div>
+            </div>
           </div>
           ) : null}
 
           {isEdit ? (
             <div id="project-tab-notes" className={projectTabClass('notes')}>
             <h2>Notes</h2>
-            <div className="admin-edit-card">
+            <div className="admin-edit-card project-panel-tab-card">
+            <p className="field-help">
+              Project notes are stored in <code>dbo.tProjectNote</code>. Add a note below, or delete existing rows from
+              the list.
+            </p>
             <div className="form-grid">
               <label htmlFor="noteType">Note type</label>
               <select
@@ -1696,23 +2563,27 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 onChange={(e) => setNoteDraft({ ...noteDraft, noteText: e.target.value })}
               />
 
-              <label htmlFor="isPinned">
+              <span className="field-label">Pinned</span>
+              <label htmlFor="isPinned" className="project-notes-pinned-label">
                 <input
                   id="isPinned"
                   type="checkbox"
                   checked={noteDraft.isPinned}
                   onChange={(e) => setNoteDraft({ ...noteDraft, isPinned: e.target.checked })}
                 />
-                Pinned
+                Pin this note
               </label>
-              <div>
+
+              <span className="field-label" aria-hidden="true" />
+              <div className="page-header-actions project-services-select-actions">
                 <button type="button" className="secondary-button" onClick={() => void handleAddNote()}>
                   Add note
                 </button>
               </div>
             </div>
 
-            <table className="catalog-table">
+            <div className="project-tab-table-wrap">
+              <table className="dashboard-data-table dashboard-data-table--full home-client-project-table catalog-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -1752,42 +2623,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </tbody>
             </table>
             </div>
-          </div>
-          ) : null}
-
-          {isEdit ? (
-            <div id="project-tab-activity" className={projectTabClass('activity')}>
-            <h2>Activity log</h2>
-            <div className="admin-edit-card">
-            <p className="field-help">From <code>dbo.tActivityLog</code> for this project.</p>
-            <table className="catalog-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Action</th>
-                  <th>Field</th>
-                  <th>Old</th>
-                  <th>New</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activity.length === 0 ? (
-                  <tr>
-                    <td colSpan={5}>No activity yet.</td>
-                  </tr>
-                ) : (
-                  activity.map((a) => (
-                    <tr key={a.logID}>
-                      <td>{formatCalendarDateDisplay(a.actionDate)}</td>
-                      <td>{a.action}</td>
-                      <td>{a.fieldName ?? ''}</td>
-                      <td>{a.oldValue ?? ''}</td>
-                      <td>{a.newValue ?? ''}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
             </div>
           </div>
           ) : null}
@@ -1815,5 +2650,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         </form>
       </section>
     </div>
+    </>
   );
 }

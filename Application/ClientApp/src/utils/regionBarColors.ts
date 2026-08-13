@@ -5,7 +5,7 @@ export const REGION_BAR_COLORS = {
   LatAM: '#2d8a3e',
 } as const;
 
-const DEFAULT_BAR_COLOR = '#5a6470';
+const DEFAULT_BAR_COLOR = '#20d4e8';
 
 /** Resolve bar fill from business unit code/name (US, UK, LA / LatAM). */
 export function regionBarColor(colorKey?: string | null): string {
@@ -18,6 +18,9 @@ export function regionBarColor(colorKey?: string | null): string {
   }
   if (key === 'LA' || key === 'LATAM' || key.includes('LATIN')) {
     return REGION_BAR_COLORS.LatAM;
+  }
+  if (key === 'TIMELINE') {
+    return '#f08700';
   }
   return DEFAULT_BAR_COLOR;
 }
