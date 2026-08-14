@@ -18,7 +18,7 @@ function buildProjectsByBeginMonthUrl(analyticsLeadName: string, onlineStatus: O
   return `/api/dashboard/projects-by-begin-month?${params.toString()}`;
 }
 
-/** API returns yyyy-MM; display as Jan … Dec. */
+/** API returns yyyy-MM; display as Jan ... Dec. */
 function formatMonthLabel(label: string): string {
   const m = label.trim().match(/^(\d{4})-(\d{2})$/);
   if (!m) {
@@ -108,7 +108,7 @@ export default function DashboardPage() {
       <section className="page-header">
         <h1>Dashboard</h1>
         <p>
-          Monthly view for the current year (January–December) of projects by begin date (Created Date).
+          Monthly view for the current year (January-December) of projects by begin date (Created Date).
           Months with no starts stay blank. Filter by Analytics Lead and toggle Online vs All projects.
         </p>
       </section>
@@ -150,7 +150,7 @@ export default function DashboardPage() {
           </div>
           <div className="dashboard-filter-actions">
             <button className="secondary-button" type="button" onClick={() => void load()} disabled={loading}>
-              {loading ? 'Loading…' : 'Refresh'}
+              {loading ? 'Loading...' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -162,11 +162,11 @@ export default function DashboardPage() {
             {filterAnalyticsLead ? (
               <>
                 Analytics Lead <strong>{filterAnalyticsLead}</strong>
-                {' · '}
+                {' - '}
               </>
             ) : null}
             Showing <strong>{filterOnline === 'Online' ? 'Online' : 'All'}</strong> projects
-            {' · '}
+            {' - '}
             Total in chart: <strong>{totalProjects}</strong>
           </p>
         : null}
@@ -182,7 +182,7 @@ export default function DashboardPage() {
           </div>
         : null}
 
-        {loading && !dataReady ? <p className="field-help">Loading dashboard…</p> : null}
+        {loading && !dataReady ? <p className="field-help">Loading dashboard...</p> : null}
       </section>
     </>
   );

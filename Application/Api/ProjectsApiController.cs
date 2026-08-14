@@ -50,14 +50,10 @@ public sealed class ProjectsApiController : ControllerBase
 
     [HttpGet("user-groups")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetUserGroupsForClientAsync(
-        [FromQuery] int clientId,
-        CancellationToken cancellationToken)
+        [FromQuery] int clientId = 0,
+        CancellationToken cancellationToken = default)
     {
-        if (clientId <= 0)
-        {
-            return BadRequest(new ProblemDetails { Title = "Invalid client", Detail = "clientId must be positive." });
-        }
-
+        // clientId <= 0 => all active groups; clientId > 0 => same list, used-on-client groups sorted first.
         var items = await _projectService.GetUserGroupSelectListForClientAsync(clientId, cancellationToken);
         return Ok(items.Select(i => new { value = i.Value, text = i.Text }).ToList());
     }
@@ -325,8 +321,8 @@ public sealed class ProjectsApiController : ControllerBase
     }
 
     [HttpPost("{id:int}/files")]
-    [RequestFormLimits(MultipartBodyLengthLimit = 52_428_800)]
-    [RequestSizeLimit(52_428_800)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 2L * 1024 * 1024 * 1024 + 100L * 1024 * 1024)]
+    [RequestSizeLimit(2L * 1024 * 1024 * 1024 + 100L * 1024 * 1024)]
     public async Task<ActionResult<IReadOnlyList<ProjectFile>>> UploadFilesAsync(
         int id,
         [FromForm] List<IFormFile>? files,

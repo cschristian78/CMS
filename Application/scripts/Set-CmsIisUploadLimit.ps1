@@ -5,7 +5,7 @@
 #>
 param(
     [string] $SiteName = 'CMS-Dev1',
-    [long] $MaxAllowedContentLength = 209715200  # 200 MB
+    [long] $MaxAllowedContentLength = 2254857830  # ~2.1 GB (2 GB file + overhead)
 )
 
 $ErrorActionPreference = 'Stop'

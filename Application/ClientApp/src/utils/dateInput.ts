@@ -1,7 +1,7 @@
 /**
  * Calendar-date helpers for <input type="date"> and SQL date-only fields.
  * Parsing with `new Date('yyyy-MM-dd')` treats the value as UTC midnight, which
- * displays as the previous day in US timezones (e.g. 2026-01-01 → 2025-12-31).
+ * displays as the previous day in US timezones (e.g. 2026-01-01 -> 2025-12-31).
  */
 
 function formatYmd(year: number, month: number, day: number): string {
@@ -9,7 +9,7 @@ function formatYmd(year: number, month: number, day: number): string {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
-/** Value for <input type="date"> — always the intended calendar day as yyyy-MM-dd. */
+/** Value for <input type="date"> - always the intended calendar day as yyyy-MM-dd. */
 export function toInputDateValue(value: string | Date | null | undefined): string {
   if (value == null || value === '') {
     return '';
@@ -45,11 +45,11 @@ export function toInputDateValue(value: string | Date | null | undefined): strin
 export function formatCalendarDateDisplay(value: string | null | undefined): string {
   const iso = toInputDateValue(value);
   if (!iso) {
-    return '—';
+    return '-';
   }
   const [y, m, day] = iso.split('-');
   if (!y || !m || !day) {
-    return '—';
+    return '-';
   }
   return `${m}/${day}/${y}`;
 }

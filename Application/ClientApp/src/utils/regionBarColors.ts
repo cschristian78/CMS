@@ -1,4 +1,4 @@
-/** US Red, UK Blue, LatAM (LA) Green — matches dbo.tBusinessUnit seed codes. */
+/** US Red, UK Blue, LatAM (LA) Green - matches dbo.tBusinessUnit seed codes. */
 export const REGION_BAR_COLORS = {
   US: '#c41e3a',
   UK: '#1e4a8c',

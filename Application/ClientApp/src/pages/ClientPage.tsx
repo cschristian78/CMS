@@ -416,7 +416,7 @@ export default function ClientPage({ flash }: { flash: FlashFn }) {
   if (!model) {
     return (
       <div className="client-workflow-fill client-workflow-loading">
-        <p>Loading…</p>
+        <p>Loading...</p>
       </div>
     );
   }
@@ -611,7 +611,7 @@ export default function ClientPage({ flash }: { flash: FlashFn }) {
             id="client-directory-search"
             type="search"
             className="client-directory-search"
-            placeholder="Filter by name, ID, status, business unit, category…"
+            placeholder="Filter by name, ID, status, business unit, category..."
             value={directorySearch}
             onChange={(e) => setDirectorySearch(e.target.value)}
             autoComplete="off"
@@ -711,9 +711,9 @@ export default function ClientPage({ flash }: { flash: FlashFn }) {
             {bulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  ✓
+                  OK
                 </span>
-                <span>Verification passed — you can select Import to load rows into tClient.</span>
+                <span>Verification passed - you can select Import to load rows into tClient.</span>
               </div>
             ) : null}
 

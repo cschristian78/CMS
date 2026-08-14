@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import type { FlashFn } from '../App';
 import { ApiError, apiGet, apiPostJson } from '../api';
 import { formatCalendarDateDisplay, toInputDateValue } from '../utils/dateInput';
@@ -8,6 +8,11 @@ export interface TimeTrackerTask {
   itemType?: string | null;
   title: string;
   sortOrder?: number;
+}
+
+export interface ProjectTimeTrackerHandle {
+  save: () => Promise<void>;
+  reload: () => Promise<void>;
 }
 
 interface TimeEntryDto {
@@ -73,18 +78,16 @@ function cellKey(calendarItemID: number, ymd: string): CellKey {
   return `${calendarItemID}|${ymd}`;
 }
 
-export default function ProjectTimeTrackerTab({
-  projectId,
-  isActive,
-  flash,
-  fallbackTasks,
-}: {
-  projectId: number;
-  isActive: boolean;
-  flash: FlashFn;
-  /** Local calendar drafts used when API tasks are empty / not yet reloaded. */
-  fallbackTasks: TimeTrackerTask[];
-}) {
+const ProjectTimeTrackerTab = forwardRef<
+  ProjectTimeTrackerHandle,
+  {
+    projectId: number;
+    isActive: boolean;
+    flash: FlashFn;
+    /** Local calendar drafts used when API tasks are empty / not yet reloaded. */
+    fallbackTasks: TimeTrackerTask[];
+  }
+>(function ProjectTimeTrackerTab({ projectId, isActive, flash, fallbackTasks }, ref) {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [tasks, setTasks] = useState<TimeTrackerTask[]>([]);
   const [cells, setCells] = useState<Record<CellKey, { hours: string; entryMode: 'Exact' | 'Allocated' }>>({});
@@ -197,7 +200,7 @@ export default function ProjectTimeTrackerTab({
         }
       }
 
-      // Include explicit zeros for cleared cells that previously existed — save payload can be sparse;
+      // Include explicit zeros for cleared cells that previously existed - save payload can be sparse;
       // server clears omitted existing cells. Sending all non-empty is enough if we also send zeros
       // for keys that were loaded then cleared: include any key currently in cells map.
       for (const [key, cell] of Object.entries(cells)) {
@@ -229,6 +232,15 @@ export default function ProjectTimeTrackerTab({
       setSaving(false);
     }
   };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      save: handleSave,
+      reload: loadWeek,
+    }),
+    [handleSave, loadWeek],
+  );
 
   const toggleBlockTask = (id: number) => {
     setBlockTaskIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -280,7 +292,7 @@ export default function ProjectTimeTrackerTab({
   return (
     <div className="admin-edit-card project-panel-tab-card">
         <p className="field-help">
-          Track daily hours against calendar services / tasks, one week at a time (Monday–Sunday). Enter exact hours in
+          Track daily hours against calendar services / tasks, one week at a time (Monday-Sunday). Enter exact hours in
           each cell, or use <strong>Allocate block</strong> to split a lump of time evenly across selected tasks for a
           day. Save time here (does not require Save Project). Stored in <code>dbo.tProjectTimeEntry</code>.
         </p>
@@ -311,15 +323,15 @@ export default function ProjectTimeTrackerTab({
             Next week
           </button>
           <span className="project-time-week-range" role="status">
-            {formatCalendarDateDisplay(toYmd(weekStart))} – {formatCalendarDateDisplay(toYmd(addDays(weekStart, 6)))}
+            {formatCalendarDateDisplay(toYmd(weekStart))} - {formatCalendarDateDisplay(toYmd(addDays(weekStart, 6)))}
           </span>
           <button type="button" className="primary-button" onClick={() => void handleSave()} disabled={loading || saving}>
-            {saving ? 'Saving…' : 'Save time'}
+            {saving ? 'Saving...' : 'Save time'}
           </button>
         </div>
 
         {loadError ? <div className="validation-summary">{loadError}</div> : null}
-        {loading ? <p className="field-help">Loading week…</p> : null}
+        {loading ? <p className="field-help">Loading week...</p> : null}
 
         {!loading && displayTasks.length === 0 ? (
           <p className="field-help" role="status">
@@ -456,4 +468,6 @@ export default function ProjectTimeTrackerTab({
         ) : null}
     </div>
   );
-}
+});
+
+export default ProjectTimeTrackerTab;

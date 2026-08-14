@@ -243,7 +243,7 @@ function formatTableCell(
   }
   if (columnName && isDateColumn(columnName)) {
     const formatted = formatCalendarDateDisplay(String(value));
-    return formatted === '—' ? '' : formatted;
+    return formatted === '-' ? '' : formatted;
   }
   if (typeof value === 'number' && !Number.isInteger(value)) {
     return String(Math.round(value * 100) / 100);
@@ -298,7 +298,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const [filterBusinessClass, setFilterBusinessClass] = useState(initialHomeFilters.businessClass);
   // Default Status "Active" / Online "Online" unless a prior Main visit saved something else.
   const [filterStatus, setFilterStatus] = useState(initialHomeFilters.status);
-  /** '' = all, 'Online', or 'Offline' — filters by dbo.tProject.IsOnline. */
+  /** '' = all, 'Online', or 'Offline' - filters by dbo.tProject.IsOnline. */
   const [filterOnline, setFilterOnline] = useState(initialHomeFilters.online);
   const [clientNameSearch, setClientNameSearch] = useState(initialHomeFilters.client);
   // ProjectType filter is sourced from unique PTDescription values in dbo.vProject_Current.
@@ -372,7 +372,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
 
   useEffect(() => {
     void loadProjectList(true);
-    // Initial load (and remount after navigating back) — Apply filters / Refresh for mid-page changes.
+    // Initial load (and remount after navigating back) - Apply filters / Refresh for mid-page changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -412,11 +412,11 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
 
   const formatUsd = (n: number) => formatUsdAmount(n, 0);
 
-  const revenueLabel = summary != null ? formatUsd(summary.totalProjectRevenue) : '—';
+  const revenueLabel = summary != null ? formatUsd(summary.totalProjectRevenue) : '-';
   const onlineRevenueLabel =
-    summary != null ? formatUsd(summary.onlineProjectRevenue ?? 0) : '—';
+    summary != null ? formatUsd(summary.onlineProjectRevenue ?? 0) : '-';
   const onlineProjectCountLabel =
-    summary != null ? String(summary.onlineProjectCount ?? 0) : '…';
+    summary != null ? String(summary.onlineProjectCount ?? 0) : '...';
 
   const projectIdColumnIndex = useMemo(() => {
     if (!list?.columns?.length) {
@@ -840,11 +840,11 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       <section className="tile-grid tile-grid--home" aria-label="Summary statistics">
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Active clients">
           <span className="tile-title">Active clients</span>
-          <span className="tile-stat-value">{summary != null ? summary.uniqueClientCount : '…'}</span>
+          <span className="tile-stat-value">{summary != null ? summary.uniqueClientCount : '...'}</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Total Revenue (USD)">
           <span className="tile-title">Total Revenue (USD)</span>
-          <span className="tile-stat-value">{summary != null ? revenueLabel : '…'}</span>
+          <span className="tile-stat-value">{summary != null ? revenueLabel : '...'}</span>
           <span className="tile-stat-detail">All Active projects</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Online Projects">
@@ -854,7 +854,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Online Revenue">
           <span className="tile-title">Online Revenue</span>
-          <span className="tile-stat-value">{summary != null ? onlineRevenueLabel : '…'}</span>
+          <span className="tile-stat-value">{summary != null ? onlineRevenueLabel : '...'}</span>
           <span className="tile-stat-detail">Online projects</span>
         </div>
       </section>
@@ -1008,12 +1008,12 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 disabled={listLoading}
                 onClick={() => void loadProjectList(true)}
               >
-                {listLoading ? 'Loading…' : 'Refresh table'}
+                {listLoading ? 'Loading...' : 'Refresh table'}
               </button>
             </div>
           </div>
 
-          {listLoading && !list ? <p className="field-help">Loading…</p> : null}
+          {listLoading && !list ? <p className="field-help">Loading...</p> : null}
 
           {list && list.columns.length > 0 && projectIdColumnIndex < 0 ?
             <div className="alert alert-error" role="alert">
@@ -1093,13 +1093,13 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                           aria-pressed={isOnline}
                           aria-label={
                             isOnline ?
-                              'Online — click to set Offline'
-                            : 'Offline — click to set online'
+                              'Online - click to set Offline'
+                            : 'Offline - click to set online'
                           }
                           title={
                             isOnline ?
-                              'Online (in progress) — click to set Offline'
-                            : 'Offline — click to set online'
+                              'Online (in progress) - click to set Offline'
+                            : 'Offline - click to set online'
                           }
                           onClick={(e) => {
                             if (rowProjectId === null) {
@@ -1142,7 +1142,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               CSV columns (no IDs): <strong>ClientName</strong>, <strong>ProjectNumber</strong>,{' '}
               <strong>ProjectName</strong>, <strong>ProjectType</strong>, <strong>ProjectStatus</strong> (required);
               optional client fields <strong>ClientShortName</strong>, <strong>ClientDescription</strong>,{' '}
-              <strong>Status</strong> (<strong>StatusDescription</strong> from ClientRef → tStatus),{' '}
+              <strong>Status</strong> (<strong>StatusDescription</strong> from ClientRef to tStatus),{' '}
               <strong>BusinessUnit</strong>, <strong>BusinessClass</strong>, <strong>ClientType</strong> (all three
               together for new clients; must match tBusinessUnit / tBusinessClass / tClientType for existing clients),{' '}
               <strong>AccountExecutiveEmail</strong>, <strong>AnalyticsLeadEmail</strong>; optional project fields{' '}
@@ -1157,10 +1157,10 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
             {bulkVerifyOk ?
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  ✓
+                  OK
                 </span>
                 <span>
-                  Verification passed — you can select Import to load clients and projects (user group and services
+                  Verification passed - you can select Import to load clients and projects (user group and services
                   remain empty).
                 </span>
               </div>

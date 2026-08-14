@@ -46,12 +46,13 @@ builder.Services.AddSingleton<IProjectBlobStorage, AzureProjectBlobStorage>();
 builder.Services.AddSingleton<IProjectFileUploadSessionStore, ProjectFileUploadSessionStore>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 209_715_200;
+    // 2 GB file + multipart overhead headroom
+    options.MultipartBodyLengthLimit = 2L * 1024 * 1024 * 1024 + 100L * 1024 * 1024;
     options.ValueLengthLimit = int.MaxValue;
 });
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 209_715_200;
+    options.Limits.MaxRequestBodySize = 2L * 1024 * 1024 * 1024 + 100L * 1024 * 1024;
 });
 builder.Services.AddScoped<ISqlConnectionFactory, SqlConnectionFactory>();
 builder.Services.AddScoped<IDbExecutor, DbExecutor>();

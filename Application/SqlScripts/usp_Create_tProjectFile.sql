@@ -9,6 +9,8 @@
   DataAsOf     = data-as-of date for the uploaded dataset
 */
 SET NOCOUNT ON;
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 GO
 
 IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NULL
@@ -397,14 +399,17 @@ BEGIN
                AND IsActive = 1;
         END
 
-        DECLARE @Action VARCHAR(40) =
-            CASE WHEN @IsCurrent = 1 THEN 'SetCurrent' ELSE 'ClearCurrent' END;
+        DECLARE @OldIsCurrent NVARCHAR(10) = CASE WHEN @IsCurrent = 1 THEN N'0' ELSE N'1' END;
+        DECLARE @NewIsCurrent NVARCHAR(10) = CASE WHEN @IsCurrent = 1 THEN N'1' ELSE N'0' END;
 
         EXEC dbo.usp_ActivityLog_Insert
             @EntityType = 'ProjectFile',
             @EntityID   = @ProjectFileID,
             @UserID     = @ActingUserID,
-            @Action     = @Action;
+            @Action     = 'Update',
+            @FieldName  = 'IsCurrent',
+            @OldValue   = @OldIsCurrent,
+            @NewValue   = @NewIsCurrent;
 
         COMMIT TRAN;
     END TRY

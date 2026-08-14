@@ -59,7 +59,7 @@ function formatDate(iso?: string | null): string {
 
 function formatMoney(n: number | null | undefined): string {
   if (n == null) {
-    return '—';
+    return '-';
   }
   return new Intl.NumberFormat(undefined, {
     style: 'currency',
@@ -160,7 +160,7 @@ export default function ProjectSummaryPage() {
   if (!model) {
     return (
       <div className="client-workflow-fill client-workflow-loading">
-        <p>Loading…</p>
+        <p>Loading...</p>
       </div>
     );
   }
@@ -191,9 +191,9 @@ export default function ProjectSummaryPage() {
         <h2>Project</h2>
         <dl className="summary-grid">
           <dt>Project Number</dt>
-          <dd>{model.projectNumber || '—'}</dd>
+          <dd>{model.projectNumber || '-'}</dd>
           <dt>Project Name</dt>
-          <dd>{model.projectName || '—'}</dd>
+          <dd>{model.projectName || '-'}</dd>
           <dt>Renewal Date</dt>
           <dd>{formatDate(model.renewalDate)}</dd>
           <dt>Due Date</dt>
@@ -207,15 +207,15 @@ export default function ProjectSummaryPage() {
         <h2>Client</h2>
         <dl className="summary-grid">
           <dt>Client</dt>
-          <dd>{model.clientName ?? '—'}</dd>
+          <dd>{model.clientName ?? '-'}</dd>
           <dt>Business Unit</dt>
-          <dd>{model.clientBusinessUnitName ?? '—'}</dd>
+          <dd>{model.clientBusinessUnitName ?? '-'}</dd>
           <dt>Business Class</dt>
-          <dd>{model.clientBusinessClassName ?? '—'}</dd>
+          <dd>{model.clientBusinessClassName ?? '-'}</dd>
           <dt>Client Type</dt>
-          <dd>{model.clientTypeName ?? '—'}</dd>
+          <dd>{model.clientTypeName ?? '-'}</dd>
           <dt>Client Status</dt>
-          <dd>{model.clientStatusCode ?? '—'}</dd>
+          <dd>{model.clientStatusCode ?? '-'}</dd>
         </dl>
       </section>
 
@@ -228,7 +228,7 @@ export default function ProjectSummaryPage() {
             {selectedServices.map((s) => (
               <li key={s.serviceID}>
                 {s.serviceName}
-                {s.categoryName ? ` — ${s.categoryName}` : ''}
+                {s.categoryName ? ` - ${s.categoryName}` : ''}
               </li>
             ))}
           </ul>

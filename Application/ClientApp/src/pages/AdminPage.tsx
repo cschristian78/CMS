@@ -454,7 +454,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
   };
 
   const selectedLabel = selected
-    ? `${comboUserLabel(selected)}${comboUserDept(selected) ? ` â€” ${comboUserDept(selected)}` : ''}`
+    ? `${comboUserLabel(selected)}${comboUserDept(selected) ? ` - ${comboUserDept(selected)}` : ''}`
     : '';
 
   return (
@@ -467,7 +467,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
         aria-expanded={open}
         aria-controls={`${id}-list`}
         autoComplete="off"
-        placeholder={placeholder ?? 'Type a name or departmentâ€¦'}
+        placeholder={placeholder ?? 'Type a name or department...'}
         value={open ? query : selectedLabel}
         onFocus={() => {
           setOpen(true);
@@ -496,7 +496,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
               choose(0);
             }}
           >
-            â€” None â€”
+            - None -
           </li>
           {filtered.length === 0 ? (
             <li className="user-combo-empty" role="status">
@@ -525,7 +525,7 @@ function UserCombo({ id, users, value, onChange, placeholder }: UserComboProps) 
   );
 }
 
-/** Row from GET /api/admin (Clients) â€” dbo.tClient joined to its primary dbo.tClientRef. */
+/** Row from GET /api/admin (Clients) - dbo.tClient joined to its primary dbo.tClientRef. */
 interface AdminClient {
   clientID: number;
   clientName?: string | null;
@@ -653,7 +653,7 @@ interface ServiceImportRow {
   /** Comma- or semicolon-separated list of tag names; resolved via usp_Tag_GetOrCreate. */
   tags: string;
   isActive: boolean;
-  /** ISO date from server; omit or null on insert â†’ SQL uses GETDATE() */
+  /** ISO date from server; omit or null on insert -> SQL uses GETDATE() */
   createdDate?: string | null;
 }
 
@@ -686,7 +686,7 @@ type TabId =
   | 'services'
   | 'serviceCategories';
 
-/** US states and DC â€” two-letter postal codes for the user address State field. */
+/** US states and DC - two-letter postal codes for the user address State field. */
 const US_STATE_CODES: readonly string[] = [
   'AL',
   'AK',
@@ -896,7 +896,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [selectedCtId, setSelectedCtId] = useState<number | ''>('');
   const [ctForm, setCtForm] = useState({ clientTypeID: 0, ctName: '', ctDescription: '', isActive: true });
 
-  // Services (tService) â€” CMS_PhaseI_All: ServiceCategoryID FK + N:N tags via tServiceTag
+  // Services (tService) - CMS_PhaseI_All: ServiceCategoryID FK + N:N tags via tServiceTag
   const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [serviceForm, setServiceForm] = useState<ServiceFormState>(() => emptyServiceForm());
@@ -991,7 +991,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   // Populates the right-hand form from vUser-backed list fields (tUser) plus address lines
   // from tUserAddress. The admin index may embed primaryAddress (OUTER APPLY in the repo);
-  // we always re-query GET /api/admin/users/{id}/addresses â†’ usp_User_ListAddresses so the
+  // we always re-query GET /api/admin/users/{id}/addresses -> usp_User_ListAddresses so the
   // form matches the database even if the bulk payload omitted or shaped address data differently.
   const applyUserToForm = async (u: AdminUser) => {
     if (!admin) {
@@ -1609,10 +1609,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const userPickerLabel = (u: AdminUser) => {
     const base = (u.username?.trim() || u.email?.trim() || u.displayName || `User ${u.userID}`).trim();
     const t = u.title?.trim();
-    return t ? `${base} â€” ${t}` : base;
+    return t ? `${base} - ${t}` : base;
   };
 
-  // Used by the UserGroup â†’ "Find user" listbox, which should show only the user's first + last name.
+  // Used by the UserGroup -> "Find user" listbox, which should show only the user's first + last name.
   const userFirstLastLabel = (u: AdminUser) => {
     const fn = (u.firstName ?? '').trim();
     const ln = (u.lastName ?? '').trim();
@@ -1896,7 +1896,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   }, [filteredUsersForDirectory, selectedUserId, admin]);
 
   // In this schema dbo.tBusinessClass is global (no BU column); the BU/BC/Type association lives on
-  // dbo.tClientRef. So Business Class is NOT scoped to a Business Unit â€” show every class.
+  // dbo.tClientRef. So Business Class is NOT scoped to a Business Unit - show every class.
   const businessClassOptions = useMemo(() => admin?.businessClasses ?? [], [admin]);
 
   const clientStatusOptions = useMemo<ClientStatus[]>(() => {
@@ -2037,8 +2037,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const formatJoinedDate = (d?: string | null) => formatCalendarDateDisplay(d);
 
   const userGroupListLabel = (g: UserGroupListRow) => {
-    const num = g.userGroupNumber?.trim() || '—';
-    const name = g.ugName?.trim() || '—';
+    const num = g.userGroupNumber?.trim() || '-';
+    const name = g.ugName?.trim() || '-';
     const members = `${g.memberCount} member${g.memberCount === 1 ? '' : 's'}`;
     return `#${g.ugid} | ${num} | ${name} | ${members}`;
   };
@@ -2050,7 +2050,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       m.userFullName?.trim() ||
       m.displayName?.trim() ||
       `User ${m.userID}`;
-    const roleId = m.userRoleID ?? '—';
+    const roleId = m.userRoleID ?? '-';
     const r = m.userRoleName?.trim() || `Role ${roleId}`;
     return `Grp ${m.ugid}  |  User ${m.userID}: ${u}  |  Role ${roleId}: ${r}  |  Joined ${formatJoinedDate(m.joinedDate)}`;
   };
@@ -2058,13 +2058,13 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const pendingMemberLabel = (p: PendingGroupMember) => {
     const grpId = groupEditUgid > 0 ? groupEditUgid : '(new)';
     if (!admin) {
-      return `Grp ${grpId}  |  User ${p.userID}  |  Role ${p.userRoleID}  |  Joined — (not saved)`;
+      return `Grp ${grpId}  |  User ${p.userID}  |  Role ${p.userRoleID}  |  Joined - (not saved)`;
     }
     const u = admin.bmsUsers.find((x) => x.userID === p.userID);
     const r = admin.userRoles.find((x) => x.userRoleID === p.userRoleID);
     const un = u ? userPickerLabel(u) : `User ${p.userID}`;
     const rn = r ? rolePickerLabel(r) : `Role ${p.userRoleID}`;
-    return `Grp ${grpId}  |  User ${p.userID}: ${un}  |  Role ${p.userRoleID}: ${rn}  |  Joined — (not saved)`;
+    return `Grp ${grpId}  |  User ${p.userID}: ${un}  |  Role ${p.userRoleID}: ${rn}  |  Joined - (not saved)`;
   };
 
   const groupMemberComboExists = (userID: number, userRoleID: number) =>
@@ -2603,11 +2603,11 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       return;
     }
     if (!serviceForm.serviceCategoryID || serviceForm.serviceCategoryID <= 0) {
-      flash('error', 'Select a service category â€” required for the tServiceRef link.');
+      flash('error', 'Select a service category - required for the tServiceRef link.');
       return;
     }
     if (!serviceForm.serviceGroupID || serviceForm.serviceGroupID <= 0) {
-      flash('error', 'Select a service group â€” required for the tServiceRef link.');
+      flash('error', 'Select a service group - required for the tServiceRef link.');
       return;
     }
     const category = (admin?.serviceCategories ?? []).find(
@@ -2789,7 +2789,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   const formatServiceCell = (v: string | number | boolean | null | undefined) => {
     if (v === null || v === undefined || v === '') {
-      return 'â€”';
+      return '-';
     }
     return String(v);
   };
@@ -2804,7 +2804,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   }
 
   if (!admin) {
-    return <p>Loadingâ€¦</p>;
+    return <p>Loading...</p>;
   }
 
   const tabBtn = (id: TabId, label: string) => (
@@ -2986,7 +2986,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   id="admin-user-directory-search"
                   type="search"
                   className="admin-search-input"
-                  placeholder="Search by first name, last name, or emailâ€¦"
+                  placeholder="Search by first name, last name, or email..."
                   value={userDirectorySearch}
                   onChange={(e) => setUserDirectorySearch(e.target.value)}
                   aria-controls="admin-user-pick-list"
@@ -3010,7 +3010,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   filteredUsersForDirectory.map((u) => {
                     const first = (u.firstName ?? '').trim();
                     const last = (u.lastName ?? '').trim();
-                    const fullName = [first, last].filter((x) => x !== '').join(' ') || 'â€”';
+                    const fullName = [first, last].filter((x) => x !== '').join(' ') || '-';
                     const titleLine = (u.title ?? '').trim();
                     const emailLine = (u.email ?? '').trim() || (u.displayName ?? '').trim();
                     const phone = (u.phone ?? '').trim();
@@ -3143,7 +3143,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onChange={(e) => setUserForm({ ...userForm, department: e.target.value })}
                   aria-label="Department"
                 >
-                  <option value="">â€” Select Department â€”</option>
+                  <option value="">- Select Department -</option>
                   {userFormDepartmentOptions.map((d) => (
                     <option key={d} value={d}>
                       {d}
@@ -3208,7 +3208,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onChange={(e) => setUserForm({ ...userForm, state: e.target.value })}
                   aria-label="State (US postal code)"
                 >
-                  <option value="">â€”</option>
+                  <option value="">-</option>
                   {US_STATE_CODES.map((code) => (
                     <option key={code} value={code}>
                       {code}
@@ -3350,7 +3350,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               <input
                 type="search"
                 className="admin-search-input"
-                placeholder="Search groups by name or numberâ€¦"
+                placeholder="Search groups by name or number..."
                 value={groupSearchInput}
                 onChange={(e) => setGroupSearchInput(e.target.value)}
                 disabled={groupPanelBusy}
@@ -3408,8 +3408,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                       </tr>
                     ) : (
                       displayedUserGroupRows.map((g) => {
-                        const num = g.userGroupNumber?.trim() || '—';
-                        const name = g.ugName?.trim() || '—';
+                        const num = g.userGroupNumber?.trim() || '-';
+                        const name = g.ugName?.trim() || '-';
                         const members = `${g.memberCount} member${g.memberCount === 1 ? '' : 's'}`;
                         return (
                           <tr
@@ -3508,7 +3508,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     id="ug-filter-user"
                     type="search"
                     className="admin-usergroup-filter-input admin-usergroup-filter-input--full"
-                    placeholder="Search by name, email, city, companyâ€¦"
+                    placeholder="Search by name, email, city, company..."
                     value={newGroupUserFilterDraft}
                     onChange={(e) => setNewGroupUserFilterDraft(e.target.value)}
                     disabled={groupPanelBusy}
@@ -3524,7 +3524,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     onChange={(e) => setAddMemberUserId(e.target.value ? Number(e.target.value) : '')}
                     disabled={groupPanelBusy}
                   >
-                    <option value="">â€” Select user â€”</option>
+                    <option value="">- Select user -</option>
                     {filteredBmsUsersForGroup.map((u) => (
                       <option key={u.userID} value={u.userID}>
                         {userFirstLastLabel(u)}
@@ -3548,7 +3548,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     onChange={(e) => setAddMemberRoleId(e.target.value ? Number(e.target.value) : '')}
                     disabled={groupPanelBusy}
                   >
-                    <option value="">â€” Select role â€”</option>
+                    <option value="">- Select role -</option>
                     {filteredRolesForGroup.map((r) => (
                       <option key={r.userRoleID} value={r.userRoleID}>
                         {rolePickerLabel(r)}
@@ -3607,8 +3607,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   {loadedGroupMembers.length === 0 && pendingGroupMembers.length === 0 ? (
                     <option value="">
                       {isCreatingGroup || groupEditUgid > 0
-                        ? 'â€” No members yet â€”'
-                        : 'â€” Select a group and choose Edit â€”'}
+                        ? '- No members yet -'
+                        : '- Select a group and choose Edit -'}
                     </option>
                   ) : null}
                   {loadedGroupMembers.map((m) => (
@@ -3796,9 +3796,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             onDoubleClick={() => editBcFromSelection(c)}
                           >
                             <td className="admin-businessclass-num">{c.businessClassID}</td>
-                            <td>{(c.businessClassName ?? '').trim() || 'â€”'}</td>
+                            <td>{(c.businessClassName ?? '').trim() || '-'}</td>
                             <td className="admin-businessclass-desc" title={desc || undefined}>
-                              {desc || 'â€”'}
+                              {desc || '-'}
                             </td>
                           </tr>
                         );
@@ -3837,7 +3837,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onClick={(e) => e.stopPropagation()}
                   aria-label="Owning Business Unit"
                 >
-                  <option value="">â€” Select Business Unit â€”</option>
+                  <option value="">- Select Business Unit -</option>
                   {admin.businessUnits.map((u) => (
                     <option key={u.businessUnitID} value={String(u.businessUnitID)}>
                       {u.businessUnitName?.trim() || `BU ${u.businessUnitID}`}
@@ -3904,9 +3904,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             onDoubleClick={() => editCtFromSelection(c)}
                           >
                             <td className="admin-businessclass-num">{c.clientTypeID}</td>
-                            <td>{(c.ctName ?? '').trim() || 'â€”'}</td>
+                            <td>{(c.ctName ?? '').trim() || '-'}</td>
                             <td className="admin-businessclass-desc" title={desc || undefined}>
-                              {desc || 'â€”'}
+                              {desc || '-'}
                             </td>
                             <td>{(c.isActive ?? true) ? 'True' : 'False'}</td>
                           </tr>
@@ -4041,7 +4041,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   id="svc-directory-search"
                   type="search"
                   className="admin-user-search-input"
-                  placeholder="Search by name, description, category, or groupâ€¦"
+                  placeholder="Search by name, description, category, or group..."
                   value={serviceDirectorySearch}
                   onChange={(e) => setServiceDirectorySearch(e.target.value)}
                   aria-controls="admin-service-pick-list"
@@ -4147,10 +4147,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             {desc || '\u00a0'}
                           </span>
                           <span className="admin-user-pick-meta">
-                            {groupName ? `Service Group: ${groupName}` : 'Service Group: â€”'}
+                            {groupName ? `Service Group: ${groupName}` : 'Service Group: -'}
                           </span>
                           <span className="admin-user-pick-meta">
-                            {serviceName !== 'â€”' ? `Service Name: ${serviceName}` : 'Service Name: â€”'}
+                            {serviceName !== '-' ? `Service Name: ${serviceName}` : 'Service Name: -'}
                           </span>
                         </button>
                       </div>
@@ -4453,7 +4453,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   id="admin-client-search"
                   type="search"
                   className="admin-search-input"
-                  placeholder="Search by name, short name, AE, analytics leadâ€¦"
+                  placeholder="Search by name, short name, AE, analytics lead..."
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
                   aria-controls="admin-client-pick-list"
@@ -4497,7 +4497,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     const classLine = [c.businessUnitName, (c.businessClassName ?? '').trim()]
                       .map((x) => (x ?? '').trim())
                       .filter((x) => x !== '')
-                      .join(' â€¢ ');
+                      .join(' * ');
                     const peopleLine = [
                       c.accountExecutiveName ? `AE: ${c.accountExecutiveName}` : '',
                       c.analyticsLeadName ? `AL: ${c.analyticsLeadName}` : '',
@@ -4524,8 +4524,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             className={`admin-user-pick-status admin-user-pick-status--${tag.kind}`}
                             title={
                               tag.kind === 'needupdate'
-                                ? 'No classification row (dbo.tClientRef) yet â€” needs update'
-                                : `${tag.label} (from tClientRef â†’ tStatus)`
+                                ? 'No classification row (dbo.tClientRef) yet - needs update'
+                                : `${tag.label} (from tClientRef to tStatus)`
                             }
                           >
                             {tag.label}
@@ -4577,7 +4577,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     setClientForm({ ...clientForm, businessUnitID: e.target.value ? Number(e.target.value) : 0 })
                   }
                 >
-                  <option value="">â€” Select Business Unit â€”</option>
+                  <option value="">- Select Business Unit -</option>
                   {admin.businessUnits.map((u) => (
                     <option key={u.businessUnitID} value={String(u.businessUnitID)}>
                       {u.businessUnitName?.trim() || `BU ${u.businessUnitID}`}
@@ -4593,7 +4593,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     setClientForm({ ...clientForm, businessClassID: e.target.value ? Number(e.target.value) : 0 })
                   }
                 >
-                  <option value="">â€” Select Business Class â€”</option>
+                  <option value="">- Select Business Class -</option>
                   {businessClassOptions.map((bc) => (
                     <option key={bc.businessClassID} value={String(bc.businessClassID)}>
                       {bc.businessClassDescription?.trim() || bc.businessClassName?.trim() || `BC ${bc.businessClassID}`}
@@ -4609,7 +4609,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     setClientForm({ ...clientForm, clientTypeID: e.target.value ? Number(e.target.value) : 0 })
                   }
                 >
-                  <option value="">â€” Select Client Type â€”</option>
+                  <option value="">- Select Client Type -</option>
                   {(admin.clientTypes ?? []).map((ct) => (
                     <option key={ct.clientTypeID} value={String(ct.clientTypeID)}>
                       {ct.ctDescription?.trim() || ct.ctName?.trim() || `Type ${ct.clientTypeID}`}
@@ -4650,7 +4650,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
               <p className="field-help">
                 Business Unit, Business Class, and Client Type are stored on dbo.tClientRef. You can set any of them
-                individually â€” whatever is left blank is saved as NULL and can be filled in later. The client status is
+                individually - whatever is left blank is saved as NULL and can be filled in later. The client status is
                 also written to that row so a client can carry a different status per business unit. Account Executive
                 and Analytics Lead are stored on dbo.tClient.
               </p>
@@ -4722,9 +4722,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             {userBulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  âœ“
+                  OK
                 </span>
-                <span>Verification passed â€” you can select Import to insert rows via dbo.usp_User_CreateWithPrimaryAddress.</span>
+                <span>Verification passed - you can select Import to insert rows via dbo.usp_User_CreateWithPrimaryAddress.</span>
               </div>
             ) : null}
 
@@ -4840,7 +4840,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             <p className="field-help">
               Required columns: <strong>ServiceName</strong>, <strong>ServiceDescription</strong>. Optional{' '}
               <strong>ServiceCategory</strong> (or <strong>CategoryName</strong>), <strong>ServiceCategoryDescription</strong>,{' '}
-              <strong>ServiceGroupName</strong> â€” when supplied, a <code>tServiceRef</code> row links the service to{' '}
+              <strong>ServiceGroupName</strong> - when supplied, a <code>tServiceRef</code> row links the service to{' '}
               <code>tServiceCategory</code> and/or <code>tServiceGroup</code>. Also optional: <strong>ServiceID</strong>{' '}
               (0 or omit = insert), <strong>Tags</strong>, <strong>StatusID</strong>.
               {serviceBulkSkippedEmpty > 0
@@ -4851,9 +4851,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             {serviceBulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  âœ“
+                  OK
                 </span>
-                <span>Verification passed â€” you can import rows into tService (tServiceRef when category/group are present).</span>
+                <span>Verification passed - you can import rows into tService (tServiceRef when category/group are present).</span>
               </div>
             ) : null}
 
@@ -4966,9 +4966,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             {clientBulkVerifyOk ? (
               <div className="bulk-verify-pass" role="status">
                 <span className="bulk-verify-check" aria-hidden="true">
-                  âœ“
+                  OK
                 </span>
-                <span>Verification passed â€” you can select Import to load rows into tClient / tClientRef.</span>
+                <span>Verification passed - you can select Import to load rows into tClient / tClientRef.</span>
               </div>
             ) : null}
 

@@ -180,7 +180,7 @@ export function clientProjectListSortIndicator(
   sortDirection: ClientProjectListSortDirection,
 ): string {
   if (sortColumnIndex !== columnIndex) {
-    return ' ↕';
+    return ' ^v';
   }
-  return sortDirection === 'asc' ? ' ↑' : ' ↓';
+  return sortDirection === 'asc' ? ' ^' : ' v';
 }

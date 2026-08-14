@@ -746,8 +746,7 @@ public sealed class ProjectService : IProjectService
             .Select(s => new SelectListItem(s.DisplayName, s.StatusID.ToString(CultureInfo.InvariantCulture), s.StatusID == model.StatusID))
             .ToList();
 
-        // User group list narrows to those used by the selected client; falls back to top groups
-        // overall when the client has no projects yet.
+        // Full active user-group list (used-on-client groups sorted first when ClientID > 0).
         model.UserGroupOptions = model.ClientID > 0
             ? await GetUserGroupSelectListForClientAsync(model.ClientID, cancellationToken)
             : (await _referenceData.GetTopUserGroupSummariesAsync(null, cancellationToken))

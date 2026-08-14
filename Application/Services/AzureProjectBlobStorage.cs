@@ -24,7 +24,7 @@ public sealed class AzureProjectBlobStorage : IProjectBlobStorage
         _container = new BlobContainerClient(new Uri($"{baseUrl}?{sas}"));
     }
 
-    public long MaxUploadBytes => _options.MaxUploadBytes > 0 ? _options.MaxUploadBytes : 50 * 1024 * 1024;
+    public long MaxUploadBytes => _options.MaxUploadBytes > 0 ? _options.MaxUploadBytes : 2L * 1024 * 1024 * 1024;
 
     public async Task<(string BlobPath, string BlobUrl)> UploadAsync(
         int projectId,

@@ -60,5 +60,5 @@ public sealed class AzureBlobOptions
     /// <summary>SAS query string (with or without leading ?).</summary>
     public string SasToken { get; set; } = string.Empty;
 
-    public long MaxUploadBytes { get; set; } = 50 * 1024 * 1024;
+    public long MaxUploadBytes { get; set; } = 2L * 1024 * 1024 * 1024;
 }

@@ -1,5 +1,5 @@
 import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   applyGridRowToProjectModel,
   gridFilterIdsFromModel,
@@ -9,7 +9,18 @@ import { formatBusinessClassDisplay } from '../utils/businessClassDisplay';
 import { formatCalendarDateDisplay, toInputDateValue } from '../utils/dateInput';
 import type { FlashFn } from '../App';
 import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
-import ProjectTimeTrackerTab from '../components/ProjectTimeTrackerTab';
+import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
+import {
+  PROJECT_TAB_LABELS,
+  clientSliceEqual,
+  describeClientChanges,
+  describeProjectChanges,
+  pickClientSlice,
+  pickProjectSlice,
+  projectSliceEqual,
+  serviceIdsEqual,
+  type ProjectTabId,
+} from '../projectTabPersistence';
 
 interface SelectOption {
   value: string;
@@ -226,19 +237,6 @@ function normalizeProjectDataVersion(value?: string | null): string {
   return '1';
 }
 
-function formatFileBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) {
-    return '—';
-  }
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function mapCalendarItemFromApi(row: {
   calendarItemID: number;
   itemType?: string | null;
@@ -390,7 +388,7 @@ function ClientCombo({ id, rows, value, onSelect, placeholder }: ClientComboProp
         aria-expanded={open}
         aria-controls={`${id}-list`}
         autoComplete="off"
-        placeholder={placeholder ?? 'Type to search client name…'}
+        placeholder={placeholder ?? 'Type to search client name...'}
         value={open ? query : selectedLabel}
         onFocus={() => {
           setOpen(true);
@@ -419,7 +417,7 @@ function ClientCombo({ id, rows, value, onSelect, placeholder }: ClientComboProp
               choose(0);
             }}
           >
-            — Select client —
+            - Select client -
           </li>
           {filtered.length === 0 ?
             <li className="user-combo-empty" role="status">
@@ -452,9 +450,20 @@ function ClientCombo({ id, rows, value, onSelect, placeholder }: ClientComboProp
 export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { id: idParam } = useParams();
   const projectId = idParam !== undefined ? Number(idParam) : undefined;
   const isEdit = projectId !== undefined && !Number.isNaN(projectId);
+  const projectNameInputRef = useRef<HTMLInputElement | null>(null);
+  const timeTrackerRef = useRef<ProjectTimeTrackerHandle | null>(null);
+  const [baselineModel, setBaselineModel] = useState<ProjectFormModel | null>(null);
+  const [baselineCalendarItems, setBaselineCalendarItems] = useState<ProjectCalendarItemDraft[]>([]);
+  const [baselineFileDrafts, setBaselineFileDrafts] = useState<
+    Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>
+  >({});
+  const [baselineNotes, setBaselineNotes] = useState<ProjectNoteRow[]>([]);
+  const [tabSaveBusy, setTabSaveBusy] = useState(false);
+  const [pendingSaveTabs, setPendingSaveTabs] = useState<ProjectTabId[] | null>(null);
 
   const [activeTab, setActiveTab] = useState<ProjectTab>('client');
   const [model, setModel] = useState<ProjectFormModel | null>(null);
@@ -483,7 +492,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [pendingProjectFiles, setPendingProjectFiles] = useState<File[]>([]);
   const [selectedProjectFileId, setSelectedProjectFileId] = useState<number | ''>('');
   const [projectFileDrafts, setProjectFileDrafts] = useState<
-    Record<number, { description: string; versionLabel: string; dataAsOf: string }>
+    Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>
   >({});
   const projectFilesInputRef = useRef<HTMLInputElement | null>(null);
   const [noteDraft, setNoteDraft] = useState<{ noteType: string; noteText: string; isPinned: boolean }>({
@@ -742,6 +751,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       }
 
       setModel(merged);
+      setBaselineModel(JSON.parse(JSON.stringify(merged)) as ProjectFormModel);
+      if (!isEdit) {
+        setBaselineCalendarItems([]);
+        setBaselineFileDrafts({});
+        setBaselineNotes([]);
+      }
 
       if (merged.clientID > 0) {
         setClientBuFilter(merged.clientBusinessUnitID ?? '');
@@ -776,31 +791,92 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     })();
   }, []);
 
-  // Refresh user-group options when client changes (full active list).
+  // Keep the User Group dropdown on the full active list (optionally sorted by client usage).
+  const refreshUserGroupOptions = useCallback(async (clientId: number) => {
+    try {
+      const qs = clientId > 0 ? `?clientId=${clientId}` : '';
+      const opts = normalizeSelectOptions(
+        await apiGet<SelectOption[]>(`/api/projects/user-groups${qs}`),
+      );
+      setUserGroupOptionsForClient(opts);
+      setModel((prev) => (prev ? { ...prev, userGroupOptions: opts } : prev));
+      return opts;
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
-    if (!model || model.clientID <= 0) {
-      setUserGroupOptionsForClient([]);
+    if (!model) {
       return;
     }
+    void refreshUserGroupOptions(model.clientID > 0 ? model.clientID : 0);
+  }, [model?.clientID, refreshUserGroupOptions]);
+
+  // Refresh groups when returning to this page (e.g. after creating a group in Admin).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && model) {
+        void refreshUserGroupOptions(model.clientID > 0 ? model.clientID : 0);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [model, refreshUserGroupOptions]);
+
+  // Apply Admin "create group -> return to project" query params.
+  useEffect(() => {
+    if (!model) {
+      return;
+    }
+    const selectRaw = searchParams.get('selectUserGroup');
+    const focusName = searchParams.get('focusProjectName') === '1';
+    if (!selectRaw && !focusName) {
+      return;
+    }
+
+    const selectId = Number(selectRaw);
     let cancelled = false;
     void (async () => {
-      try {
-        const opts = normalizeSelectOptions(
-          await apiGet<SelectOption[]>(`/api/projects/user-groups?clientId=${model.clientID}`),
-        );
-        if (!cancelled) {
-          setUserGroupOptionsForClient(opts);
-        }
-      } catch {
-        if (!cancelled) {
-          setUserGroupOptionsForClient([]);
-        }
+      const opts =
+        (await refreshUserGroupOptions(model.clientID > 0 ? model.clientID : 0)) ??
+        userGroupOptionsForClient;
+      if (cancelled) {
+        return;
       }
+      if (Number.isFinite(selectId) && selectId > 0) {
+        const value = String(selectId);
+        const inList = (opts ?? []).some((o) => o.value === value);
+        setModel((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          const nextOptions = inList
+            ? prev.userGroupOptions
+            : [{ value, text: `User Group ${value}` }, ...prev.userGroupOptions];
+          return { ...prev, ugid: selectId, userGroupOptions: nextOptions };
+        });
+        setActiveTab('project');
+      }
+      if (focusName) {
+        setActiveTab('project');
+        window.setTimeout(() => projectNameInputRef.current?.focus(), 0);
+      }
+      const next = new URLSearchParams(searchParams);
+      next.delete('selectUserGroup');
+      next.delete('focusProjectName');
+      setSearchParams(next, { replace: true });
     })();
     return () => {
       cancelled = true;
     };
-  }, [model?.clientID]);
+    // Only react to the inbound query flags, not every options refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model != null, searchParams.get('selectUserGroup'), searchParams.get('focusProjectName')]);
 
   useEffect(() => {
     if (!model || model.clientID <= 0) {
@@ -846,6 +922,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       setSubresourcesLoaded(false);
       if (!isEdit) {
         setCalendarItems([]);
+        setNotes([]);
+        setProjectFiles([]);
+        setPendingProjectFiles([]);
       }
       return;
     }
@@ -884,11 +963,15 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       );
       if (!cancelled) {
         setRevenueHistory(revResult.data);
-        setNotes(notesResult.data);
-        syncProjectFiles(Array.isArray(filesResult.data) ? filesResult.data : []);
-        setCalendarItems(
-          (Array.isArray(calendarResult.data) ? calendarResult.data : []).map(mapCalendarItemFromApi),
+        const noteRows = Array.isArray(notesResult.data) ? notesResult.data : [];
+        setNotes(noteRows);
+        setBaselineNotes(JSON.parse(JSON.stringify(noteRows)) as ProjectNoteRow[]);
+        syncProjectFiles(Array.isArray(filesResult.data) ? filesResult.data : [], true);
+        const calRows = (Array.isArray(calendarResult.data) ? calendarResult.data : []).map(
+          mapCalendarItemFromApi,
         );
+        setCalendarItems(calRows);
+        setBaselineCalendarItems(JSON.parse(JSON.stringify(calRows)) as ProjectCalendarItemDraft[]);
         setSubresourcesLoaded(true);
       }
     })();
@@ -902,30 +985,20 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     if (!isEdit || !subresourcesLoaded) {
       return;
     }
-    if (revenueHistory.length === 0) {
-      setModel((prev) =>
-        prev
-          ? {
-              ...prev,
-              revenueAmount: null,
-              revenueEffectiveDate: null,
-              revenueChangeReason: null,
-            }
-          : prev,
-      );
-      return;
-    }
-    const latest = revenueHistory[0];
-    setModel((prev) =>
-      prev
+    const nextRevenue =
+      revenueHistory.length === 0
         ? {
-            ...prev,
-            revenueAmount: latest.revenue,
-            revenueEffectiveDate: toInputDateValue(latest.effectiveDate) || null,
-            revenueChangeReason: latest.changeReason ?? null,
+            revenueAmount: null as number | null,
+            revenueEffectiveDate: null as string | null,
+            revenueChangeReason: null as string | null,
           }
-        : prev,
-    );
+        : {
+            revenueAmount: revenueHistory[0].revenue,
+            revenueEffectiveDate: toInputDateValue(revenueHistory[0].effectiveDate) || null,
+            revenueChangeReason: revenueHistory[0].changeReason ?? null,
+          };
+    setModel((prev) => (prev ? { ...prev, ...nextRevenue } : prev));
+    setBaselineModel((prev) => (prev ? { ...prev, ...nextRevenue } : prev));
   }, [revenueHistory, isEdit, subresourcesLoaded]);
 
   const handleServiceToggle = (serviceID: number) => {
@@ -1121,12 +1194,436 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         isActive: true,
       }));
 
+  const calendarSignature = (rows: ProjectCalendarItemDraft[]) =>
+    JSON.stringify(
+      rows.map((r) => ({
+        calendarItemID: r.calendarItemID ?? 0,
+        itemType: r.itemType,
+        title: r.title,
+        ownerUserID: r.ownerUserID === '' ? 0 : r.ownerUserID,
+        receivedDate: r.receivedDate,
+        completedDate: r.completedDate,
+        notes: r.notes,
+        sortOrder: r.sortOrder,
+      })),
+    );
+
+  const fileDraftsSignature = (
+    drafts: Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>,
+  ) => JSON.stringify(drafts);
+
+  const isTabDirty = useCallback(
+    (tab: ProjectTabId): boolean => {
+      if (!model || !baselineModel) {
+        return false;
+      }
+      switch (tab) {
+        case 'client':
+          return !clientSliceEqual(pickClientSlice(baselineModel), pickClientSlice(model));
+        case 'project':
+          return !projectSliceEqual(pickProjectSlice(baselineModel), pickProjectSlice(model));
+        case 'services':
+          return !serviceIdsEqual(baselineModel.selectedServiceIds ?? [], model.selectedServiceIds ?? []);
+        case 'calendar':
+          return calendarSignature(calendarItems) !== calendarSignature(baselineCalendarItems);
+        case 'projectData':
+          return (
+            pendingProjectFiles.length > 0 ||
+            fileDraftsSignature(projectFileDrafts) !== fileDraftsSignature(baselineFileDrafts)
+          );
+        case 'notes':
+          return (
+            noteDraft.noteText.trim().length > 0 ||
+            notes.some((n) => n.noteID < 0) ||
+            JSON.stringify(notes.filter((n) => n.noteID > 0)) !==
+              JSON.stringify(baselineNotes.filter((n) => n.noteID > 0))
+          );
+        case 'time':
+        case 'revenue':
+          return false;
+        default:
+          return false;
+      }
+    },
+    [
+      model,
+      baselineModel,
+      calendarItems,
+      baselineCalendarItems,
+      pendingProjectFiles,
+      projectFileDrafts,
+      baselineFileDrafts,
+      noteDraft.noteText,
+      notes,
+      baselineNotes,
+    ],
+  );
+
+  const getDirtyTabs = useCallback((): ProjectTabId[] => {
+    const tabs: ProjectTabId[] = [
+      'client',
+      'project',
+      'projectData',
+      'services',
+      'calendar',
+      'notes',
+    ];
+    return tabs.filter((t) => isTabDirty(t));
+  }, [isTabDirty]);
+
+  const describeTabChanges = useCallback(
+    (tab: ProjectTabId): string[] => {
+      if (!model || !baselineModel) {
+        return [];
+      }
+      switch (tab) {
+        case 'client':
+          return describeClientChanges(pickClientSlice(baselineModel), pickClientSlice(model));
+        case 'project':
+          return describeProjectChanges(pickProjectSlice(baselineModel), pickProjectSlice(model));
+        case 'services': {
+          const before = new Set(baselineModel.selectedServiceIds ?? []);
+          const after = new Set(model.selectedServiceIds ?? []);
+          const added = [...after].filter((id) => !before.has(id)).length;
+          const removed = [...before].filter((id) => !after.has(id)).length;
+          const parts: string[] = [];
+          if (added) {
+            parts.push(`${added} service(s) added`);
+          }
+          if (removed) {
+            parts.push(`${removed} service(s) removed`);
+          }
+          return parts.length > 0 ? parts : ['Service selection changed'];
+        }
+        case 'calendar':
+          return [`${calendarItems.length} calendar row(s) (was ${baselineCalendarItems.length})`];
+        case 'projectData': {
+          const parts: string[] = [];
+          if (pendingProjectFiles.length > 0) {
+            parts.push(`${pendingProjectFiles.length} file(s) ready to upload`);
+          }
+          if (fileDraftsSignature(projectFileDrafts) !== fileDraftsSignature(baselineFileDrafts)) {
+            parts.push('File metadata / Active changes');
+          }
+          return parts;
+        }
+        case 'notes': {
+          const parts: string[] = [];
+          if (noteDraft.noteText.trim()) {
+            parts.push('New note draft');
+          }
+          const pending = notes.filter((n) => n.noteID < 0).length;
+          if (pending) {
+            parts.push(`${pending} queued note(s)`);
+          }
+          return parts.length > 0 ? parts : ['Notes changed'];
+        }
+        default:
+          return [];
+      }
+    },
+    [
+      model,
+      baselineModel,
+      calendarItems,
+      baselineCalendarItems,
+      pendingProjectFiles,
+      projectFileDrafts,
+      baselineFileDrafts,
+      noteDraft.noteText,
+      notes,
+    ],
+  );
+
+  const persistProjectFormTabs = async (tabs: ProjectTabId[]) => {
+    if (!model || !baselineModel || projectId === undefined) {
+      return;
+    }
+    const saveClient = tabs.includes('client');
+    const saveProject = tabs.includes('project');
+    const saveServices = tabs.includes('services');
+    const saveCalendar = tabs.includes('calendar');
+
+    if (saveClient || saveProject || saveServices) {
+      const merged: ProjectFormModel = {
+        ...baselineModel,
+        ...(saveClient ? pickClientSlice(model) : pickClientSlice(baselineModel)),
+        ...(saveProject ? pickProjectSlice(model) : pickProjectSlice(baselineModel)),
+        selectedServiceIds: saveServices
+          ? [...(model.selectedServiceIds ?? [])]
+          : [...(baselineModel.selectedServiceIds ?? [])],
+        projectID: projectId,
+        ugid: saveProject ? model.ugid : baselineModel.ugid,
+        clientID: model.clientID,
+      };
+      // Avoid posting a new revenue row unless Project Info is being saved with amount > 0.
+      if (!saveProject) {
+        merged.revenueAmount = null;
+        merged.revenueEffectiveDate = null;
+        merged.revenueChangeReason = null;
+      }
+      const calendarPayload = saveCalendar
+        ? buildCalendarPayload()
+        : baselineCalendarItems.map((row, index) => ({
+            calendarItemID: row.calendarItemID && row.calendarItemID > 0 ? row.calendarItemID : null,
+            itemType: row.itemType,
+            title: row.title.trim(),
+            ownerUserID: row.ownerUserID === '' ? null : row.ownerUserID,
+            receivedDate: row.receivedDate ? row.receivedDate : null,
+            completedDate: row.completedDate ? row.completedDate : null,
+            notes: row.notes.trim().length > 0 ? row.notes.trim() : null,
+            sortOrder: index,
+            isActive: true,
+          }));
+
+      const payload = {
+        ...merged,
+        projectID: projectId,
+        ugid: merged.ugid > 0 ? merged.ugid : 0,
+        userGroupID: merged.ugid > 0 ? merged.ugid : 0,
+        calendarItems: calendarPayload,
+      } as ProjectFormModel;
+
+      await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
+      await apiPostJson(`/api/projects/${projectId}/calendar`, {
+        items: calendarPayload,
+        calendarItems: calendarPayload,
+      });
+    } else if (saveCalendar) {
+      const calendarPayload = buildCalendarPayload();
+      await apiPostJson(`/api/projects/${projectId}/calendar`, {
+        items: calendarPayload,
+        calendarItems: calendarPayload,
+      });
+    }
+
+    if (tabs.includes('projectData')) {
+      if (pendingProjectFiles.length > 0) {
+        await uploadProjectFilesTo(projectId, pendingProjectFiles);
+      }
+      for (const [idStr, draft] of Object.entries(projectFileDrafts)) {
+        const fileId = Number(idStr);
+        const base = baselineFileDrafts[fileId];
+        if (!base) {
+          continue;
+        }
+        if (
+          draft.description !== base.description ||
+          draft.versionLabel !== base.versionLabel ||
+          draft.dataAsOf !== base.dataAsOf ||
+          draft.isCurrent !== base.isCurrent
+        ) {
+          if (!draft.dataAsOf.trim()) {
+            throw new Error('Data As Of is required for file metadata changes.');
+          }
+          await apiPostJson(`/api/projects/${projectId}/files/${fileId}`, {
+            description: draft.description,
+            versionLabel: normalizeProjectDataVersion(draft.versionLabel),
+            dataAsOf: draft.dataAsOf.trim(),
+            clearDataAsOf: false,
+            isCurrent: draft.isCurrent,
+          });
+        }
+      }
+      syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${projectId}/files`), true);
+    }
+
+    if (tabs.includes('notes')) {
+      if (noteDraft.noteText.trim()) {
+        await apiPostJson(`/api/projects/${projectId}/notes`, {
+          projectID: projectId,
+          userID: 0,
+          noteType: noteDraft.noteType,
+          noteText: noteDraft.noteText.trim(),
+          isPinned: noteDraft.isPinned,
+        });
+        setNoteDraft({ noteType: 'General', noteText: '', isPinned: false });
+      }
+      for (const n of notes.filter((x) => x.noteID < 0 && (x.noteText ?? '').trim())) {
+        await apiPostJson(`/api/projects/${projectId}/notes`, {
+          projectID: projectId,
+          userID: 0,
+          noteType: n.noteType || 'General',
+          noteText: (n.noteText ?? '').trim(),
+          isPinned: !!n.isPinned,
+        });
+      }
+      const refreshed = await apiGet<ProjectNoteRow[]>(`/api/projects/${projectId}/notes`);
+      setNotes(refreshed);
+      setBaselineNotes(JSON.parse(JSON.stringify(refreshed)) as ProjectNoteRow[]);
+    }
+
+    if (tabs.includes('time')) {
+      await timeTrackerRef.current?.save();
+    }
+
+    // Refresh baselines for form-backed tabs.
+    if (saveClient || saveProject || saveServices) {
+      const refreshed = await apiGet<ProjectFormModel>(`/api/projects/form/${projectId}`);
+      const nextModel: ProjectFormModel = {
+        ...model,
+        ...refreshed,
+        ugid: Number(
+          (refreshed as { ugid?: number; userGroupID?: number }).ugid ??
+            (refreshed as { userGroupID?: number }).userGroupID ??
+            model.ugid,
+        ),
+        selectedServiceIds: Array.isArray(refreshed.selectedServiceIds)
+          ? refreshed.selectedServiceIds
+          : model.selectedServiceIds,
+        businessUnitOptions: normalizeSelectOptions(refreshed.businessUnitOptions),
+        businessClassOptions: normalizeSelectOptions(refreshed.businessClassOptions),
+        clientTypeOptions: normalizeSelectOptions(refreshed.clientTypeOptions),
+        clientStatusOptions: normalizeSelectOptions(refreshed.clientStatusOptions),
+        projectTypeOptions: normalizeSelectOptions(refreshed.projectTypeOptions),
+        statusOptions: normalizeSelectOptions(refreshed.statusOptions),
+        userGroupOptions: normalizeSelectOptions(refreshed.userGroupOptions),
+        clientOptions: normalizeSelectOptions(refreshed.clientOptions),
+      };
+      setModel(nextModel);
+      setBaselineModel(JSON.parse(JSON.stringify(nextModel)) as ProjectFormModel);
+      setClientBuFilter(nextModel.clientBusinessUnitID ?? '');
+      setClientBcFilter(nextModel.clientBusinessClassID ?? '');
+      setClientTypeFilter(nextModel.clientTypeID ?? '');
+      setClientStatusFilter(nextModel.clientStatusID ?? '');
+      await refreshRevenueHistory();
+    }
+
+    if (saveCalendar || saveClient || saveProject || saveServices) {
+      try {
+        const cal = await apiGet<
+          {
+            calendarItemID: number;
+            itemType?: string | null;
+            title?: string | null;
+            ownerUserID?: number | null;
+            receivedDate?: string | null;
+            completedDate?: string | null;
+            notes?: string | null;
+            sortOrder?: number;
+          }[]
+        >(`/api/projects/${projectId}/calendar`);
+        const mapped = (Array.isArray(cal) ? cal : []).map(mapCalendarItemFromApi);
+        setCalendarItems(mapped);
+        setBaselineCalendarItems(JSON.parse(JSON.stringify(mapped)) as ProjectCalendarItemDraft[]);
+      } catch {
+        if (saveCalendar) {
+          setBaselineCalendarItems(JSON.parse(JSON.stringify(calendarItems)) as ProjectCalendarItemDraft[]);
+        }
+      }
+    }
+  };
+
+  const revertTab = (tab: ProjectTabId) => {
+    if (!model || !baselineModel) {
+      return;
+    }
+    switch (tab) {
+      case 'client':
+        setModel({ ...model, ...pickClientSlice(baselineModel) });
+        setClientBuFilter(baselineModel.clientBusinessUnitID ?? '');
+        setClientBcFilter(baselineModel.clientBusinessClassID ?? '');
+        setClientTypeFilter(baselineModel.clientTypeID ?? '');
+        setClientStatusFilter(baselineModel.clientStatusID ?? '');
+        break;
+      case 'project':
+        setModel({ ...model, ...pickProjectSlice(baselineModel) });
+        break;
+      case 'services':
+        setModel({ ...model, selectedServiceIds: [...(baselineModel.selectedServiceIds ?? [])] });
+        break;
+      case 'calendar':
+        setCalendarItems(JSON.parse(JSON.stringify(baselineCalendarItems)) as ProjectCalendarItemDraft[]);
+        break;
+      case 'projectData':
+        setPendingProjectFiles([]);
+        setProjectFileDrafts(JSON.parse(JSON.stringify(baselineFileDrafts)));
+        if (projectFilesInputRef.current) {
+          projectFilesInputRef.current.value = '';
+        }
+        break;
+      case 'notes':
+        setNoteDraft({ noteType: 'General', noteText: '', isPinned: false });
+        setNotes(JSON.parse(JSON.stringify(baselineNotes)) as ProjectNoteRow[]);
+        break;
+      case 'time':
+        void timeTrackerRef.current?.reload();
+        break;
+      case 'revenue':
+        break;
+      default:
+        break;
+    }
+    flash('success', `${PROJECT_TAB_LABELS[tab]} changes discarded.`);
+  };
+
+  const commitSaveTabs = async (tabs: ProjectTabId[]) => {
+    if (tabs.length === 0) {
+      flash('success', 'No changes to save on this tab.');
+      return;
+    }
+    setTabSaveBusy(true);
+    setValidationMessage(null);
+    try {
+      await persistProjectFormTabs(tabs);
+      flash(
+        'success',
+        `Saved: ${tabs.map((t) => PROJECT_TAB_LABELS[t]).join(', ')}.`,
+      );
+      setPendingSaveTabs(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Save failed.';
+      setValidationMessage(message);
+      flash('error', message);
+    } finally {
+      setTabSaveBusy(false);
+    }
+  };
+
+  const requestSaveTab = (tab: ProjectTabId) => {
+    if (!isEdit) {
+      flash('error', 'Use Save Project to create the project first.');
+      return;
+    }
+    if (tab === 'revenue') {
+      flash('success', 'Revenue history deletes save immediately. Add new revenue on Project Info, then Save.');
+      return;
+    }
+    if (tab === 'time') {
+      void commitSaveTabs(['time']);
+      return;
+    }
+    const dirty = getDirtyTabs();
+    if (dirty.length === 0) {
+      flash('success', 'No changes to save on this tab.');
+      return;
+    }
+    // Confirm when multiple tabs have pending changes (or Save pressed from a clean tab while others are dirty).
+    if (dirty.length > 1 || !dirty.includes(tab)) {
+      setPendingSaveTabs(dirty);
+      return;
+    }
+    void commitSaveTabs(dirty);
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!model) {
       return;
     }
+    // Edit mode uses per-tab Save buttons.
+    if (isEdit) {
+      requestSaveTab(activeTab as ProjectTabId);
+      return;
+    }
     setValidationMessage(null);
+
+    if (!isEdit && pendingProjectFiles.length > 0 && !projectFileUploadMeta.dataAsOf.trim()) {
+      setValidationMessage('Data As Of is required on the Project Data tab before uploading selected files.');
+      flash('error', 'Data As Of is required before uploading selected files.');
+      setActiveTab('projectData');
+      return;
+    }
 
     try {
       const calendarPayload = buildCalendarPayload();
@@ -1141,17 +1638,16 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       } as ProjectFormModel;
       const result = await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
       const savedId = result.projectId;
+      let projectMessage = result.message;
 
-      // Explicit calendar save — do not rely only on nested form binding (edit path was previously skipped).
+      // Explicit calendar save - do not rely only on nested form binding (edit path was previously skipped).
       try {
         const calResult = await apiPostJson<{ savedCount: number; message: string }>(
           `/api/projects/${savedId}/calendar`,
           { items: calendarPayload, calendarItems: calendarPayload },
         );
-        flash(
-          'success',
-          `${result.message} ${calResult.message ?? `Saved ${calendarPayload.length} calendar item(s).`}`.trim(),
-        );
+        projectMessage =
+          `${projectMessage} ${calResult.message ?? `Saved ${calendarPayload.length} calendar item(s).`}`.trim();
       } catch (calErr) {
         flash(
           'error',
@@ -1160,6 +1656,55 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             : 'Project saved, but calendar save failed.',
         );
       }
+
+      // New project: upload any files queued on the Project Data tab.
+      if (!isEdit && pendingProjectFiles.length > 0) {
+        setProjectFilesBusy(true);
+        try {
+          const files = pendingProjectFiles;
+          await uploadProjectFilesTo(savedId, files);
+          projectMessage = `${projectMessage} Uploaded ${files.length} project data file(s).`.trim();
+        } catch (fileErr) {
+          flash(
+            'error',
+            fileErr instanceof ApiError
+              ? `Project saved, but file upload failed: ${fileErr.message}`
+              : fileErr instanceof Error
+                ? `Project saved, but file upload failed: ${fileErr.message}`
+                : 'Project saved, but file upload failed.',
+          );
+        } finally {
+          setProjectFilesBusy(false);
+        }
+      }
+
+      // New project: persist notes queued on the Notes tab.
+      if (!isEdit) {
+        const pendingNotes = notes.filter((n) => n.noteID < 0 && (n.noteText ?? '').trim());
+        if (pendingNotes.length > 0) {
+          try {
+            for (const n of pendingNotes) {
+              await apiPostJson(`/api/projects/${savedId}/notes`, {
+                projectID: savedId,
+                userID: 0,
+                noteType: n.noteType || 'General',
+                noteText: (n.noteText ?? '').trim(),
+                isPinned: !!n.isPinned,
+              });
+            }
+            projectMessage = `${projectMessage} Saved ${pendingNotes.length} note(s).`.trim();
+          } catch (noteErr) {
+            flash(
+              'error',
+              noteErr instanceof ApiError
+                ? `Project saved, but notes failed: ${noteErr.message}`
+                : 'Project saved, but notes failed to save.',
+            );
+          }
+        }
+      }
+
+      flash('success', projectMessage);
 
       if (isEdit && projectId !== undefined) {
         await load();
@@ -1223,9 +1768,32 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   };
 
   const handleAddNote = async () => {
-    if (!isEdit || projectId === undefined || !noteDraft.noteText.trim()) {
+    if (!noteDraft.noteText.trim()) {
       return;
     }
+
+    // New project: queue notes locally until Save Project.
+    if (!isEdit || projectId === undefined) {
+      const tempId = -Date.now();
+      setNotes((prev) => [
+        {
+          noteID: tempId,
+          projectID: 0,
+          userID: 0,
+          userFullName: 'You (pending save)',
+          noteDate: new Date().toISOString(),
+          noteType: noteDraft.noteType,
+          noteText: noteDraft.noteText.trim(),
+          isPinned: noteDraft.isPinned,
+          createdDate: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setNoteDraft({ noteType: 'General', noteText: '', isPinned: false });
+      flash('success', 'Note queued. Click Save Project to create the project and save notes.');
+      return;
+    }
+
     try {
       await apiPostJson(`/api/projects/${projectId}/notes`, {
         projectID: projectId,
@@ -1246,6 +1814,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     if (!window.confirm('Delete this note?')) {
       return;
     }
+
+    // Pending (unsaved) notes use negative IDs.
+    if (noteId < 0) {
+      setNotes((prev) => prev.filter((n) => n.noteID !== noteId));
+      flash('success', 'Queued note removed.');
+      return;
+    }
+
     try {
       await apiDelete(`/api/projects/notes/${noteId}`);
       if (projectId !== undefined) {
@@ -1257,21 +1833,24 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
-  const syncProjectFiles = (rows: ProjectFileRow[]) => {
+  const syncProjectFiles = (rows: ProjectFileRow[], captureBaseline = false) => {
     const list = Array.isArray(rows) ? rows : [];
     setProjectFiles(list);
-    setProjectFileDrafts(
-      Object.fromEntries(
-        list.map((f) => [
-          f.projectFileID,
-          {
-            description: f.description ?? '',
-            versionLabel: normalizeProjectDataVersion(f.versionLabel),
-            dataAsOf: toInputDateValue(f.dataAsOf),
-          },
-        ]),
-      ),
+    const drafts = Object.fromEntries(
+      list.map((f) => [
+        f.projectFileID,
+        {
+          description: f.description ?? '',
+          versionLabel: normalizeProjectDataVersion(f.versionLabel),
+          dataAsOf: toInputDateValue(f.dataAsOf),
+          isCurrent: !!f.isCurrent,
+        },
+      ]),
     );
+    setProjectFileDrafts(drafts);
+    if (captureBaseline) {
+      setBaselineFileDrafts(JSON.parse(JSON.stringify(drafts)));
+    }
     setSelectedProjectFileId((prev) => {
       if (prev !== '' && list.some((f) => f.projectFileID === prev)) {
         return prev;
@@ -1284,8 +1863,72 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     setPendingProjectFiles(fileList && fileList.length > 0 ? Array.from(fileList) : []);
   };
 
+  const uploadProjectFilesTo = async (targetProjectId: number, files: File[]) => {
+    if (targetProjectId <= 0 || files.length === 0) {
+      return;
+    }
+
+    if (!projectFileUploadMeta.dataAsOf.trim()) {
+      throw new Error('Data As Of is required before uploading.');
+    }
+
+    let lastRows: ProjectFileRow[] | null = null;
+    for (const file of files) {
+      const start = await apiPostJson<{
+        sessionId: string;
+        chunkSizeBytes: number;
+        maxUploadBytes: number;
+      }>(`/api/projects/${targetProjectId}/files/sessions`, {
+        fileName: file.name,
+        contentType: file.type || 'application/octet-stream',
+        byteLength: file.size,
+        category: projectFileUploadMeta.category,
+        description: projectFileUploadMeta.description.trim() || null,
+        versionLabel: normalizeProjectDataVersion(projectFileUploadMeta.versionLabel),
+        dataAsOf: projectFileUploadMeta.dataAsOf.trim(),
+      });
+
+      const chunkSize = start.chunkSizeBytes > 0 ? start.chunkSizeBytes : 4 * 1024 * 1024;
+      let offset = 0;
+      let chunkIndex = 0;
+      while (offset < file.size) {
+        const blob = file.slice(offset, offset + chunkSize);
+        const formData = new FormData();
+        formData.append('chunkIndex', String(chunkIndex));
+        formData.append('chunk', blob, `${file.name}.part${chunkIndex}`);
+        await apiPostFormData(
+          `/api/projects/${targetProjectId}/files/sessions/${start.sessionId}/chunks`,
+          formData,
+        );
+        offset += chunkSize;
+        chunkIndex += 1;
+      }
+
+      lastRows = await apiPostJson<ProjectFileRow[]>(
+        `/api/projects/${targetProjectId}/files/sessions/${start.sessionId}/complete`,
+        {},
+      );
+    }
+
+    if (lastRows) {
+      syncProjectFiles(lastRows);
+    } else {
+      syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${targetProjectId}/files`));
+    }
+    setProjectFileUploadMeta({
+      category: projectFileUploadMeta.category,
+      description: '',
+      versionLabel: '1',
+      dataAsOf: '',
+    });
+    setPendingProjectFiles([]);
+    if (projectFilesInputRef.current) {
+      projectFilesInputRef.current.value = '';
+    }
+  };
+
   const handleUploadProjectFiles = async () => {
-    if (!isEdit || projectId === undefined || pendingProjectFiles.length === 0) {
+    if (pendingProjectFiles.length === 0) {
       return;
     }
 
@@ -1294,67 +1937,24 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       return;
     }
 
-    const files = pendingProjectFiles;
+    // New project: keep files queued until the project is saved.
+    if (!isEdit || projectId === undefined) {
+      flash(
+        'success',
+        `${pendingProjectFiles.length} file(s) ready. Click Save Project to create the project and upload them.`,
+      );
+      return;
+    }
+
     setProjectFilesBusy(true);
     try {
-      let lastRows: ProjectFileRow[] | null = null;
-      for (const file of files) {
-        const start = await apiPostJson<{
-          sessionId: string;
-          chunkSizeBytes: number;
-          maxUploadBytes: number;
-        }>(`/api/projects/${projectId}/files/sessions`, {
-          fileName: file.name,
-          contentType: file.type || 'application/octet-stream',
-          byteLength: file.size,
-          category: projectFileUploadMeta.category,
-          description: projectFileUploadMeta.description.trim() || null,
-          versionLabel: normalizeProjectDataVersion(projectFileUploadMeta.versionLabel),
-          dataAsOf: projectFileUploadMeta.dataAsOf.trim(),
-        });
-
-        const chunkSize = start.chunkSizeBytes > 0 ? start.chunkSizeBytes : 4 * 1024 * 1024;
-        let offset = 0;
-        let chunkIndex = 0;
-        while (offset < file.size) {
-          const blob = file.slice(offset, offset + chunkSize);
-          const formData = new FormData();
-          formData.append('chunkIndex', String(chunkIndex));
-          formData.append('chunk', blob, `${file.name}.part${chunkIndex}`);
-          await apiPostFormData(
-            `/api/projects/${projectId}/files/sessions/${start.sessionId}/chunks`,
-            formData,
-          );
-          offset += chunkSize;
-          chunkIndex += 1;
-        }
-
-        lastRows = await apiPostJson<ProjectFileRow[]>(
-          `/api/projects/${projectId}/files/sessions/${start.sessionId}/complete`,
-          {},
-        );
-      }
-
-      if (lastRows) {
-        syncProjectFiles(lastRows);
-      } else {
-        syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${projectId}/files`));
-      }
-      setProjectFileUploadMeta({
-        category: projectFileUploadMeta.category,
-        description: '',
-        versionLabel: '1',
-        dataAsOf: '',
-      });
-      setPendingProjectFiles([]);
+      const files = pendingProjectFiles;
+      await uploadProjectFilesTo(projectId, files);
       flash('success', `Uploaded ${files.length} file(s).`);
     } catch (err) {
-      flash('error', err instanceof ApiError ? err.message : 'File upload failed.');
+      flash('error', err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'File upload failed.');
     } finally {
       setProjectFilesBusy(false);
-      if (projectFilesInputRef.current) {
-        projectFilesInputRef.current.value = '';
-      }
     }
   };
 
@@ -1378,31 +1978,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
-  const handleSetProjectFileActive = async (fileId: number, makeActive: boolean) => {
-    if (!isEdit || projectId === undefined) {
-      return;
-    }
-
-    setProjectFilesBusy(true);
-    try {
-      const rows = await apiPostJson<ProjectFileRow[]>(`/api/projects/${projectId}/files/${fileId}`, {
-        isCurrent: makeActive,
-      });
-      syncProjectFiles(rows);
-      flash('success', makeActive ? 'File marked Active for processing.' : 'Active tag cleared.');
-    } catch (err) {
-      flash('error', err instanceof ApiError ? err.message : 'Could not update Active tag.');
-    } finally {
-      setProjectFilesBusy(false);
-    }
-  };
-
   const handleSaveProjectFileMetadata = async (fileId: number) => {
     if (!isEdit || projectId === undefined) {
       return;
     }
 
-    const draft = projectFileDrafts[fileId] ?? { description: '', versionLabel: '1', dataAsOf: '' };
+    const file = projectFiles.find((f) => f.projectFileID === fileId);
+    const draft = projectFileDrafts[fileId] ?? {
+      description: '',
+      versionLabel: '1',
+      dataAsOf: '',
+      isCurrent: !!file?.isCurrent,
+    };
     if (!draft.dataAsOf.trim()) {
       flash('error', 'Data As Of is required.');
       return;
@@ -1415,6 +2002,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         versionLabel: normalizeProjectDataVersion(draft.versionLabel),
         dataAsOf: draft.dataAsOf.trim(),
         clearDataAsOf: false,
+        isCurrent: draft.isCurrent,
       });
       syncProjectFiles(rows);
       flash('success', 'File metadata saved.');
@@ -1438,7 +2026,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
-  // Must stay above early returns — Rules of Hooks.
+  // Must stay above early returns - Rules of Hooks.
   const groupOptions = useMemo(() => {
     const base =
       userGroupOptionsForClient.length > 0 ? userGroupOptionsForClient : (model?.userGroupOptions ?? []);
@@ -1452,6 +2040,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     // Keep the current assignment visible even if it is inactive / missing from the list.
     return [{ value: selected, text: `User Group ${selected}` }, ...base];
   }, [userGroupOptionsForClient, model?.userGroupOptions, model?.ugid]);
+
+  const adminGroupsReturnPath = isEdit && projectId !== undefined ? `/projects/${projectId}` : '/projects/new';
+  const adminGroupsHref = `/admin?tab=groups&returnTo=${encodeURIComponent(adminGroupsReturnPath)}`;
 
   if (loadError) {
     return (
@@ -1470,7 +2061,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   if (!model) {
     return (
       <div className="client-workflow-fill client-workflow-loading">
-        <p>Loading…</p>
+        <p>Loading...</p>
       </div>
     );
   }
@@ -1478,6 +2069,33 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const title = isEdit ? 'Edit Project' : 'New Project';
 
   const projectTabClass = (tab: ProjectTab) => 'admin-tab-panel' + (activeTab === tab ? ' active' : '');
+
+  const renderTabActions = (tab: ProjectTabId) => {
+    if (!isEdit) {
+      return null;
+    }
+    return (
+      <div className="project-tab-actions">
+        <button
+          type="button"
+          className="primary-button"
+          disabled={tabSaveBusy}
+          onClick={() => requestSaveTab(tab)}
+        >
+          {tabSaveBusy ? 'Saving...' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={tabSaveBusy}
+          onClick={() => revertTab(tab)}
+        >
+          Cancel
+        </button>
+        {isTabDirty(tab) ? <span className="field-help project-tab-dirty-hint">Unsaved changes</span> : null}
+      </div>
+    );
+  };
 
   const projectTabBtn = (id: ProjectTab, label: string) => (
     <button
@@ -1610,12 +2228,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         <div className="admin-tabs" role="tablist" aria-label="Project tabs">
           {projectTabBtn('client', 'Client Info')}
           {projectTabBtn('project', 'Project Info')}
-          {isEdit ? projectTabBtn('projectData', 'Project Data') : null}
+          {projectTabBtn('projectData', 'Project Data')}
           {projectTabBtn('services', 'Services')}
           {projectTabBtn('calendar', 'Calendar')}
           {isEdit ? projectTabBtn('time', 'Time tracker') : null}
           {isEdit ? projectTabBtn('revenue', 'Revenue history') : null}
-          {isEdit ? projectTabBtn('notes', 'Notes') : null}
+          {projectTabBtn('notes', 'Notes')}
         </div>
 
         <form autoComplete="off" onSubmit={(e) => void handleSubmit(e)}>
@@ -1648,7 +2266,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   placeholder={
                     filteredClientRows.length === 0
                       ? 'No clients match the selected filters'
-                      : 'Type to search client name…'
+                      : 'Type to search client name...'
                   }
                 />
               : <select
@@ -1736,6 +2354,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 ))}
               </select>
             </div>
+            {renderTabActions('client')}
             </div>
           </div>
 
@@ -1791,6 +2410,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
               <label htmlFor="projectName">Project Name</label>
               <input
+                ref={projectNameInputRef}
                 id="projectName"
                 value={model.projectName}
                 onChange={(e) => setModel({ ...model, projectName: e.target.value })}
@@ -1799,24 +2419,31 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               />
 
               <label htmlFor="ugid">User Group</label>
-              <select
-                id="ugid"
-                value={model.ugid > 0 ? model.ugid : ''}
-                onChange={(e) => {
-                  const nextUgid = Number(e.target.value) || 0;
-                  setModel({ ...model, ugid: nextUgid });
-                  // Ownership options change with the group — clear owners that may no longer apply.
-                  setCalendarItems((prev) => prev.map((row) => ({ ...row, ownerUserID: '' })));
-                }}
-              >
-                <option value="">-- Select user group --</option>
-                {groupOptions.map((o) => (
-                  <option key={o.value} value={o.value} title={o.text}>
-                    {o.text}
-                  </option>
-                ))}
-              </select>
-
+              <div className="project-number-with-online">
+                <select
+                  id="ugid"
+                  value={model.ugid > 0 ? model.ugid : ''}
+                  onChange={(e) => {
+                    const nextUgid = Number(e.target.value) || 0;
+                    setModel({ ...model, ugid: nextUgid });
+                    // Ownership options change with the group - clear owners that may no longer apply.
+                    setCalendarItems((prev) => prev.map((row) => ({ ...row, ownerUserID: '' })));
+                  }}
+                  onFocus={() => {
+                    void refreshUserGroupOptions(model.clientID > 0 ? model.clientID : 0);
+                  }}
+                >
+                  <option value="">-- Select user group --</option>
+                  {groupOptions.map((o) => (
+                    <option key={o.value} value={o.value} title={o.text}>
+                      {o.text}
+                    </option>
+                  ))}
+                </select>
+                <Link className="secondary-button" to={adminGroupsHref} title="Create or edit user groups">
+                  New / manage groups
+                </Link>
+              </div>
               <label htmlFor="projectTypeID">Project Type</label>
               <select
                 id="projectTypeID"
@@ -1897,16 +2524,19 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               Latest revenue is shown below. Change the amount and save to append a new row to{' '}
               <code>dbo.tProjectRevenue</code>.
             </p>
+            {renderTabActions('project')}
             </div>
           </div>
 
-          {isEdit ? (
           <div id="project-tab-project-data" className={projectTabClass('projectData')}>
             <h2>Project Data</h2>
             <div className="admin-edit-card project-panel-tab-card">
               <p className="field-help">
                 Upload project data files to Azure Blob storage and classify them as Source, Exposure, Loss, or Claims
                 data. Mark one file <strong>Active</strong> per classification so the team knows which file to process.
+                {!isEdit
+                  ? ' On a new project, choose files and metadata here, then click Save Project to create the project and upload them.'
+                  : null}
               </p>
 
               <div className="page-header-actions project-services-select-actions project-file-choose-row">
@@ -1923,14 +2553,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     {pendingProjectFiles.length} file(s) selected
                   </span>
                 ) : null}
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={projectFilesBusy || pendingProjectFiles.length === 0}
-                  onClick={() => void handleUploadProjectFiles()}
-                >
-                  {projectFilesBusy ? 'Uploading…' : 'Upload'}
-                </button>
               </div>
 
               <div className="project-file-upload-meta">
@@ -1986,201 +2608,201 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     />
                   </div>
                 </div>
-                <div className="project-file-upload-meta-field">
+                <div className="project-file-upload-meta-field project-file-upload-description-field">
                   <label htmlFor="projectFileUploadDescription">Description (optional)</label>
-                  <input
+                  <textarea
                     id="projectFileUploadDescription"
+                    className="project-file-upload-description"
                     value={projectFileUploadMeta.description}
                     onChange={(e) =>
                       setProjectFileUploadMeta({ ...projectFileUploadMeta, description: e.target.value })
                     }
                     maxLength={1000}
+                    rows={5}
                     placeholder="Short note about this upload"
                     disabled={projectFilesBusy}
                   />
                 </div>
+                <div className="project-file-upload-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={projectFilesBusy || pendingProjectFiles.length === 0}
+                    onClick={() => void handleUploadProjectFiles()}
+                  >
+                    {projectFilesBusy ? 'Uploading...' : 'Upload'}
+                  </button>
+                </div>
               </div>
+
+              <hr className="project-data-section-rule" />
 
               <div className="project-data-browser">
                 <div className="project-data-listbox-panel">
-                  <label htmlFor="projectDataFileList">Uploaded files</label>
-                  <select
-                    id="projectDataFileList"
-                    className="project-data-file-listbox"
-                    size={12}
-                    value={selectedProjectFileId === '' ? '' : String(selectedProjectFileId)}
-                    onChange={(e) =>
-                      setSelectedProjectFileId(e.target.value ? Number(e.target.value) : '')
-                    }
+                  <label id="projectDataFileListLabel">Uploaded files</label>
+                  <div
+                    className="project-data-file-table-wrap"
+                    role="listbox"
+                    aria-labelledby="projectDataFileListLabel"
                   >
-                    {projectFiles.map((f) => {
-                      const version = normalizeProjectDataVersion(f.versionLabel);
-                      const label = [
-                        f.isCurrent ? 'Active' : null,
-                        formatProjectDataCategory(f.category),
-                        f.originalFileName,
-                        `v:${version}`,
-                        f.dataAsOf ? `as of ${toInputDateValue(f.dataAsOf)}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ');
-                      return (
-                        <option key={f.projectFileID} value={f.projectFileID}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {projectFiles.length === 0 ? (
-                    <p className="field-help">No project data files uploaded yet.</p>
-                  ) : null}
+                    <table className="project-data-file-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Classification</th>
+                          <th scope="col">Name</th>
+                          <th scope="col">Version</th>
+                          <th scope="col">Data As Of</th>
+                          <th scope="col">Active</th>
+                          <th scope="col">Download</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projectFiles.map((f) => {
+                          const draft = projectFileDrafts[f.projectFileID] ?? {
+                            description: f.description ?? '',
+                            versionLabel: normalizeProjectDataVersion(f.versionLabel),
+                            dataAsOf: toInputDateValue(f.dataAsOf),
+                            isCurrent: !!f.isCurrent,
+                          };
+                          const url = f.downloadUrl || f.blobUrl || '';
+                          const selected = selectedProjectFileId === f.projectFileID;
+                          return (
+                            <tr
+                              key={f.projectFileID}
+                              className={
+                                'project-data-file-row' +
+                                (selected ? ' project-data-file-row--selected' : '') +
+                                (draft.isCurrent ? ' project-data-file-row--active' : '')
+                              }
+                              aria-selected={selected}
+                              onClick={() => setSelectedProjectFileId(f.projectFileID)}
+                            >
+                              <td>{formatProjectDataCategory(f.category)}</td>
+                              <td className="project-data-file-name" title={f.originalFileName}>
+                                {f.originalFileName}
+                              </td>
+                              <td>
+                                <select
+                                  aria-label={`Version for ${f.originalFileName}`}
+                                  value={normalizeProjectDataVersion(draft.versionLabel)}
+                                  disabled={projectFilesBusy}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    setSelectedProjectFileId(f.projectFileID);
+                                    setProjectFileDrafts((prev) => ({
+                                      ...prev,
+                                      [f.projectFileID]: {
+                                        ...draft,
+                                        versionLabel: e.target.value,
+                                      },
+                                    }));
+                                  }}
+                                >
+                                  {PROJECT_DATA_VERSIONS.map((v) => (
+                                    <option key={v} value={v}>
+                                      {v}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>
+                                <input
+                                  type="date"
+                                  aria-label={`Data As Of for ${f.originalFileName}`}
+                                  required
+                                  value={draft.dataAsOf}
+                                  disabled={projectFilesBusy}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    setSelectedProjectFileId(f.projectFileID);
+                                    setProjectFileDrafts((prev) => ({
+                                      ...prev,
+                                      [f.projectFileID]: {
+                                        ...draft,
+                                        dataAsOf: e.target.value,
+                                      },
+                                    }));
+                                  }}
+                                />
+                              </td>
+                              <td className="project-data-file-active-cell">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Active for ${f.originalFileName}`}
+                                  checked={!!draft.isCurrent}
+                                  disabled={projectFilesBusy}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    setSelectedProjectFileId(f.projectFileID);
+                                    setProjectFileDrafts((prev) => ({
+                                      ...prev,
+                                      [f.projectFileID]: {
+                                        ...draft,
+                                        isCurrent: e.target.checked,
+                                      },
+                                    }));
+                                  }}
+                                />
+                              </td>
+                              <td>
+                                {url ? (
+                                  <a
+                                    className="project-file-download-url"
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={url}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    Download file
+                                  </a>
+                                ) : (
+                                  <span className="project-file-download-url project-file-download-url--empty">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {projectFiles.length === 0 ? (
+                      <p className="field-help project-data-file-empty">No project data files uploaded yet.</p>
+                    ) : null}
+                  </div>
                 </div>
 
-                {(() => {
-                  const selected =
-                    selectedProjectFileId === ''
-                      ? null
-                      : projectFiles.find((f) => f.projectFileID === selectedProjectFileId) ?? null;
-                  if (!selected) {
-                    return (
-                      <div className="project-data-detail-panel">
-                        <p className="field-help">Select a file from the list to view or edit its metadata.</p>
-                      </div>
-                    );
-                  }
-                  const draft = projectFileDrafts[selected.projectFileID] ?? {
-                    description: selected.description ?? '',
-                    versionLabel: normalizeProjectDataVersion(selected.versionLabel),
-                    dataAsOf: toInputDateValue(selected.dataAsOf),
-                  };
-                  const url = selected.downloadUrl || selected.blobUrl || '';
-                  const isProcessActive = !!selected.isCurrent;
-                  return (
-                    <div className="project-data-detail-panel">
-                      <h3>{selected.originalFileName}</h3>
-                      <p className="field-help">
-                        {formatProjectDataCategory(selected.category)}
-                        {' · '}
-                        {formatFileBytes(selected.byteLength)}
-                        {' · '}
-                        uploaded by{' '}
-                        {selected.uploadedByName?.trim() ||
-                          (selected.uploadedByUserID > 0
-                            ? `User ${selected.uploadedByUserID}`
-                            : '—')}
-                        {selected.createdDate
-                          ? ` · ${new Date(selected.createdDate).toLocaleString()}`
-                          : ''}
-                      </p>
-                      <div className="form-grid">
-                        <label>Active</label>
-                        <span className="project-online-toggle">
-                          <input
-                            type="checkbox"
-                            checked={isProcessActive}
-                            disabled={projectFilesBusy}
-                            onChange={(e) =>
-                              void handleSetProjectFileActive(selected.projectFileID, e.target.checked)
-                            }
-                          />
-                          {isProcessActive
-                            ? 'Active for this classification'
-                            : 'Not active'}
-                        </span>
-
-                        <label htmlFor="projectDataDetailVersion">Version</label>
-                        <select
-                          id="projectDataDetailVersion"
-                          value={normalizeProjectDataVersion(draft.versionLabel)}
-                          disabled={projectFilesBusy}
-                          onChange={(e) =>
-                            setProjectFileDrafts((prev) => ({
-                              ...prev,
-                              [selected.projectFileID]: {
-                                ...draft,
-                                versionLabel: e.target.value,
-                              },
-                            }))
-                          }
-                        >
-                          {PROJECT_DATA_VERSIONS.map((v) => (
-                            <option key={v} value={v}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-
-                        <label htmlFor="projectDataDetailDataAsOf">Data As Of</label>
-                        <input
-                          id="projectDataDetailDataAsOf"
-                          type="date"
-                          required
-                          value={draft.dataAsOf}
-                          disabled={projectFilesBusy}
-                          onChange={(e) =>
-                            setProjectFileDrafts((prev) => ({
-                              ...prev,
-                              [selected.projectFileID]: {
-                                ...draft,
-                                dataAsOf: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-
-                        <label htmlFor="projectDataDetailDescription">Description</label>
-                        <input
-                          id="projectDataDetailDescription"
-                          value={draft.description}
-                          maxLength={1000}
-                          disabled={projectFilesBusy}
-                          onChange={(e) =>
-                            setProjectFileDrafts((prev) => ({
-                              ...prev,
-                              [selected.projectFileID]: {
-                                ...draft,
-                                description: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-
-                        <label>Download URL</label>
-                        <div className="project-file-url-cell">
-                          {url ? (
-                            <a href={url} target="_blank" rel="noreferrer" title={url}>
-                              {url.length > 72 ? `${url.slice(0, 72)}…` : url}
-                            </a>
-                          ) : (
-                            '—'
-                          )}
-                        </div>
-                      </div>
-                      <div className="project-file-row-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={projectFilesBusy}
-                          onClick={() => void handleSaveProjectFileMetadata(selected.projectFileID)}
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          className="danger-button"
-                          disabled={projectFilesBusy}
-                          onClick={() => void handleDeleteProjectFile(selected.projectFileID)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <div className="project-file-row-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={projectFilesBusy || selectedProjectFileId === ''}
+                    onClick={() => {
+                      if (selectedProjectFileId !== '') {
+                        void handleSaveProjectFileMetadata(selectedProjectFileId);
+                      }
+                    }}
+                  >
+                    Save row
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    disabled={projectFilesBusy || selectedProjectFileId === ''}
+                    onClick={() => {
+                      if (selectedProjectFileId !== '') {
+                        void handleDeleteProjectFile(selectedProjectFileId);
+                      }
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {renderTabActions('projectData')}
               </div>
             </div>
           </div>
-          ) : null}
 
           <div id="project-tab-services" className={projectTabClass('services')}>
             <h2>Services</h2>
@@ -2293,7 +2915,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                             aria-label={`Toggle service ${row.serviceName}`}
                           />
                         </td>
-                        <td>{(row.categoryName ?? '').trim() || '—'}</td>
+                        <td>{(row.categoryName ?? '').trim() || '-'}</td>
                         <td>{row.serviceName}</td>
                       </tr>
                     ))
@@ -2301,6 +2923,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 </tbody>
               </table>
             </div>
+            {renderTabActions('services')}
             </div>
           </div>
 
@@ -2311,7 +2934,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   Project services and other deliverables live here. Use <strong>Add to Project</strong> on the Services
                   tab to pull selected services into this calendar, or add rows manually. Double-click a row to edit in a
                   popup. Ownership is limited to members of the selected <strong>User Group</strong> on Project Info.
-                  Changes are stored in <code>dbo.tProjectCalendarItem</code> when you save the project.
+                  Changes are stored in <code>dbo.tProjectCalendarItem</code> when you save this tab.
                 </p>
                 <div className="page-header-actions project-services-select-actions">
                   <button type="button" className="secondary-button" onClick={addCalendarItem}>
@@ -2460,13 +3083,16 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     </tbody>
                   </table>
                 </div>
+                {renderTabActions('calendar')}
               </div>
             </div>
 
           {isEdit && projectId !== undefined ? (
             <div id="project-tab-time" className={projectTabClass('time')}>
               <h2>Time tracker</h2>
+              <div className="admin-edit-card project-panel-tab-card">
               <ProjectTimeTrackerTab
+                ref={timeTrackerRef}
                 projectId={projectId}
                 isActive={activeTab === 'time'}
                 flash={flash}
@@ -2479,6 +3105,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     sortOrder: row.sortOrder ?? 0,
                   }))}
               />
+              {renderTabActions('time')}
+              </div>
             </div>
           ) : null}
 
@@ -2530,17 +3158,20 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </tbody>
             </table>
             </div>
+            {renderTabActions('revenue')}
             </div>
           </div>
           ) : null}
 
-          {isEdit ? (
-            <div id="project-tab-notes" className={projectTabClass('notes')}>
+          <div id="project-tab-notes" className={projectTabClass('notes')}>
             <h2>Notes</h2>
             <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               Project notes are stored in <code>dbo.tProjectNote</code>. Add a note below, or delete existing rows from
               the list.
+              {!isEdit
+                ? ' On a new project, notes are queued here and saved when you click Save Project.'
+                : null}
             </p>
             <div className="form-grid">
               <label htmlFor="noteType">Note type</label>
@@ -2605,6 +3236,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                       <td>
                         {n.noteType ?? ''}
                         {n.isPinned ? ' (pinned)' : ''}
+                        {n.noteID < 0 ? ' (pending save)' : ''}
                       </td>
                       <td>{n.noteText ?? ''}</td>
                       <td>{n.userFullName ?? ''}</td>
@@ -2623,18 +3255,40 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </tbody>
             </table>
             </div>
+            {renderTabActions('notes')}
             </div>
           </div>
-          ) : null}
 
           </div>
 
           <div className="button-row">
-          <button type="submit" className="primary-button">
-            Save Project
-          </button>
+          {!isEdit ? (
+            <button type="submit" className="primary-button" disabled={tabSaveBusy}>
+              Save Project
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="primary-button"
+              disabled={tabSaveBusy}
+              onClick={() => {
+                const dirty = getDirtyTabs();
+                if (dirty.length === 0) {
+                  flash('success', 'No unsaved tab changes.');
+                  return;
+                }
+                if (dirty.length > 1) {
+                  setPendingSaveTabs(dirty);
+                } else {
+                  void commitSaveTabs(dirty);
+                }
+              }}
+            >
+              Save all changes
+            </button>
+          )}
           <Link className="secondary-button" to="/">
-            Cancel
+            {isEdit ? 'Close' : 'Cancel'}
           </Link>
           {isEdit ? (
             <>
@@ -2650,6 +3304,58 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         </form>
       </section>
     </div>
+
+      {pendingSaveTabs && pendingSaveTabs.length > 0 ? (
+        <div
+          className="project-changes-dialog-backdrop"
+          role="presentation"
+          onClick={() => !tabSaveBusy && setPendingSaveTabs(null)}
+        >
+          <div
+            className="project-changes-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-changes-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="project-changes-title">Confirm upcoming changes</h2>
+            <p className="field-help">
+              You have unsaved updates on more than one tab. Review the pending changes below, then confirm to save
+              all of them.
+            </p>
+            <ul className="project-changes-list">
+              {pendingSaveTabs.map((tab) => (
+                <li key={tab}>
+                  <strong>{PROJECT_TAB_LABELS[tab]}</strong>
+                  <ul>
+                    {describeTabChanges(tab).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+            <div className="button-row">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={tabSaveBusy}
+                onClick={() => void commitSaveTabs(pendingSaveTabs)}
+              >
+                {tabSaveBusy ? 'Saving...' : 'Save all listed changes'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={tabSaveBusy}
+                onClick={() => setPendingSaveTabs(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

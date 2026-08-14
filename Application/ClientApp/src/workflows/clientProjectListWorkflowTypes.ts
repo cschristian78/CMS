@@ -4,7 +4,7 @@
  * in `dbo.vProject_Current`:
  *   - businessUnitNames   <- BUName
  *   - businessClassNames  <- BCName
- *   - statusNames         <- StatusDescription (tClientRef.StatusID → tStatus)
+ *   - statusNames         <- StatusDescription (tClientRef.StatusID -> tStatus)
  *   - clientNames         <- ClientName
  *   - projectTypeNames    <- PTDescription
  */
