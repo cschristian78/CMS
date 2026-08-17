@@ -10,8 +10,10 @@ namespace ClientManagementSystem.ViewModels;
 /// ownership has been removed from the schema). <c>AccountExecutive</c>/<c>AnalyticsLead</c>
 /// free-text fields are retired, and the optional <see cref="RevenueAmount"/> entry writes a
 /// row to <c>dbo.tProjectRevenue</c> rather than a column on <c>dbo.tProject</c>.</summary>
-public sealed class ProjectFormViewModel
+public sealed class ProjectFormViewModel : IJsonOnDeserialized
 {
+    private int? _postedUgid;
+
     public int? ProjectID { get; set; }
 
     /// <summary>Required, unique on <c>dbo.tProject</c>. Server-suggests a value on the
@@ -31,17 +33,26 @@ public sealed class ProjectFormViewModel
     public int ClientID { get; set; }
 
     /// <summary>FK to <c>dbo.tUserGroup</c> stored on <c>tProjectRef.UserGroupID</c>.
-    /// Serialized as both <c>userGroupID</c> (canonical) and <c>ugid</c> (legacy clients).</summary>
+    /// Canonical JSON name is <c>userGroupID</c> (camelCase).</summary>
     [Display(Name = "User Group")]
-    [JsonPropertyName("userGroupID")]
     public int UserGroupID { get; set; }
 
-    /// <summary>Legacy alias for <see cref="UserGroupID"/> — accepts older payloads that post <c>ugid</c>.</summary>
+    /// <summary>Legacy alias for <see cref="UserGroupID"/>. When both <c>ugid</c> and
+    /// <c>userGroupID</c> are posted (common after spreading a GET payload), <c>ugid</c> wins
+    /// because it is the value bound to the Project Info select.</summary>
     [JsonPropertyName("ugid")]
     public int UGID
     {
         get => UserGroupID;
-        set => UserGroupID = value;
+        set => _postedUgid = value;
+    }
+
+    void IJsonOnDeserialized.OnDeserialized()
+    {
+        if (_postedUgid is > 0)
+        {
+            UserGroupID = _postedUgid.Value;
+        }
     }
 
     [Required]

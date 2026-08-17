@@ -490,6 +490,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     dataAsOf: '',
   });
   const [pendingProjectFiles, setPendingProjectFiles] = useState<File[]>([]);
+  const [showAddDataForm, setShowAddDataForm] = useState(false);
   const [selectedProjectFileId, setSelectedProjectFileId] = useState<number | ''>('');
   const [projectFileDrafts, setProjectFileDrafts] = useState<
     Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>
@@ -722,8 +723,16 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           : data.clientStatusOptions,
       );
 
+      // Drop aliased user-group fields from the API payload so a stale userGroupID cannot
+      // overwrite the select-bound ugid when we POST (System.Text.Json last-property-wins).
+      const {
+        userGroupID: _ignoreUserGroupID,
+        uGID: _ignoreUGID,
+        ...formData
+      } = data as ProjectFormModel & { userGroupID?: number; uGID?: number };
+
       let merged: ProjectFormModel = {
-        ...data,
+        ...formData,
         ugid: Number(
           (data as { ugid?: number; userGroupID?: number; uGID?: number }).ugid
             ?? (data as { userGroupID?: number }).userGroupID
@@ -1337,7 +1346,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
   const persistProjectFormTabs = async (tabs: ProjectTabId[]) => {
     if (!model || !baselineModel || projectId === undefined) {
-      return;
+      throw new Error('Project is not ready to save yet. Reload the page and try again.');
     }
     const saveClient = tabs.includes('client');
     const saveProject = tabs.includes('project');
@@ -1345,19 +1354,34 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     const saveCalendar = tabs.includes('calendar');
 
     if (saveClient || saveProject || saveServices) {
+      const projectSlice = saveProject ? pickProjectSlice(model) : pickProjectSlice(baselineModel);
+      const revenueDirty =
+        saveProject &&
+        (Number(baselineModel.revenueAmount ?? 0) !== Number(model.revenueAmount ?? 0) ||
+          (baselineModel.revenueEffectiveDate ?? '') !== (model.revenueEffectiveDate ?? '') ||
+          (baselineModel.revenueChangeReason ?? '') !== (model.revenueChangeReason ?? ''));
+
+      const {
+        userGroupID: _dropUg,
+        uGID: _dropUg2,
+        ...baselineWithoutUgAlias
+      } = baselineModel as ProjectFormModel & { userGroupID?: number; uGID?: number };
+
       const merged: ProjectFormModel = {
-        ...baselineModel,
+        ...baselineWithoutUgAlias,
         ...(saveClient ? pickClientSlice(model) : pickClientSlice(baselineModel)),
-        ...(saveProject ? pickProjectSlice(model) : pickProjectSlice(baselineModel)),
+        ...projectSlice,
         selectedServiceIds: saveServices
           ? [...(model.selectedServiceIds ?? [])]
           : [...(baselineModel.selectedServiceIds ?? [])],
         projectID: projectId,
-        ugid: saveProject ? model.ugid : baselineModel.ugid,
+        ugid: projectSlice.ugid > 0 ? projectSlice.ugid : 0,
         clientID: model.clientID,
       };
-      // Avoid posting a new revenue row unless Project Info is being saved with amount > 0.
-      if (!saveProject) {
+      // Only post a new revenue row when the user actually edited revenue on Project Info.
+      // Re-posting the latest history amount on every save can fail the transaction and
+      // roll back UserGroup / status updates.
+      if (!revenueDirty) {
         merged.revenueAmount = null;
         merged.revenueEffectiveDate = null;
         merged.revenueChangeReason = null;
@@ -1376,11 +1400,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             isActive: true,
           }));
 
+      const resolvedUgid = merged.ugid > 0 ? merged.ugid : 0;
       const payload = {
         ...merged,
         projectID: projectId,
-        ugid: merged.ugid > 0 ? merged.ugid : 0,
-        userGroupID: merged.ugid > 0 ? merged.ugid : 0,
+        ugid: resolvedUgid,
+        userGroupID: resolvedUgid,
         calendarItems: calendarPayload,
       } as ProjectFormModel;
 
@@ -1460,9 +1485,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     // Refresh baselines for form-backed tabs.
     if (saveClient || saveProject || saveServices) {
       const refreshed = await apiGet<ProjectFormModel>(`/api/projects/form/${projectId}`);
+      const {
+        userGroupID: _ignoreRefreshUg,
+        uGID: _ignoreRefreshUg2,
+        ...refreshedWithoutUgAlias
+      } = refreshed as ProjectFormModel & { userGroupID?: number; uGID?: number };
       const nextModel: ProjectFormModel = {
         ...model,
-        ...refreshed,
+        ...refreshedWithoutUgAlias,
         ugid: Number(
           (refreshed as { ugid?: number; userGroupID?: number }).ugid ??
             (refreshed as { userGroupID?: number }).userGroupID ??
@@ -1628,12 +1658,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     try {
       const calendarPayload = buildCalendarPayload();
 
+      const {
+        userGroupID: _newIgnoreUg,
+        uGID: _newIgnoreUg2,
+        ...modelWithoutUgAlias
+      } = model as ProjectFormModel & { userGroupID?: number; uGID?: number };
+      const resolvedUgid = model.ugid > 0 ? model.ugid : 0;
       const payload: ProjectFormModel = {
-        ...model,
+        ...modelWithoutUgAlias,
         projectID: isEdit ? projectId : model.projectID,
-        ugid: model.ugid > 0 ? model.ugid : 0,
+        ugid: resolvedUgid,
         // Canonical name expected by ProjectFormViewModel.UserGroupID
-        ...( { userGroupID: model.ugid > 0 ? model.ugid : 0 } as object ),
+        ...( { userGroupID: resolvedUgid } as object ),
         calendarItems: calendarPayload as ProjectFormModel['calendarItems'],
       } as ProjectFormModel;
       const result = await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
@@ -1943,6 +1979,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         'success',
         `${pendingProjectFiles.length} file(s) ready. Click Save Project to create the project and upload them.`,
       );
+      setShowAddDataForm(false);
       return;
     }
 
@@ -1951,11 +1988,25 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       const files = pendingProjectFiles;
       await uploadProjectFilesTo(projectId, files);
       flash('success', `Uploaded ${files.length} file(s).`);
+      setShowAddDataForm(false);
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'File upload failed.');
     } finally {
       setProjectFilesBusy(false);
     }
+  };
+
+  const closeAddDataForm = (discardSelection = false) => {
+    if (projectFilesBusy) {
+      return;
+    }
+    if (discardSelection) {
+      setPendingProjectFiles([]);
+      if (projectFilesInputRef.current) {
+        projectFilesInputRef.current.value = '';
+      }
+    }
+    setShowAddDataForm(false);
   };
 
   const handleDeleteProjectFile = async (fileId: number) => {
@@ -2213,6 +2264,137 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
       : null}
+
+      {showAddDataForm ? (
+        <div
+          className="home-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="project-add-data-title"
+          onClick={() => closeAddDataForm(true)}
+        >
+          <div
+            className="home-modal-dialog project-add-data-dialog"
+            onClick={(e: MouseEvent) => e.stopPropagation()}
+          >
+            <h2 id="project-add-data-title" className="home-modal-title">
+              Add Data
+            </h2>
+            <p className="home-modal-body">
+              Upload project data files to Azure Blob storage and classify them as Source, Exposure, Loss, or Claims
+              data.
+              {!isEdit
+                ? ' On a new project, choose files and metadata here, then click Save Project to create the project and upload them.'
+                : ' Choose files and metadata, then Upload to send them to blob storage.'}
+            </p>
+
+            <div className="page-header-actions project-services-select-actions project-file-choose-row">
+              <input
+                ref={projectFilesInputRef}
+                id="projectClientDataFiles"
+                type="file"
+                multiple
+                disabled={projectFilesBusy}
+                onChange={(e) => handleProjectFilesSelected(e.target.files)}
+              />
+              {pendingProjectFiles.length > 0 ? (
+                <span className="field-help project-file-pending-count">
+                  {pendingProjectFiles.length} file(s) selected
+                </span>
+              ) : null}
+            </div>
+
+            <div className="project-file-upload-meta">
+              <div className="project-file-upload-meta-row">
+                <div className="project-file-upload-meta-field">
+                  <label htmlFor="projectFileUploadCategory">Classification</label>
+                  <select
+                    id="projectFileUploadCategory"
+                    value={projectFileUploadMeta.category}
+                    onChange={(e) =>
+                      setProjectFileUploadMeta({
+                        ...projectFileUploadMeta,
+                        category: e.target.value as ProjectDataCategory,
+                      })
+                    }
+                    disabled={projectFilesBusy}
+                  >
+                    {PROJECT_DATA_CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="project-file-upload-meta-field">
+                  <label htmlFor="projectFileUploadVersion">Version</label>
+                  <select
+                    id="projectFileUploadVersion"
+                    value={normalizeProjectDataVersion(projectFileUploadMeta.versionLabel)}
+                    onChange={(e) =>
+                      setProjectFileUploadMeta({ ...projectFileUploadMeta, versionLabel: e.target.value })
+                    }
+                    disabled={projectFilesBusy}
+                  >
+                    {PROJECT_DATA_VERSIONS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="project-file-upload-meta-field">
+                  <label htmlFor="projectFileUploadDataAsOf">Data As Of</label>
+                  <input
+                    id="projectFileUploadDataAsOf"
+                    type="date"
+                    required
+                    value={projectFileUploadMeta.dataAsOf}
+                    onChange={(e) =>
+                      setProjectFileUploadMeta({ ...projectFileUploadMeta, dataAsOf: e.target.value })
+                    }
+                    disabled={projectFilesBusy}
+                  />
+                </div>
+              </div>
+              <div className="project-file-upload-meta-field project-file-upload-description-field">
+                <label htmlFor="projectFileUploadDescription">Description (optional)</label>
+                <textarea
+                  id="projectFileUploadDescription"
+                  className="project-file-upload-description"
+                  value={projectFileUploadMeta.description}
+                  onChange={(e) =>
+                    setProjectFileUploadMeta({ ...projectFileUploadMeta, description: e.target.value })
+                  }
+                  maxLength={1000}
+                  rows={5}
+                  placeholder="Short note about this upload"
+                  disabled={projectFilesBusy}
+                />
+              </div>
+            </div>
+
+            <div className="home-modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={projectFilesBusy}
+                onClick={() => closeAddDataForm(true)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={projectFilesBusy || pendingProjectFiles.length === 0}
+                onClick={() => void handleUploadProjectFiles()}
+              >
+                {projectFilesBusy ? 'Uploading...' : isEdit ? 'Upload' : 'Add files'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
     <div className="client-workflow-fill">
       <section className="page-header client-workflow-header">
@@ -2529,113 +2711,34 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
 
           <div id="project-tab-project-data" className={projectTabClass('projectData')}>
-            <h2>Project Data</h2>
+            <div className="project-data-tab-header">
+              <h2>Project Data</h2>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={projectFilesBusy}
+                onClick={() => setShowAddDataForm(true)}
+              >
+                Add Data
+              </button>
+            </div>
             <div className="admin-edit-card project-panel-tab-card">
               <p className="field-help">
-                Upload project data files to Azure Blob storage and classify them as Source, Exposure, Loss, or Claims
-                data. Mark one file <strong>Active</strong> per classification so the team knows which file to process.
+                Files stored in Azure Blob storage. Mark one file <strong>Active</strong> per classification so the team
+                knows which file to process. Use <strong>Add Data</strong> to upload a new file.
                 {!isEdit
-                  ? ' On a new project, choose files and metadata here, then click Save Project to create the project and upload them.'
+                  ? ' On a new project, add files first, then click Save Project to create the project and upload them.'
                   : null}
               </p>
-
-              <div className="page-header-actions project-services-select-actions project-file-choose-row">
-                <input
-                  ref={projectFilesInputRef}
-                  id="projectClientDataFiles"
-                  type="file"
-                  multiple
-                  disabled={projectFilesBusy}
-                  onChange={(e) => handleProjectFilesSelected(e.target.files)}
-                />
-                {pendingProjectFiles.length > 0 ? (
-                  <span className="field-help project-file-pending-count">
-                    {pendingProjectFiles.length} file(s) selected
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="project-file-upload-meta">
-                <div className="project-file-upload-meta-row">
-                  <div className="project-file-upload-meta-field">
-                    <label htmlFor="projectFileUploadCategory">Classification</label>
-                    <select
-                      id="projectFileUploadCategory"
-                      value={projectFileUploadMeta.category}
-                      onChange={(e) =>
-                        setProjectFileUploadMeta({
-                          ...projectFileUploadMeta,
-                          category: e.target.value as ProjectDataCategory,
-                        })
-                      }
-                      disabled={projectFilesBusy}
-                    >
-                      {PROJECT_DATA_CATEGORIES.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="project-file-upload-meta-field">
-                    <label htmlFor="projectFileUploadVersion">Version</label>
-                    <select
-                      id="projectFileUploadVersion"
-                      value={normalizeProjectDataVersion(projectFileUploadMeta.versionLabel)}
-                      onChange={(e) =>
-                        setProjectFileUploadMeta({ ...projectFileUploadMeta, versionLabel: e.target.value })
-                      }
-                      disabled={projectFilesBusy}
-                    >
-                      {PROJECT_DATA_VERSIONS.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="project-file-upload-meta-field">
-                    <label htmlFor="projectFileUploadDataAsOf">Data As Of</label>
-                    <input
-                      id="projectFileUploadDataAsOf"
-                      type="date"
-                      required
-                      value={projectFileUploadMeta.dataAsOf}
-                      onChange={(e) =>
-                        setProjectFileUploadMeta({ ...projectFileUploadMeta, dataAsOf: e.target.value })
-                      }
-                      disabled={projectFilesBusy}
-                    />
-                  </div>
-                </div>
-                <div className="project-file-upload-meta-field project-file-upload-description-field">
-                  <label htmlFor="projectFileUploadDescription">Description (optional)</label>
-                  <textarea
-                    id="projectFileUploadDescription"
-                    className="project-file-upload-description"
-                    value={projectFileUploadMeta.description}
-                    onChange={(e) =>
-                      setProjectFileUploadMeta({ ...projectFileUploadMeta, description: e.target.value })
-                    }
-                    maxLength={1000}
-                    rows={5}
-                    placeholder="Short note about this upload"
-                    disabled={projectFilesBusy}
-                  />
-                </div>
-                <div className="project-file-upload-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={projectFilesBusy || pendingProjectFiles.length === 0}
-                    onClick={() => void handleUploadProjectFiles()}
-                  >
-                    {projectFilesBusy ? 'Uploading...' : 'Upload'}
-                  </button>
-                </div>
-              </div>
-
-              <hr className="project-data-section-rule" />
+              {!isEdit && pendingProjectFiles.length > 0 ? (
+                <p className="field-help project-tab-dirty-hint">
+                  {pendingProjectFiles.length} file(s) queued for upload when you save the project
+                  {pendingProjectFiles.length <= 3
+                    ? `: ${pendingProjectFiles.map((f) => f.name).join(', ')}`
+                    : ''}
+                  .
+                </p>
+              ) : null}
 
               <div className="project-data-browser">
                 <div className="project-data-listbox-panel">

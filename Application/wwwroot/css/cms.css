@@ -3807,7 +3807,8 @@ a.link-button:hover,
     color: var(--project-form-value);
 }
 
-.project-workflow-card .admin-tab-panel > h2 {
+.project-workflow-card .admin-tab-panel > h2,
+.project-workflow-card .project-data-tab-header h2 {
     color: var(--accent);
 }
 
@@ -4043,6 +4044,27 @@ a.link-button:hover,
     padding-left: 1rem;
 }
 
+.project-data-tab-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+}
+
+.project-data-tab-header h2 {
+    margin: 0;
+}
+
+.home-modal-dialog.project-add-data-dialog {
+    width: min(46rem, 100%);
+    max-height: min(90vh, 48rem);
+}
+
+.project-add-data-dialog .project-file-upload-meta {
+    margin-top: 0.35rem;
+}
 
 .project-data-browser {
     display: flex;
@@ -4472,6 +4494,7 @@ a.link-button:hover,
 }
 
 .admin-card .admin-tab-panel > h2,
+.admin-card .project-data-tab-header h2,
 .admin-card .admin-users-toolbar h2 {
     color: var(--accent);
 }
