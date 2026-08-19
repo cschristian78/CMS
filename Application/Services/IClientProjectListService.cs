@@ -19,6 +19,7 @@ public interface IClientProjectListService
         string? businessClassName,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 
     Task<ClientProjectListFilterOptionsViewModel> GetFilterOptionsAsync(CancellationToken cancellationToken = default);

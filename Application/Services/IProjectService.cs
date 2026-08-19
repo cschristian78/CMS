@@ -18,6 +18,7 @@ public interface IProjectService
     Task<int> SaveAsync(ProjectFormViewModel model, CancellationToken cancellationToken = default);
 
     Task SoftDeleteAsync(int projectId, CancellationToken cancellationToken = default);
+    Task<ProjectHardDeleteResult> HardDeleteAsync(int projectId, CancellationToken cancellationToken = default);
     Task RestoreAsync(int projectId, CancellationToken cancellationToken = default);
 
     /// <summary>Sets whether the project is Online / currently in progress.</summary>

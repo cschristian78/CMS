@@ -511,7 +511,7 @@ public sealed class AdminRepository : IAdminRepository
                   SELECT TOP (1) r.ClientRefID, r.BusinessUnitID, r.BusinessClassID, r.ClientTypeID, r.StatusID
                     FROM dbo.tClientRef AS r
                    WHERE r.ClientID = c.ClientID AND r.IsActive = 1
-                   ORDER BY r.ClientRefID
+                   ORDER BY r.ModifiedDate DESC, r.ClientRefID DESC
               ) AS cr
               LEFT JOIN dbo.tBusinessUnit  AS bu ON bu.BusinessUnitID  = cr.BusinessUnitID
               LEFT JOIN dbo.tBusinessClass AS bc ON bc.BusinessClassID = cr.BusinessClassID
@@ -616,7 +616,7 @@ public sealed class AdminRepository : IAdminRepository
         businessClassId = businessClassId > 0 ? businessClassId : null;
         clientTypeId = clientTypeId > 0 ? clientTypeId : null;
 
-        var existingRefId = await GetPrimaryClientRefIdAsync(clientId, cancellationToken);
+        var existingRefId = await ResolveClientRefIdForClassificationAsync(clientId, businessUnitId, cancellationToken);
 
         // Nothing to classify yet and no existing row to update — leave the client unclassified.
         if (businessUnitId is null && businessClassId is null && clientTypeId is null && existingRefId is null)
@@ -624,34 +624,44 @@ public sealed class AdminRepository : IAdminRepository
             return;
         }
 
-        if (existingRefId is null)
+        try
         {
-            var output = SqlParameterFactory.OutputInt("@NewClientRefID");
-            await _db.ExecuteWithOutputIntAsync("dbo.usp_ClientRef_Create",
+            if (existingRefId is null)
+            {
+                var output = SqlParameterFactory.OutputInt("@NewClientRefID");
+                await _db.ExecuteWithOutputIntAsync("dbo.usp_ClientRef_Create",
+                [
+                    SqlParameterFactory.Int("@ClientID", clientId),
+                    SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
+                    SqlParameterFactory.Int("@BusinessClassID", businessClassId),
+                    SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
+                    SqlParameterFactory.Int("@ClientTypeRefID", null),
+                    SqlParameterFactory.Int("@StatusID", statusId),
+                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                    output
+                ], "@NewClientRefID", cancellationToken);
+                return;
+            }
+
+            await _db.ExecuteAsync("dbo.usp_ClientRef_Update",
             [
+                SqlParameterFactory.Int("@ClientRefID", existingRefId.Value),
                 SqlParameterFactory.Int("@ClientID", clientId),
                 SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
                 SqlParameterFactory.Int("@BusinessClassID", businessClassId),
                 SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
                 SqlParameterFactory.Int("@ClientTypeRefID", null),
                 SqlParameterFactory.Int("@StatusID", statusId),
-                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
-                output
-            ], "@NewClientRefID", cancellationToken);
-            return;
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
         }
-
-        await _db.ExecuteAsync("dbo.usp_ClientRef_Update",
-        [
-            SqlParameterFactory.Int("@ClientRefID", existingRefId.Value),
-            SqlParameterFactory.Int("@ClientID", clientId),
-            SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
-            SqlParameterFactory.Int("@BusinessClassID", businessClassId),
-            SqlParameterFactory.Int("@ClientTypeID", clientTypeId),
-            SqlParameterFactory.Int("@ClientTypeRefID", null),
-            SqlParameterFactory.Int("@StatusID", statusId),
-            SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
-        ], cancellationToken);
+        catch (SqlException ex) when (ex.Number is 2601 or 2627
+            && ex.Message.Contains("UX_tClientRef_Client_BU_Active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "This client already has an active classification for that business unit. Each client can have only one active business unit (US, UK, LA, or Global) row.",
+                ex);
+        }
     }
 
     private async Task<int?> GetPrimaryClientRefIdAsync(int clientId, CancellationToken cancellationToken)
@@ -670,6 +680,73 @@ public sealed class AdminRepository : IAdminRepository
         ], cancellationToken);
 
         return rows.Count == 0 ? null : rows[0];
+    }
+
+    /// <summary>
+    /// Unique index <c>UX_tClientRef_Client_BU_Active</c> allows one active ref per
+    /// (ClientID, BusinessUnitID). Update the matching BU row rather than moving another
+    /// row onto a BU that already exists.
+    /// </summary>
+    private async Task<int?> ResolveClientRefIdForClassificationAsync(
+        int clientId,
+        int? businessUnitId,
+        CancellationToken cancellationToken)
+    {
+        if (businessUnitId is > 0)
+        {
+            var matching = await GetClientRefIdForBusinessUnitAsync(clientId, businessUnitId.Value, cancellationToken);
+            if (matching is > 0)
+            {
+                return matching;
+            }
+
+            var activeCount = await CountActiveClientRefsAsync(clientId, cancellationToken);
+            if (activeCount > 1)
+            {
+                return null;
+            }
+        }
+
+        return await GetPrimaryClientRefIdAsync(clientId, cancellationToken);
+    }
+
+    private async Task<int?> GetClientRefIdForBusinessUnitAsync(
+        int clientId,
+        int businessUnitId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (1) ClientRefID
+              FROM dbo.tClientRef
+             WHERE ClientID = @ClientID
+               AND BusinessUnitID = @BusinessUnitID
+               AND IsActive = 1
+             ORDER BY ClientRefID;
+            """;
+
+        var rows = await _db.QueryTextAsync(sql, static r => r.GetInt32(0),
+        [
+            SqlParameterFactory.Int("@ClientID", clientId),
+            SqlParameterFactory.Int("@BusinessUnitID", businessUnitId)
+        ], cancellationToken);
+
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private async Task<int> CountActiveClientRefsAsync(int clientId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT CAST(COUNT(*) AS int) AS RefCount
+              FROM dbo.tClientRef
+             WHERE ClientID = @ClientID
+               AND IsActive = 1;
+            """;
+
+        var rows = await _db.QueryTextAsync(sql, static r => r.GetInt32(0),
+        [
+            SqlParameterFactory.Int("@ClientID", clientId)
+        ], cancellationToken);
+        return rows.Count == 0 ? 0 : rows[0];
     }
 
     // -- USER GROUPS -----------------------------------------------------

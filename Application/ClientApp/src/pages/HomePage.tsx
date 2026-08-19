@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { FlashFn } from '../App';
 import { ApiError, apiGet, apiPostFormData, apiPostJson } from '../api';
 import { normalizeClientProjectListModel, sortClientProjectListRows, clientProjectListSortIndicator, type ClientProjectListModel, type ClientProjectListSortDirection } from '../clientProjectList';
-import { clientProjectListColumnHeaderForDisplay } from '../workflows/clientProjectListColumnLabels';
+import {
+  clientProjectListColumnHeaderForDisplay,
+  isHomeProjectListHiddenColumn,
+} from '../workflows/clientProjectListColumnLabels';
 import type { ClientProjectListFilterOptions } from '../workflows/clientProjectListWorkflowTypes';
 import {
   buildHomeClientProjectListUrl,
@@ -94,7 +97,8 @@ function homeProjectListCellClass(columnName: string): string {
     n === 'businessclassname' ||
     n === 'segmentname' ||
     n === 'statusdescription' ||
-    n === 'projectstatus'
+    n === 'projectstatus' ||
+    n === 'analyticslead'
   ) {
     return `${base} ${base}--fit-one-line`;
   }
@@ -277,6 +281,163 @@ function buildClientLabelFromRow(
   return 'this client';
 }
 
+function gridCellText(
+  columns: string[],
+  row: (string | number | boolean | null)[],
+  logicalName: string,
+): string {
+  const idx = findGridColumnIndex(columns, logicalName);
+  if (idx < 0 || idx >= row.length) {
+    return '';
+  }
+  const raw = row[idx];
+  if (raw === null || raw === undefined) {
+    return '';
+  }
+  return String(raw).trim();
+}
+
+function buildProjectLabelFromRow(
+  columns: string[],
+  row: (string | number | boolean | null)[],
+  projectId: number | null,
+): string {
+  const number = gridCellText(columns, row, 'ProjectNumber');
+  const name = gridCellText(columns, row, 'ProjectName');
+  const parts = [number, name].filter((p) => p.length > 0);
+  if (parts.length > 0) {
+    return parts.join(' — ');
+  }
+  if (projectId !== null) {
+    return `Project ID ${projectId}`;
+  }
+  return 'this project';
+}
+
+interface HomeHardDeletePromptState {
+  projectId: number;
+  label: string;
+}
+
+function isAnalyticsLeadColumn(columnName: string): boolean {
+  return normalizeColumnName(columnName) === 'analyticslead';
+}
+
+function HomeAnalyticsLeadMultiSelect({
+  options,
+  selected,
+  disabled,
+  onChange,
+}: {
+  options: string[];
+  selected: string[];
+  disabled: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selectedSet = useMemo(() => new Set(selected.map((s) => s.trim().toLowerCase())), [selected]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const root = rootRef.current;
+      if (!root || (event.target instanceof Node && root.contains(event.target))) {
+        return;
+      }
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  const summary =
+    selected.length === 0
+      ? 'All analytics leads'
+      : selected.length === 1
+        ? selected[0]
+        : `${selected.length} selected`;
+
+  const toggleName = (name: string) => {
+    const key = name.trim().toLowerCase();
+    if (selectedSet.has(key)) {
+      onChange(selected.filter((s) => s.trim().toLowerCase() !== key));
+      return;
+    }
+    onChange([...selected, name]);
+  };
+
+  return (
+    <div className="home-multi-select" ref={rootRef}>
+      <button
+        type="button"
+        id="home-filter-analytics-lead"
+        className="home-multi-select__button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        title={summary}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {summary}
+      </button>
+      {open ? (
+        <div className="home-multi-select__menu" role="listbox" aria-multiselectable="true" aria-labelledby="home-filter-analytics-lead">
+          <div className="home-multi-select__menu-actions">
+            <button type="button" className="home-multi-select__text-btn" onClick={() => onChange([...options])}>
+              Select all
+            </button>
+            <button type="button" className="home-multi-select__text-btn" onClick={() => onChange([])}>
+              Clear
+            </button>
+          </div>
+          {options.length === 0 ? (
+            <p className="home-multi-select__empty">No analytics leads in the current list.</p>
+          ) : (
+            options.map((name) => {
+              const checked = selectedSet.has(name.trim().toLowerCase());
+              return (
+                <label key={name} className="home-multi-select__option">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleName(name)}
+                  />
+                  <span title={name}>{name}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Size a native select to the selected label so the box ends just after the text. */
+function sizeSelectToSelectedText(select: HTMLSelectElement) {
+  const option = select.options[select.selectedIndex];
+  const text = option?.text?.trim() || '';
+  const measure = document.createElement('span');
+  const cs = window.getComputedStyle(select);
+  measure.style.cssText = [
+    'position:absolute',
+    'left:-9999px',
+    'top:0',
+    'visibility:hidden',
+    'white-space:nowrap',
+    `font:${cs.font}`,
+    `letter-spacing:${cs.letterSpacing}`,
+  ].join(';');
+  measure.textContent = text || ' ';
+  document.body.appendChild(measure);
+  const caretAndPad = 28;
+  select.style.width = `${Math.ceil(measure.getBoundingClientRect().width + caretAndPad)}px`;
+  measure.remove();
+}
+
 export default function HomePage({ flash }: { flash: FlashFn }) {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<HomeSummary | null>(null);
@@ -303,7 +464,12 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const [clientNameSearch, setClientNameSearch] = useState(initialHomeFilters.client);
   // ProjectType filter is sourced from unique PTDescription values in dbo.vProject_Current.
   const [filterProjectType, setFilterProjectType] = useState(initialHomeFilters.projectType);
+  const [filterAnalyticsLeads, setFilterAnalyticsLeads] = useState<string[]>(initialHomeFilters.analyticsLeads);
+  const homeFilterBarRef = useRef<HTMLDivElement | null>(null);
   const [gridEditPrompt, setGridEditPrompt] = useState<HomeGridEditPromptState | null>(null);
+  const [hardDeletePrompt, setHardDeletePrompt] = useState<HomeHardDeletePromptState | null>(null);
+  const [hardDeleteConfirmed, setHardDeleteConfirmed] = useState(false);
+  const [hardDeleteBusy, setHardDeleteBusy] = useState(false);
 
   const [bulkWizardOpen, setBulkWizardOpen] = useState(false);
   const [bulkRows, setBulkRows] = useState<HomeClientProjectImportRow[]>([]);
@@ -332,8 +498,9 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       const online = filterOnline;
       const cli = clientNameSearch;
       const pt = filterProjectType;
-      const listUrl = buildHomeClientProjectListUrl(refresh, bu, bc, stat, cli, pt, online);
-      const summaryUrl = buildHomeSummaryUrl(bu, bc, stat, cli, pt, online);
+      const leads = filterAnalyticsLeads;
+      const listUrl = buildHomeClientProjectListUrl(refresh, bu, bc, stat, cli, pt, online, leads);
+      const summaryUrl = buildHomeSummaryUrl(bu, bc, stat, cli, pt, online, leads);
 
       setListLoading(true);
       setListError(null);
@@ -367,7 +534,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         setListLoading(false);
       }
     },
-    [filterBusinessUnit, filterBusinessClass, filterStatus, filterOnline, clientNameSearch, filterProjectType, loadFilterOptions],
+    [filterBusinessUnit, filterBusinessClass, filterStatus, filterOnline, clientNameSearch, filterProjectType, filterAnalyticsLeads, loadFilterOptions],
   );
 
   useEffect(() => {
@@ -375,6 +542,17 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     // Initial load (and remount after navigating back) - Apply filters / Refresh for mid-page changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const skipAnalyticsLeadAutoApply = useRef(true);
+  useEffect(() => {
+    if (skipAnalyticsLeadAutoApply.current) {
+      skipAnalyticsLeadAutoApply.current = false;
+      return;
+    }
+    void loadProjectList(false);
+    // Apply as soon as Analytics Lead checkboxes change; other filters still use Apply filters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterAnalyticsLeads]);
 
   // Keep Main filters across navigation until the user changes them again.
   useEffect(() => {
@@ -385,6 +563,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       online: filterOnline,
       client: clientNameSearch,
       projectType: filterProjectType,
+      analyticsLeads: filterAnalyticsLeads,
     });
   }, [
     filterBusinessUnit,
@@ -393,6 +572,24 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     filterOnline,
     clientNameSearch,
     filterProjectType,
+    filterAnalyticsLeads,
+  ]);
+
+  useLayoutEffect(() => {
+    const root = homeFilterBarRef.current;
+    if (!root) {
+      return;
+    }
+    root.querySelectorAll<HTMLSelectElement>('select.home-filter-select--fit').forEach(sizeSelectToSelectedText);
+  }, [
+    filterOptions,
+    filterBusinessUnit,
+    filterBusinessClass,
+    filterStatus,
+    filterOnline,
+    filterProjectType,
+    filterAnalyticsLeads,
+    listLoading,
   ]);
 
   // Once the Status filter options come back from the API, snap our default
@@ -439,14 +636,14 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     return findIsOnlineColumnIndex(list.columns);
   }, [list?.columns]);
 
-  /** Data columns shown in the grid (online flags are rendered as the leading green-dot column). */
+  /** Data columns shown in the grid (online flags are the leading green-dot; IDs and service pivots stay in the payload). */
   const visibleColumnIndexes = useMemo(() => {
     if (!list?.columns?.length) {
       return [] as number[];
     }
     return list.columns
       .map((c, i) => ({ c, i }))
-      .filter(({ c }) => !isOnlineStatusColumn(c))
+      .filter(({ c }) => !isOnlineStatusColumn(c) && !isHomeProjectListHiddenColumn(c))
       .map(({ i }) => i);
   }, [list?.columns]);
 
@@ -594,6 +791,48 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     openEditForRow(row);
   }, [displayRows, openEditForRow, selectedRowIndex]);
 
+  const handleOpenHardDelete = useCallback(() => {
+    if (!list?.columns?.length || selectedRowIndex === null || !displayRows.length) {
+      flash('error', 'Select a project row first.');
+      return;
+    }
+    if (selectedProjectId === null) {
+      flash('error', 'This row has no ProjectID, so it cannot be deleted.');
+      return;
+    }
+    const row = displayRows[selectedRowIndex];
+    if (!Array.isArray(row)) {
+      return;
+    }
+    setHardDeleteConfirmed(false);
+    setHardDeletePrompt({
+      projectId: selectedProjectId,
+      label: buildProjectLabelFromRow(list.columns, row, selectedProjectId),
+    });
+  }, [displayRows, flash, list, selectedProjectId, selectedRowIndex]);
+
+  const handleConfirmHardDelete = useCallback(async () => {
+    if (!hardDeletePrompt || !hardDeleteConfirmed || hardDeleteBusy) {
+      return;
+    }
+    setHardDeleteBusy(true);
+    try {
+      const result = await apiPostJson<{ message: string }>(
+        `/api/projects/${hardDeletePrompt.projectId}/hard-delete`,
+        {},
+      );
+      setHardDeletePrompt(null);
+      setHardDeleteConfirmed(false);
+      setSelectedRowIndex(null);
+      flash('success', result.message ?? 'Project permanently deleted.');
+      await loadProjectList(true);
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not permanently delete the project.');
+    } finally {
+      setHardDeleteBusy(false);
+    }
+  }, [flash, hardDeleteBusy, hardDeleteConfirmed, hardDeletePrompt, loadProjectList]);
+
   const handleToggleOnline = useCallback(
     async (e: MouseEvent, projectId: number, currentlyOnline: boolean) => {
       e.preventDefault();
@@ -731,17 +970,21 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   };
 
   useEffect(() => {
-    if (!gridEditPrompt) {
+    if (!gridEditPrompt && !hardDeletePrompt) {
       return;
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (hardDeleteBusy) {
+          return;
+        }
         setGridEditPrompt(null);
+        setHardDeletePrompt(null);
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [gridEditPrompt]);
+  }, [gridEditPrompt, hardDeleteBusy, hardDeletePrompt]);
 
   return (
     <>
@@ -820,6 +1063,62 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         </div>
       : null}
 
+      {hardDeletePrompt ?
+        <div
+          className="home-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="home-hard-delete-title"
+          onClick={() => {
+            if (!hardDeleteBusy) {
+              setHardDeletePrompt(null);
+            }
+          }}
+        >
+          <div className="home-modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <h2 id="home-hard-delete-title" className="home-modal-title">
+              Permanently delete project
+            </h2>
+            <p className="home-modal-body">
+              This hard-deletes <strong>{hardDeletePrompt.label}</strong> (Project ID{' '}
+              {hardDeletePrompt.projectId}). It cannot be undone.
+            </p>
+            <p className="field-help home-modal-hint">
+              Related time entries, calendar rows, files, tags, services, users, notes, and revenue for this
+              project are removed. Azure blobs for project files are deleted. Client records are kept. Activity log
+              history remains.
+            </p>
+            <label className="home-hard-delete-confirm">
+              <input
+                type="checkbox"
+                checked={hardDeleteConfirmed}
+                disabled={hardDeleteBusy}
+                onChange={(e) => setHardDeleteConfirmed(e.target.checked)}
+              />
+              I understand this is a permanent hard delete
+            </label>
+            <div className="home-modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={hardDeleteBusy}
+                onClick={() => setHardDeletePrompt(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={!hardDeleteConfirmed || hardDeleteBusy}
+                onClick={() => void handleConfirmHardDelete()}
+              >
+                {hardDeleteBusy ? 'Deleting...' : 'Hard delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      : null}
+
       <section className="hero">
         <h1>Client Management System</h1>
         <p>
@@ -841,6 +1140,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Active clients">
           <span className="tile-title">Active clients</span>
           <span className="tile-stat-value">{summary != null ? summary.uniqueClientCount : '...'}</span>
+          <span className="tile-stat-detail">With an active project</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Total Revenue (USD)">
           <span className="tile-title">Total Revenue (USD)</span>
@@ -887,21 +1187,25 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
           {filterOptionsError ? <div className="alert alert-error">{filterOptionsError}</div> : null}
 
           <div
+            ref={homeFilterBarRef}
             className="dashboard-tabular-filters dashboard-tabular-filters--home"
             role="search"
-            aria-label="Client project list filters by business unit (BUName), business class (BCName), client status, online status, client, and project type"
+            aria-label="Client project list filters by business unit, business class, client status, online status, client, project type, and analytics lead"
           >
+            <div className="home-filter-fields">
             <div className="dashboard-filter-field dashboard-filter-field--bu">
               <label htmlFor="home-filter-business-unit">Business Unit</label>
               <select
                 id="home-filter-business-unit"
+                className="home-filter-select--fit"
                 value={filterBusinessUnit}
                 onChange={(e) => setFilterBusinessUnit(e.target.value)}
                 disabled={listLoading}
+                title={filterBusinessUnit || 'All business units'}
               >
                 <option value="">All business units</option>
                 {(filterOptions?.businessUnitNames ?? []).map((s) => (
-                  <option key={s} value={s}>
+                  <option key={s} value={s} title={s}>
                     {s}
                   </option>
                 ))}
@@ -911,13 +1215,15 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               <label htmlFor="home-filter-business-class">Business Class</label>
               <select
                 id="home-filter-business-class"
+                className="home-filter-select--fit"
                 value={filterBusinessClass}
                 onChange={(e) => setFilterBusinessClass(e.target.value)}
                 disabled={listLoading}
+                title={filterBusinessClass || 'All business classes'}
               >
                 <option value="">All business classes</option>
                 {(filterOptions?.businessClassNames ?? []).map((s) => (
-                  <option key={s} value={s}>
+                  <option key={s} value={s} title={s}>
                     {s}
                   </option>
                 ))}
@@ -927,13 +1233,15 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               <label htmlFor="home-filter-status">Status</label>
               <select
                 id="home-filter-status"
+                className="home-filter-select--fit"
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
                 disabled={listLoading}
+                title={filterStatus || 'All statuses'}
               >
                 <option value="">All statuses</option>
                 {(filterOptions?.statusNames ?? []).map((s) => (
-                  <option key={s} value={s}>
+                  <option key={s} value={s} title={s}>
                     {s}
                   </option>
                 ))}
@@ -943,6 +1251,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               <label htmlFor="home-filter-online">Online</label>
               <select
                 id="home-filter-online"
+                className="home-filter-select--fit"
                 value={filterOnline}
                 onChange={(e) => setFilterOnline(e.target.value)}
                 disabled={listLoading}
@@ -951,6 +1260,15 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 <option value="Online">Online</option>
                 <option value="Offline">Offline</option>
               </select>
+            </div>
+            <div className="dashboard-filter-field dashboard-filter-field--analytics-lead">
+              <label htmlFor="home-filter-analytics-lead">Analytics Lead</label>
+              <HomeAnalyticsLeadMultiSelect
+                options={filterOptions?.analyticsLeadNames ?? []}
+                selected={filterAnalyticsLeads}
+                disabled={listLoading}
+                onChange={setFilterAnalyticsLeads}
+              />
             </div>
             <div className="dashboard-filter-field dashboard-filter-field--grow dashboard-filter-field--client">
               <label htmlFor="home-filter-client">Client</label>
@@ -973,17 +1291,20 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               <label htmlFor="home-filter-project-type">Project Type</label>
               <select
                 id="home-filter-project-type"
+                className="home-filter-select--fit"
                 value={filterProjectType}
                 onChange={(e) => setFilterProjectType(e.target.value)}
                 disabled={listLoading}
+                title={filterProjectType || 'All project types'}
               >
                 <option value="">All project types</option>
                 {(filterOptions?.projectTypeNames ?? []).map((s) => (
-                  <option key={s} value={s}>
+                  <option key={s} value={s} title={s}>
                     {s}
                   </option>
                 ))}
               </select>
+            </div>
             </div>
             <div className="dashboard-filter-actions">
               <button
@@ -993,6 +1314,14 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 disabled={!canOpenGridEditPrompt || listLoading}
               >
                 Edit
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={handleOpenHardDelete}
+                disabled={selectedProjectId === null || listLoading || hardDeleteBusy}
+              >
+                Delete
               </button>
               <button
                 type="button"
@@ -1055,6 +1384,11 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                             {clientProjectListSortIndicator(ci, sortColumnIndex, sortDirection)}
                           </span>
                         </button>
+                        {isAnalyticsLeadColumn(c) && filterAnalyticsLeads.length > 0 ? (
+                          <span className="home-column-filter-badge" title={`${filterAnalyticsLeads.length} analytics lead(s) selected`}>
+                            {filterAnalyticsLeads.length}
+                          </span>
+                        ) : null}
                       </th>
                       );
                     })}

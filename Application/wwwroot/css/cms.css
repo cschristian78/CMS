@@ -2255,17 +2255,25 @@ textarea {
     margin-bottom: 0.75rem;
 }
 
-/* Home: keep every filter + actions on one row; Online matches Status width. */
+/* Home: compact selects hug their selected text; Client stays wide; actions stay on-screen. */
 .dashboard-tabular-filters--home {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: end;
-    gap: 0.55rem 0.65rem;
+    gap: 0.5rem 0.55rem;
     width: 100%;
     min-width: 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    --home-filter-status-width: 7.5rem;
+    overflow: visible;
+}
+
+.dashboard-tabular-filters--home .home-filter-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.5rem 0.55rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
 }
 
 .dashboard-tabular-filters--home .dashboard-filter-field {
@@ -2273,49 +2281,58 @@ textarea {
     min-width: 0;
 }
 
+.dashboard-tabular-filters--home .dashboard-filter-field label {
+    font-size: 0.78rem;
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-field select,
+.dashboard-tabular-filters--home .dashboard-filter-field select option {
+    font-size: 0.72rem;
+    line-height: 1.25;
+}
+
+.dashboard-tabular-filters--home .dashboard-filter-field select {
+    padding: 0.32rem 0.4rem;
+    text-overflow: clip;
+}
+
+.dashboard-tabular-filters--home select.home-filter-select--fit {
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    box-sizing: content-box;
+}
+
 .dashboard-tabular-filters--home .dashboard-filter-field--bu,
 .dashboard-tabular-filters--home .dashboard-filter-field--bc,
+.dashboard-tabular-filters--home .dashboard-filter-field--status,
+.dashboard-tabular-filters--home .dashboard-filter-field--online,
 .dashboard-tabular-filters--home .dashboard-filter-field--project-type {
-    flex: 0 1 9.5rem;
-    width: 9.5rem;
-    max-width: 9.5rem;
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
 }
 
-/* Status: fixed compact width. */
-.dashboard-tabular-filters--home .dashboard-filter-field--status {
-    flex: 0 0 var(--home-filter-status-width);
-    width: var(--home-filter-status-width);
-    max-width: var(--home-filter-status-width);
+.dashboard-tabular-filters--home .dashboard-filter-field--analytics-lead {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 10.5rem;
+    max-width: 16rem;
+    position: relative;
+    z-index: 4;
 }
 
-/* Online: never wider than Status (same token). */
-.dashboard-tabular-filters--home .dashboard-filter-field--online {
-    flex: 0 0 var(--home-filter-status-width);
-    width: var(--home-filter-status-width);
-    max-width: var(--home-filter-status-width);
-}
-
-.dashboard-tabular-filters--home .dashboard-filter-field--status select,
-.dashboard-tabular-filters--home .dashboard-filter-field--online select {
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-}
-
-/*
- * Client: wide enough for full names in the closed control and open list
- * (longest current names ~45-50 characters, e.g. Leatherstocking...).
- */
 .dashboard-tabular-filters--home .dashboard-filter-field--client {
-    flex: 1 1 32rem;
-    min-width: 32rem;
+    flex: 1.4 1 22rem;
+    min-width: 18rem;
     width: auto;
     max-width: none;
 }
 
 .dashboard-tabular-filters--home .dashboard-filter-field--client select {
     width: 100%;
-    min-width: 32rem;
+    min-width: 0;
     max-width: none;
     box-sizing: border-box;
     text-overflow: clip;
@@ -2324,6 +2341,7 @@ textarea {
 .dashboard-tabular-filters--home .dashboard-filter-actions {
     grid-column: auto;
     flex: 0 0 auto;
+    flex-shrink: 0;
     margin-left: 0.15rem;
     overflow-x: visible;
 }
@@ -2336,6 +2354,89 @@ textarea {
 
 .dashboard-filter-field--grow {
     min-width: 0;
+}
+
+.home-multi-select {
+    position: relative;
+    width: 100%;
+}
+
+.home-multi-select__button {
+    display: block;
+    width: 100%;
+    min-width: 10.5rem;
+    max-width: 16rem;
+    padding: 0.32rem 0.4rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    text-align: left;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.home-multi-select__menu {
+    position: absolute;
+    top: calc(100% + 0.15rem);
+    left: 0;
+    z-index: 30;
+    min-width: 100%;
+    width: max-content;
+    max-width: 22rem;
+    max-height: 16rem;
+    overflow: auto;
+    padding: 0.35rem 0.4rem 0.45rem;
+    background: #fff;
+    border: 1px solid #c5ccd4;
+}
+
+.home-multi-select__menu-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+}
+
+.home-multi-select__text-btn {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-size: 0.7rem;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.home-multi-select__option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    padding: 0.12rem 0;
+    cursor: pointer;
+}
+
+.home-multi-select__option span {
+    min-width: 0;
+}
+
+.home-multi-select__empty {
+    margin: 0;
+    font-size: 0.72rem;
+}
+
+.home-column-filter-badge {
+    display: inline-block;
+    margin-left: 0.3rem;
+    min-width: 1.1rem;
+    padding: 0 0.25rem;
+    font-size: 0.65rem;
+    line-height: 1.2;
+    text-align: center;
+    vertical-align: middle;
+    background: #1e4a8c;
+    color: #fff;
 }
 
 .dashboard-filter-field input,
@@ -2358,7 +2459,8 @@ textarea {
 }
 
 .dashboard-filter-actions .primary-button,
-.dashboard-filter-actions .secondary-button {
+.dashboard-filter-actions .secondary-button,
+.dashboard-filter-actions .danger-button {
     flex-shrink: 0;
 }
 
@@ -2382,6 +2484,13 @@ textarea {
 
     .dashboard-tabular-filters--home {
         flex-wrap: nowrap;
+        overflow: hidden;
+    }
+
+    .dashboard-tabular-filters--home .dashboard-filter-actions {
+        flex-shrink: 0;
+        overflow-x: visible;
+        padding-bottom: 0;
     }
 
     .dashboard-filter-actions {
@@ -2689,6 +2798,23 @@ button.home-online-dot.home-online-dot--on {
 .home-modal-hint {
     margin-top: 0.65rem;
     margin-bottom: 0;
+}
+
+.home-hard-delete-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0.9rem 0 0;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.home-hard-delete-confirm input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+    accent-color: var(--red, #ef4444);
 }
 
 .bar-track {
@@ -4094,6 +4220,26 @@ a.link-button:hover,
     position: relative;
 }
 
+.project-data-file-table-wrap--drop-active {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: var(--accent-soft);
+}
+
+.project-data-drop-hint {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    background: rgba(4, 7, 12, 0.72);
+    color: var(--white);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
 .project-data-file-table {
     width: 100%;
     min-width: 52rem;
@@ -4889,4 +5035,275 @@ a.link-button:hover,
     height: 1rem;
     margin: 0;
     accent-color: var(--accent);
+}
+
+/* Project management dashboard */
+.pm-dash-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.pm-dash-global {
+    align-items: end;
+}
+
+.pm-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(8rem, 1fr));
+    gap: 0.75rem;
+}
+
+.pm-kpi {
+    border: 1px solid var(--border);
+    background: var(--surface-deep);
+    border-radius: 0.4rem;
+    padding: 0.7rem 0.85rem;
+}
+
+.pm-kpi span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.pm-kpi strong {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--white);
+    font-size: 1.15rem;
+}
+
+.pm-dash-tabs {
+    margin-top: 0.25rem;
+}
+
+.pm-dash-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+
+.pm-dash-span {
+    grid-column: 1 / -1;
+}
+
+.bar-row--button,
+.bar-column--button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    padding: 0;
+    cursor: pointer;
+    width: 100%;
+}
+
+.bar-row--button:hover .bar-track,
+.bar-column--button:hover .bar-column-track {
+    outline: 1px solid var(--accent);
+}
+
+.pm-donut {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.pm-donut-svg {
+    width: 140px;
+    height: 140px;
+}
+
+.pm-donut-total {
+    fill: var(--white);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.pm-donut-total-label {
+    fill: var(--muted);
+    font-size: 8px;
+}
+
+.pm-legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.pm-legend-btn {
+    display: grid;
+    grid-template-columns: 0.75rem 1fr auto;
+    gap: 0.45rem;
+    align-items: center;
+    width: 100%;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    padding: 0.15rem 0;
+    text-align: left;
+}
+
+.pm-swatch {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 2px;
+}
+
+.pm-line-svg {
+    width: 100%;
+    height: 200px;
+}
+
+.pm-axis-label {
+    fill: var(--muted);
+    font-size: 10px;
+}
+
+.pm-chart-hit {
+    cursor: pointer;
+}
+
+.pm-treemap {
+    display: flex;
+    min-height: 140px;
+    gap: 4px;
+}
+
+.pm-treemap-cell {
+    min-width: 4rem;
+    border: 0;
+    color: #041018;
+    padding: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-start;
+    cursor: pointer;
+    font: inherit;
+}
+
+.pm-treemap-cell strong {
+    font-size: 0.9rem;
+}
+
+.pm-combo-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.pm-combo-row .bar-value {
+    font-size: 0.75rem;
+}
+
+.pm-heatmap-wrap {
+    overflow: auto;
+    max-height: 28rem;
+}
+
+.pm-heatmap {
+    border-collapse: separate;
+    border-spacing: 2px;
+    width: 100%;
+}
+
+.pm-heatmap th,
+.pm-heatmap td {
+    font-size: 0.7rem;
+}
+
+.pm-heatmap thead th {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    height: 8rem;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.pm-heatmap tbody th {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    padding-right: 0.4rem;
+}
+
+.pm-heatmap-row-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    padding: 0;
+}
+
+.pm-heat-on {
+    background: #30d880;
+    min-width: 1.1rem;
+    height: 1.1rem;
+}
+
+.pm-heat-off {
+    background: #223550;
+    min-width: 1.1rem;
+    height: 1.1rem;
+}
+
+.pm-chip {
+    display: inline-block;
+    color: #041018;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.pm-detail {
+    margin-top: 0.5rem;
+}
+
+.pm-detail-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.pm-detail a {
+    color: var(--accent);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.pm-detail a:hover {
+    text-decoration: underline;
+}
+
+.pm-pareto-caption {
+    margin-top: 0.35rem;
+}
+
+@media (max-width: 900px) {
+    .pm-kpi-row,
+    .pm-dash-grid,
+    .pm-donut {
+        grid-template-columns: 1fr;
+    }
 }

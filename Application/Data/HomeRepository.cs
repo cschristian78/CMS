@@ -27,6 +27,7 @@ public sealed class HomeRepository : IHomeRepository
         string? businessClassName = null,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default)
     {
         var totalsSql = new StringBuilder(
@@ -49,7 +50,8 @@ public sealed class HomeRepository : IHomeRepository
             clientNameSearch,
             businessClassName,
             projectTypeName,
-            isOnline);
+            isOnline,
+            analyticsLeadNames: analyticsLeadNames);
 
         totalsSql.Append(
             """
@@ -107,12 +109,14 @@ public sealed class HomeRepository : IHomeRepository
 
         var totalProjectRevenue = totalRevenueRows.Count > 0 ? totalRevenueRows[0] : 0d;
 
+        // Same universe as Total Revenue / Online tiles and the Executive dashboard:
+        // distinct clients in dbo.vProject_Current with Active client status and Active project.
         const string activeClientCountSql = """
-            SELECT CAST(COUNT(DISTINCT c.ClientID) AS int) AS UniqueClientCount
-              FROM dbo.tClient AS c
-              INNER JOIN dbo.tClientRef AS cr ON cr.ClientID = c.ClientID AND cr.IsActive = 1
-              INNER JOIN dbo.tStatus AS st ON st.StatusID = cr.StatusID
-             WHERE st.StatusDescription = N'Active'
+            SELECT CAST(COUNT(DISTINCT v.ClientID) AS int) AS UniqueClientCount
+              FROM dbo.vProject_Current AS v
+             WHERE v.ClientID IS NOT NULL
+               AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
+               AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
             """;
 
         var activeClientCount = await _db.QueryTextAsync(
@@ -183,7 +187,8 @@ public sealed class HomeRepository : IHomeRepository
             clientNameSearch,
             businessClassName,
             projectTypeName,
-            isOnline);
+            isOnline,
+            analyticsLeadNames: analyticsLeadNames);
 
         byTypeSql.Append(
             """

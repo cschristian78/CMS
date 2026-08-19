@@ -13,5 +13,6 @@ public interface IHomeRepository
         string? businessClassName = null,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 }

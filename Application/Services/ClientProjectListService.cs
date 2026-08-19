@@ -29,6 +29,7 @@ public sealed class ClientProjectListService : IClientProjectListService
         string? businessClassName,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default)
     {
         if (refresh)
@@ -43,6 +44,7 @@ public sealed class ClientProjectListService : IClientProjectListService
             businessClassName,
             projectTypeName,
             isOnline,
+            analyticsLeadNames,
             cancellationToken);
 
         var positioned = PlaceTotalHoursAfterProjectName(raw);
@@ -149,6 +151,7 @@ public sealed class ClientProjectListService : IClientProjectListService
         var statusFromView = await SafeDistinctFromViewAsync("StatusDescription", cancellationToken);
         var clientsFromView = await SafeDistinctFromViewAsync("ClientName", cancellationToken);
         var projectTypesFromView = await SafeDistinctFromViewAsync("PTDescription", cancellationToken);
+        var analyticsLeadsFromView = await SafeDistinctFromViewAsync("Analytics Lead", cancellationToken);
 
         var businessUnitsFallback = businessUnitsFromView.Count == 0
             ? await SafeAsync("BusinessUnitName/tBusinessUnit", async () =>
@@ -173,6 +176,11 @@ public sealed class ClientProjectListService : IClientProjectListService
                 (await _referenceData.GetProjectTypesAsync(cancellationToken)).Select(p => p.PTDescription).ToList() as IReadOnlyList<string?>)
             : [];
 
+        var analyticsLeadsFallback = analyticsLeadsFromView.Count == 0
+            ? await SafeAsync("Analytics Lead/vProject_Current", async () =>
+                (IReadOnlyList<string?>)(await _dashboard.GetDistinctAnalyticsLeadNamesAsync(cancellationToken)).Cast<string?>().ToList())
+            : [];
+
         return new ClientProjectListFilterOptionsViewModel
         {
             BusinessUnitNames = DistinctSortedNonEmpty(businessUnitsFromView.Concat(businessUnitsFallback)),
@@ -180,6 +188,7 @@ public sealed class ClientProjectListService : IClientProjectListService
             StatusNames = DistinctSortedNonEmpty(statusFromView.Concat(statusFallback)),
             ClientNames = DistinctSortedNonEmpty(clientsFromView.Concat(clientsFallback)),
             ProjectTypeNames = DistinctSortedNonEmpty(projectTypesFromView.Concat(projectTypesFallback)),
+            AnalyticsLeadNames = DistinctSortedNonEmpty(analyticsLeadsFromView.Concat(analyticsLeadsFallback)),
         };
     }
 

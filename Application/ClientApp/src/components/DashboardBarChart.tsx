@@ -5,6 +5,8 @@ export interface BarChartItem {
   value: number;
   /** Business unit code/name for US / UK / LatAM coloring. */
   colorKey?: string | null;
+  fill?: string;
+  displayValue?: string;
 }
 
 interface DashboardBarChartProps {
@@ -12,6 +14,7 @@ interface DashboardBarChartProps {
   items: BarChartItem[];
   ariaLabel: string;
   orientation?: 'vertical' | 'horizontal';
+  onSelect?: (item: BarChartItem) => void;
 }
 
 export default function DashboardBarChart({
@@ -19,6 +22,7 @@ export default function DashboardBarChart({
   items,
   ariaLabel,
   orientation = 'vertical',
+  onSelect,
 }: DashboardBarChartProps) {
   const plotHeightPx = 160;
   const max = items.reduce((m, x) => {
@@ -48,17 +52,23 @@ export default function DashboardBarChart({
         : <div className="bar-chart">
             {items.map((item) => {
               const widthPct = max > 0 ? Math.round((item.value / max) * 100) : 0;
-              const fill = regionBarColor(item.colorKey ?? item.label);
+              const fill = item.fill ?? regionBarColor(item.colorKey ?? item.label);
+              const shown = item.displayValue ?? (item.value > 0 ? String(item.value) : '');
               return (
-                <div className="bar-row" key={`${item.label}-${item.colorKey ?? ''}`}>
+                <button
+                  type="button"
+                  className="bar-row bar-row--button"
+                  key={`${item.label}-${item.colorKey ?? ''}`}
+                  onClick={() => onSelect?.(item)}
+                >
                   <span className="bar-label">{item.label}</span>
                   <div className="bar-track" aria-hidden>
                     {item.value > 0 ?
                       <div className="bar-fill" style={{ width: `${widthPct}%`, background: fill }} />
                     : null}
                   </div>
-                  <span className="bar-value">{item.value > 0 ? item.value : ''}</span>
-                </div>
+                  <span className="bar-value">{shown}</span>
+                </button>
               );
             })}
           </div>
@@ -77,11 +87,17 @@ export default function DashboardBarChart({
       : <div className="bar-chart bar-chart--vertical" role="img" aria-label={ariaLabel}>
           <div className="bar-chart-plot">
             {items.map((item) => {
-              const fill = regionBarColor(item.colorKey ?? item.label);
+              const fill = item.fill ?? regionBarColor(item.colorKey ?? item.label);
               const h = barHeightPx(item.value);
+              const shown = item.displayValue ?? (item.value > 0 ? String(item.value) : '');
               return (
-                <div className="bar-column" key={`${item.label}-${item.colorKey ?? ''}`}>
-                  <span className="bar-column-value">{item.value > 0 ? item.value : ''}</span>
+                <button
+                  type="button"
+                  className="bar-column bar-column--button"
+                  key={`${item.label}-${item.colorKey ?? ''}`}
+                  onClick={() => onSelect?.(item)}
+                >
+                  <span className="bar-column-value">{shown}</span>
                   <div className="bar-column-track" aria-hidden>
                     {item.value > 0 ?
                       <div
@@ -91,7 +107,7 @@ export default function DashboardBarChart({
                     : null}
                   </div>
                   <span className="bar-column-label">{item.label}</span>
-                </div>
+                </button>
               );
             })}
           </div>

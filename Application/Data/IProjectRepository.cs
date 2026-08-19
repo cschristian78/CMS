@@ -16,6 +16,7 @@ public interface IProjectRepository
     Task<int> AddAsync(Project project, CancellationToken cancellationToken = default);
     Task<int> UpdateAsync(Project project, CancellationToken cancellationToken = default);
     Task<int> SoftDeleteAsync(int projectId, CancellationToken cancellationToken = default);
+    Task<ProjectHardDeleteResult> HardDeleteAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> RestoreAsync(int projectId, CancellationToken cancellationToken = default);
 
     // Revenue history

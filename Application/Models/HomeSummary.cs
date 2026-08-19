@@ -2,7 +2,8 @@ namespace ClientManagementSystem.Models;
 
 public sealed class HomeSummary
 {
-    /// <summary>Count of rows in <c>dbo.tClient</c> where <c>IsActive = 1</c> and <c>ClientStatus = 'Active'</c>.</summary>
+    /// <summary>Distinct <c>ClientID</c> in <c>dbo.vProject_Current</c> with Active client status
+    /// and Active project (same scope as Total Revenue and the Executive dashboard).</summary>
     public int UniqueClientCount { get; set; }
 
     /// <summary>Distinct active <c>ProjectID</c> values in scope for the current filters.</summary>

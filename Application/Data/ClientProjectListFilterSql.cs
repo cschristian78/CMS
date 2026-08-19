@@ -19,7 +19,9 @@ internal static class ClientProjectListFilterSql
         string? businessClassName,
         string? projectTypeName = null,
         bool? isOnline = null,
-        string projectIdColumn = "[ProjectID]")
+        string projectIdColumn = "[ProjectID]",
+        IReadOnlyList<string>? analyticsLeadNames = null,
+        string analyticsLeadColumn = "[Analytics Lead]")
     {
         if (!string.IsNullOrWhiteSpace(businessUnitName))
         {
@@ -70,5 +72,34 @@ internal static class ClientProjectListFilterSql
                 " AND LTRIM(RTRIM(CAST([PTDescription] AS NVARCHAR(500)))) = LTRIM(RTRIM(@PTDescription))");
             parameters.Add(SqlParameterFactory.NVarChar("@PTDescription", 500, projectTypeName.Trim()));
         }
+
+        var leadNames = DistinctNonEmpty(analyticsLeadNames);
+        if (leadNames.Count > 0)
+        {
+            var placeholders = new List<string>(leadNames.Count);
+            for (var i = 0; i < leadNames.Count; i++)
+            {
+                var paramName = $"@AnalyticsLeadName{i}";
+                placeholders.Add(paramName);
+                parameters.Add(SqlParameterFactory.NVarChar(paramName, 500, leadNames[i]));
+            }
+
+            sql.Append(
+                $" AND LTRIM(RTRIM(CAST({analyticsLeadColumn} AS NVARCHAR(500)))) IN ({string.Join(", ", placeholders)})");
+        }
+    }
+
+    private static IReadOnlyList<string> DistinctNonEmpty(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return [];
+        }
+
+        return values
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

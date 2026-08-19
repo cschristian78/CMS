@@ -9,6 +9,7 @@ namespace ClientManagementSystem.ViewModels;
 ///   <item><see cref="StatusNames"/> ← <c>StatusDescription</c> (tClientRef.StatusID → tStatus)</item>
 ///   <item><see cref="ClientNames"/> ← <c>ClientName</c></item>
 ///   <item><see cref="ProjectTypeNames"/> ← <c>PTDescription</c></item>
+///   <item><see cref="AnalyticsLeadNames"/> ← <c>[Analytics Lead]</c></item>
 /// </list>
 /// </summary>
 public sealed class ClientProjectListFilterOptionsViewModel
@@ -18,4 +19,5 @@ public sealed class ClientProjectListFilterOptionsViewModel
     public IReadOnlyList<string> StatusNames { get; set; } = [];
     public IReadOnlyList<string> ClientNames { get; set; } = [];
     public IReadOnlyList<string> ProjectTypeNames { get; set; } = [];
+    public IReadOnlyList<string> AnalyticsLeadNames { get; set; } = [];
 }

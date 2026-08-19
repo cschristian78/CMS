@@ -1,4 +1,5 @@
 import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   applyGridRowToProjectModel,
@@ -46,6 +47,21 @@ function normalizeSelectOptions(raw: unknown): SelectOption[] {
       return { value: String(value), text: String(text ?? value) };
     })
     .filter((x): x is SelectOption => x !== null);
+}
+
+/** Prefer a positive user-group id. 0 is a valid JSON number, so do not use ?? on ugid. */
+function readUserGroupId(raw: {
+  ugid?: number | null;
+  userGroupID?: number | null;
+  uGID?: number | null;
+}): number {
+  for (const v of [raw.ugid, raw.userGroupID, raw.uGID]) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
+    }
+  }
+  return 0;
 }
 
 interface ProjectClientClassificationLookups {
@@ -496,6 +512,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>
   >({});
   const projectFilesInputRef = useRef<HTMLInputElement | null>(null);
+  const projectDataDropDepthRef = useRef(0);
+  const [projectDataDropActive, setProjectDataDropActive] = useState(false);
   const [noteDraft, setNoteDraft] = useState<{ noteType: string; noteText: string; isPinned: boolean }>({
     noteType: 'General',
     noteText: '',
@@ -733,12 +751,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
       let merged: ProjectFormModel = {
         ...formData,
-        ugid: Number(
-          (data as { ugid?: number; userGroupID?: number; uGID?: number }).ugid
-            ?? (data as { userGroupID?: number }).userGroupID
-            ?? (data as { uGID?: number }).uGID
-            ?? 0,
-        ),
+        ugid: readUserGroupId(data as { ugid?: number; userGroupID?: number; uGID?: number }),
         selectedServiceIds: Array.isArray(data.selectedServiceIds) ? data.selectedServiceIds : [],
         businessUnitOptions: normalizeSelectOptions(data.businessUnitOptions),
         businessClassOptions: normalizeSelectOptions(data.businessClassOptions),
@@ -1493,11 +1506,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       const nextModel: ProjectFormModel = {
         ...model,
         ...refreshedWithoutUgAlias,
-        ugid: Number(
-          (refreshed as { ugid?: number; userGroupID?: number }).ugid ??
-            (refreshed as { userGroupID?: number }).userGroupID ??
-            model.ugid,
-        ),
+        ugid: readUserGroupId(refreshed as { ugid?: number; userGroupID?: number; uGID?: number }),
         selectedServiceIds: Array.isArray(refreshed.selectedServiceIds)
           ? refreshed.selectedServiceIds
           : model.selectedServiceIds,
@@ -1516,6 +1525,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       setClientBcFilter(nextModel.clientBusinessClassID ?? '');
       setClientTypeFilter(nextModel.clientTypeID ?? '');
       setClientStatusFilter(nextModel.clientStatusID ?? '');
+      await refreshUserGroupOptions(nextModel.clientID > 0 ? nextModel.clientID : 0);
       await refreshRevenueHistory();
     }
 
@@ -1897,6 +1907,95 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
   const handleProjectFilesSelected = (fileList: FileList | null) => {
     setPendingProjectFiles(fileList && fileList.length > 0 ? Array.from(fileList) : []);
+  };
+
+  const assignFilesToProjectInput = (files: File[]) => {
+    const input = projectFilesInputRef.current;
+    if (!input) {
+      return;
+    }
+    try {
+      const transfer = new DataTransfer();
+      files.forEach((file) => transfer.items.add(file));
+      input.files = transfer.files;
+    } catch {
+      // FileList assignment is best-effort; pendingProjectFiles remains the source of truth.
+    }
+  };
+
+  const dataTransferHasFiles = (transfer: DataTransfer | null | undefined): boolean => {
+    if (!transfer) {
+      return false;
+    }
+    if (transfer.types && Array.from(transfer.types).includes('Files')) {
+      return true;
+    }
+    return transfer.files.length > 0;
+  };
+
+  const filesFromDataTransfer = (transfer: DataTransfer | null | undefined): File[] => {
+    if (!transfer) {
+      return [];
+    }
+    return Array.from(transfer.files).filter((file) => file && file.name);
+  };
+
+  const attachDroppedProjectFiles = (files: File[]) => {
+    if (projectFilesBusy || files.length === 0) {
+      return;
+    }
+    setPendingProjectFiles(files);
+    setShowAddDataForm(true);
+  };
+
+  useEffect(() => {
+    if (!showAddDataForm || pendingProjectFiles.length === 0) {
+      return;
+    }
+    assignFilesToProjectInput(pendingProjectFiles);
+  }, [showAddDataForm, pendingProjectFiles]);
+
+  const clearProjectDataDropState = () => {
+    projectDataDropDepthRef.current = 0;
+    setProjectDataDropActive(false);
+  };
+
+  const handleProjectDataDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    if (projectFilesBusy || !dataTransferHasFiles(e.dataTransfer)) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    projectDataDropDepthRef.current += 1;
+    setProjectDataDropActive(true);
+  };
+
+  const handleProjectDataDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (projectFilesBusy || !dataTransferHasFiles(e.dataTransfer)) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleProjectDataDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!dataTransferHasFiles(e.dataTransfer) && projectDataDropDepthRef.current === 0) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    projectDataDropDepthRef.current = Math.max(0, projectDataDropDepthRef.current - 1);
+    if (projectDataDropDepthRef.current === 0) {
+      setProjectDataDropActive(false);
+    }
+  };
+
+  const handleProjectDataDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearProjectDataDropState();
+    attachDroppedProjectFiles(filesFromDataTransfer(e.dataTransfer));
   };
 
   const uploadProjectFilesTo = async (targetProjectId: number, files: File[]) => {
@@ -2725,7 +2824,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             <div className="admin-edit-card project-panel-tab-card">
               <p className="field-help">
                 Files stored in Azure Blob storage. Mark one file <strong>Active</strong> per classification so the team
-                knows which file to process. Use <strong>Add Data</strong> to upload a new file.
+                knows which file to process. Use <strong>Add Data</strong> or drag files onto the list to upload.
                 {!isEdit
                   ? ' On a new project, add files first, then click Save Project to create the project and upload them.'
                   : null}
@@ -2744,10 +2843,22 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 <div className="project-data-listbox-panel">
                   <label id="projectDataFileListLabel">Uploaded files</label>
                   <div
-                    className="project-data-file-table-wrap"
+                    className={
+                      'project-data-file-table-wrap' +
+                      (projectDataDropActive ? ' project-data-file-table-wrap--drop-active' : '')
+                    }
                     role="listbox"
                     aria-labelledby="projectDataFileListLabel"
+                    onDragEnter={handleProjectDataDragEnter}
+                    onDragOver={handleProjectDataDragOver}
+                    onDragLeave={handleProjectDataDragLeave}
+                    onDrop={handleProjectDataDrop}
                   >
+                    {projectDataDropActive ? (
+                      <div className="project-data-drop-hint" aria-hidden="true">
+                        Drop files to add data
+                      </div>
+                    ) : null}
                     <table className="project-data-file-table">
                       <thead>
                         <tr>
@@ -2870,8 +2981,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                         })}
                       </tbody>
                     </table>
-                    {projectFiles.length === 0 ? (
-                      <p className="field-help project-data-file-empty">No project data files uploaded yet.</p>
+                    {projectFiles.length === 0 && !projectDataDropActive ? (
+                      <p className="field-help project-data-file-empty">
+                        No project data files uploaded yet. Drag files here or click Add Data.
+                      </p>
                     ) : null}
                   </div>
                 </div>

@@ -47,5 +47,10 @@ public interface IDashboardRepository
         string? businessClassName,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Inactive <c>tProject</c> rows that <c>vProject_Current</c> omits.</summary>
+    Task<IReadOnlyList<DashboardInactiveProject>> GetInactiveProjectsAsync(
         CancellationToken cancellationToken = default);
 }

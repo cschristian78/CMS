@@ -98,6 +98,41 @@ public sealed class ProjectRepository : IProjectRepository
         return projectId;
     }
 
+    public async Task<ProjectHardDeleteResult> HardDeleteAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        var existing = await GetAsync(projectId, cancellationToken)
+            ?? throw new InvalidOperationException($"Project {projectId} was not found.");
+
+        var blobPaths = await _db.QueryTextAsync(
+            """
+            SELECT pf.BlobPath
+              FROM dbo.tProjectFile AS pf
+              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = pf.ProjectRefID
+             WHERE pr.ProjectID = @ProjectID
+               AND pf.BlobPath IS NOT NULL
+               AND LTRIM(RTRIM(pf.BlobPath)) <> N'';
+            """,
+            static r => r.TryGetNullableString("BlobPath") ?? string.Empty,
+            [SqlParameterFactory.Int("@ProjectID", projectId)],
+            cancellationToken);
+
+        await _db.ExecuteAsync(
+            "dbo.usp_Project_HardDelete",
+            [
+                SqlParameterFactory.Int("@ProjectID", projectId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+
+        return new ProjectHardDeleteResult
+        {
+            ProjectID = projectId,
+            ProjectNumber = existing.ProjectNumber,
+            ProjectName = existing.ProjectName,
+            BlobPaths = blobPaths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList()
+        };
+    }
+
     public async Task<int> RestoreAsync(int projectId, CancellationToken cancellationToken = default)
     {
         const string sql = """

@@ -87,6 +87,21 @@ public sealed class ProjectsApiController : ControllerBase
         return Ok(new { message = "Project soft-deleted." });
     }
 
+    [HttpPost("{id:int}/hard-delete")]
+    public async Task<ActionResult<object>> HardDeleteAsync(int id, CancellationToken cancellationToken)
+    {
+        var result = await _projectService.HardDeleteAsync(id, cancellationToken);
+        return Ok(new
+        {
+            projectId = result.ProjectID,
+            projectNumber = result.ProjectNumber,
+            projectName = result.ProjectName,
+            message = string.IsNullOrWhiteSpace(result.ProjectNumber)
+                ? "Project permanently deleted."
+                : $"Permanently deleted {result.ProjectNumber}."
+        });
+    }
+
     [HttpPost("{id:int}/restore")]
     public async Task<ActionResult<object>> RestoreAsync(int id, CancellationToken cancellationToken)
     {

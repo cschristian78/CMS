@@ -4,7 +4,7 @@
 
 export const HOME_CLIENT_PROJECT_LIST_OPTIONS_URL = '/api/home/client-project-list/options';
 
-const HOME_LIST_FILTERS_STORAGE_KEY = 'cms.home.listFilters.v2';
+const HOME_LIST_FILTERS_STORAGE_KEY = 'cms.home.listFilters.v3';
 
 export type HomeListFilters = {
   businessUnit: string;
@@ -13,6 +13,7 @@ export type HomeListFilters = {
   online: string;
   client: string;
   projectType: string;
+  analyticsLeads: string[];
 };
 
 const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
@@ -22,10 +23,22 @@ const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
   online: 'Online',
   client: '',
   projectType: '',
+  analyticsLeads: [],
 };
 
 function asFilterString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+function asFilterStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const names = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [...new Set(names)];
 }
 
 /** Restores Main list filters after navigating away (same browser tab). */
@@ -33,7 +46,7 @@ export function loadHomeListFilters(): HomeListFilters {
   try {
     const raw = sessionStorage.getItem(HOME_LIST_FILTERS_STORAGE_KEY);
     if (!raw) {
-      return { ...DEFAULT_HOME_LIST_FILTERS };
+      return { ...DEFAULT_HOME_LIST_FILTERS, analyticsLeads: [] };
     }
     const parsed = JSON.parse(raw) as Partial<HomeListFilters>;
     return {
@@ -43,9 +56,10 @@ export function loadHomeListFilters(): HomeListFilters {
       online: asFilterString(parsed.online, DEFAULT_HOME_LIST_FILTERS.online),
       client: asFilterString(parsed.client, DEFAULT_HOME_LIST_FILTERS.client),
       projectType: asFilterString(parsed.projectType, DEFAULT_HOME_LIST_FILTERS.projectType),
+      analyticsLeads: asFilterStringArray(parsed.analyticsLeads),
     };
   } catch {
-    return { ...DEFAULT_HOME_LIST_FILTERS };
+    return { ...DEFAULT_HOME_LIST_FILTERS, analyticsLeads: [] };
   }
 }
 
@@ -65,6 +79,7 @@ function appendFilterParams(
   onlineStatus: string,
   client: string,
   projectType: string,
+  analyticsLeads: string[] = [],
 ): void {
   const bu = businessUnit.trim();
   const bc = businessClass.trim();
@@ -90,6 +105,12 @@ function appendFilterParams(
   if (pt) {
     p.set('projectTypeName', pt);
   }
+  for (const name of analyticsLeads) {
+    const trimmed = name.trim();
+    if (trimmed) {
+      p.append('analyticsLeadName', trimmed);
+    }
+  }
 }
 
 export function buildHomeClientProjectListUrl(
@@ -100,10 +121,11 @@ export function buildHomeClientProjectListUrl(
   client: string,
   projectType: string = '',
   onlineStatus: string = '',
+  analyticsLeads: string[] = [],
 ): string {
   const p = new URLSearchParams();
   p.set('refresh', refresh ? 'true' : 'false');
-  appendFilterParams(p, businessUnit, businessClass, status, onlineStatus, client, projectType);
+  appendFilterParams(p, businessUnit, businessClass, status, onlineStatus, client, projectType, analyticsLeads);
   return `/api/home/client-project-list?${p.toString()}`;
 }
 
@@ -114,9 +136,10 @@ export function buildHomeSummaryUrl(
   client: string,
   projectType: string = '',
   onlineStatus: string = '',
+  analyticsLeads: string[] = [],
 ): string {
   const p = new URLSearchParams();
-  appendFilterParams(p, businessUnit, businessClass, status, onlineStatus, client, projectType);
+  appendFilterParams(p, businessUnit, businessClass, status, onlineStatus, client, projectType, analyticsLeads);
   const qs = p.toString();
   return qs ? `/api/home/summary?${qs}` : '/api/home/summary';
 }

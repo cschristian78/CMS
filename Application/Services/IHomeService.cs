@@ -12,6 +12,7 @@ public interface IHomeService
         string? businessClassName = null,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 
     Task<ClientProjectListViewModel> GetHomeClientProjectListAsync(
@@ -22,6 +23,7 @@ public interface IHomeService
         string? businessClassName,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 
     Task<ClientProjectListFilterOptionsViewModel> GetHomeClientProjectListFilterOptionsAsync(

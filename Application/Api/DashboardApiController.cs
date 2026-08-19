@@ -1,5 +1,6 @@
 using ClientManagementSystem.Models;
 using ClientManagementSystem.Services;
+using ClientManagementSystem.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClientManagementSystem.Api;
@@ -31,6 +32,25 @@ public sealed class DashboardApiController : ControllerBase
             _logger.LogError(ex, "Dashboard filter-options failed.");
             return Problem(
                 detail: "Could not load dashboard filter options (Analytics Lead).",
+                title: "Operation failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [HttpGet("dataset")]
+    public async Task<ActionResult<DashboardDatasetViewModel>> GetDatasetAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _dashboardService.GetDatasetAsync(cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Dashboard dataset failed.");
+            var root = ex.GetBaseException();
+            return Problem(
+                detail: $"Could not load dashboard dataset from dbo.vProject_Current. {root.GetType().Name}: {root.Message}",
                 title: "Operation failed",
                 statusCode: StatusCodes.Status500InternalServerError);
         }

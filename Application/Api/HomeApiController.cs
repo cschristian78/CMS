@@ -27,6 +27,7 @@ public sealed class HomeApiController : ControllerBase
         [FromQuery] string? businessClassName = null,
         [FromQuery] string? projectTypeName = null,
         [FromQuery] string? onlineStatus = null,
+        [FromQuery] string[]? analyticsLeadName = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -38,6 +39,7 @@ public sealed class HomeApiController : ControllerBase
                 businessClassName,
                 projectTypeName,
                 ParseOnlineStatus(onlineStatus),
+                NormalizeAnalyticsLeadNames(analyticsLeadName),
                 cancellationToken);
             return Ok(summary);
         }
@@ -82,6 +84,7 @@ public sealed class HomeApiController : ControllerBase
         [FromQuery] string? businessClassName = null,
         [FromQuery] string? projectTypeName = null,
         [FromQuery] string? onlineStatus = null,
+        [FromQuery] string[]? analyticsLeadName = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -94,6 +97,7 @@ public sealed class HomeApiController : ControllerBase
                 businessClassName,
                 projectTypeName,
                 ParseOnlineStatus(onlineStatus),
+                NormalizeAnalyticsLeadNames(analyticsLeadName),
                 cancellationToken);
             return Ok(model);
         }
@@ -172,6 +176,24 @@ public sealed class HomeApiController : ControllerBase
             _logger.LogError(ex, "Home client-project bulk import commit failed.");
             return Problem(detail: "Import failed.", title: "Import failed", statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static IReadOnlyList<string>? NormalizeAnalyticsLeadNames(string[]? analyticsLeadName)
+    {
+        if (analyticsLeadName is null || analyticsLeadName.Length == 0)
+        {
+            return null;
+        }
+
+        var names = analyticsLeadName
+            .SelectMany(s => (s ?? string.Empty).Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return names.Count == 0 ? null : names;
     }
 
     private static bool? ParseOnlineStatus(string? onlineStatus)

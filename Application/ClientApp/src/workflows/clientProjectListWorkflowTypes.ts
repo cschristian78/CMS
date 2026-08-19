@@ -7,6 +7,7 @@
  *   - statusNames         <- StatusDescription (tClientRef.StatusID -> tStatus)
  *   - clientNames         <- ClientName
  *   - projectTypeNames    <- PTDescription
+ *   - analyticsLeadNames  <- [Analytics Lead]
  */
 export interface ClientProjectListFilterOptions {
   businessUnitNames: string[];
@@ -14,4 +15,5 @@ export interface ClientProjectListFilterOptions {
   statusNames: string[];
   clientNames: string[];
   projectTypeNames: string[];
+  analyticsLeadNames: string[];
 }

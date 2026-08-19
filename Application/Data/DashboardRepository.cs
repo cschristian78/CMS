@@ -495,6 +495,7 @@ public sealed class DashboardRepository : IDashboardRepository
         string? businessClassName,
         string? projectTypeName = null,
         bool? isOnline = null,
+        IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default)
     {
         var sql = new StringBuilder("""
@@ -524,10 +525,50 @@ public sealed class DashboardRepository : IDashboardRepository
             businessClassName,
             projectTypeName,
             isOnline,
-            projectIdColumn: "v.ProjectID");
+            projectIdColumn: "v.ProjectID",
+            analyticsLeadNames: analyticsLeadNames,
+            analyticsLeadColumn: "v.[Analytics Lead]");
 
         return _db.QueryTextAsTableAsync(sql.ToString(), parameters, cancellationToken);
     }
+
+    public Task<IReadOnlyList<DashboardInactiveProject>> GetInactiveProjectsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT
+                p.ProjectID,
+                p.ProjectNumber,
+                p.ProjectName,
+                c.ClientName,
+                p.CreatedDate,
+                CAST(ISNULL(p.IsOnline, 0) AS BIT) AS IsOnline
+            FROM dbo.tProject AS p
+            OUTER APPLY (
+                SELECT TOP (1) pr.ClientRefID
+                  FROM dbo.tProjectRef AS pr
+                 WHERE pr.ProjectID = p.ProjectID
+                 ORDER BY pr.IsActive DESC, pr.ProjectRefID
+            ) pref
+            LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pref.ClientRefID
+            LEFT JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
+            WHERE ISNULL(p.IsActive, 0) = 0
+            ORDER BY p.ProjectNumber, p.ProjectID;
+            """;
+
+        return _db.QueryTextAsync(sql, MapInactiveProject, null, cancellationToken);
+    }
+
+    private static DashboardInactiveProject MapInactiveProject(SqlDataReader r) =>
+        new()
+        {
+            ProjectID = r.GetInt32OrDefault("ProjectID"),
+            ProjectNumber = r.GetNullableString("ProjectNumber"),
+            ProjectName = r.GetNullableString("ProjectName"),
+            ClientName = r.GetNullableString("ClientName"),
+            CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
+            IsOnline = r.GetBooleanOrDefault("IsOnline")
+        };
 
     private static DashboardBusinessUnitCount MapBusinessUnitCount(SqlDataReader r) =>
         new()
@@ -551,5 +592,6 @@ public sealed class DashboardRepository : IDashboardRepository
         || string.Equals(columnName, "StatusDescription", StringComparison.OrdinalIgnoreCase)
         || string.Equals(columnName, "ProjectStatus", StringComparison.OrdinalIgnoreCase)
         || string.Equals(columnName, "ClientName", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(columnName, "PTDescription", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(columnName, "PTDescription", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(columnName, "Analytics Lead", StringComparison.OrdinalIgnoreCase);
 }

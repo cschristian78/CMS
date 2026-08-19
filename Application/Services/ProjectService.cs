@@ -171,7 +171,7 @@ public sealed class ProjectService : IProjectService
             ProjectNumber = (model.ProjectNumber ?? string.Empty).Trim(),
             ProjectName = (model.ProjectName ?? string.Empty).Trim(),
             ClientID = model.ClientID,
-            UGID = model.UserGroupID > 0 ? model.UserGroupID : model.UGID,
+            UGID = model.UserGroupID > 0 ? model.UserGroupID : 0,
             ProjectTypeID = model.ProjectTypeID,
             RenewalDate = model.RenewalDate,
             DueDate = model.DueDate,
@@ -261,6 +261,30 @@ public sealed class ProjectService : IProjectService
         }
 
         await RefreshHomeListAsync(cancellationToken);
+    }
+
+    public async Task<ProjectHardDeleteResult> HardDeleteAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        var result = await _projects.HardDeleteAsync(projectId, cancellationToken);
+
+        foreach (var blobPath in result.BlobPaths)
+        {
+            try
+            {
+                await _blobs.DeleteAsync(blobPath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(
+                    ex,
+                    "Hard-deleted ProjectID {ProjectID} but blob delete failed for {BlobPath}.",
+                    projectId,
+                    blobPath);
+            }
+        }
+
+        await RefreshHomeListAsync(cancellationToken);
+        return result;
     }
 
     public async Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default)

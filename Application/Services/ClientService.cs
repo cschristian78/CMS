@@ -111,6 +111,7 @@ public sealed class ClientService : IClientService
             ClientID = model.ClientID ?? 0,
             ClientName = model.ClientName.Trim(),
             ClientShortName = model.ClientShortName?.Trim(),
+            BusinessUnitID = model.BusinessUnitID > 0 ? model.BusinessUnitID : null,
             BusinessClassID = model.BusinessClassID,
             ClientCategoryID = model.ClientCategoryID,
             ClientTypeID = model.ClientTypeID,

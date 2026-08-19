@@ -37,14 +37,18 @@ public sealed class ProjectFormViewModel : IJsonOnDeserialized
     [Display(Name = "User Group")]
     public int UserGroupID { get; set; }
 
-    /// <summary>Legacy alias for <see cref="UserGroupID"/>. When both <c>ugid</c> and
-    /// <c>userGroupID</c> are posted (common after spreading a GET payload), <c>ugid</c> wins
-    /// because it is the value bound to the Project Info select.</summary>
+    /// <summary>Legacy alias for <see cref="UserGroupID"/>. Object-initializer and JSON
+    /// payloads that post <c>ugid</c> both update <see cref="UserGroupID"/>. When both
+    /// <c>ugid</c> and <c>userGroupID</c> are posted, <c>ugid</c> (the form select) wins.</summary>
     [JsonPropertyName("ugid")]
     public int UGID
     {
         get => UserGroupID;
-        set => _postedUgid = value;
+        set
+        {
+            _postedUgid = value;
+            UserGroupID = value;
+        }
     }
 
     void IJsonOnDeserialized.OnDeserialized()
