@@ -131,3 +131,10 @@ export function formatNumber(n: number, fractionDigits = 0): string {
     minimumFractionDigits: 0,
   }).format(n);
 }
+
+export function formatPercent(value: number, total: number, fractionDigits = 1): string {
+  if (total <= 0) {
+    return '—';
+  }
+  return `${formatNumber((value / total) * 100, fractionDigits)}%`;
+}

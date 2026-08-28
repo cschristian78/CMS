@@ -5168,7 +5168,7 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 
 .pm-timeline-stats {
     display: grid;
-    grid-template-columns: repeat(6, minmax(6.5rem, 1fr));
+    grid-template-columns: repeat(4, minmax(6.5rem, 1fr));
     gap: 0.55rem;
     margin-top: 0.75rem;
 }

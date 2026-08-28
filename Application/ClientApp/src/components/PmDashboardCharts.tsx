@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BarChartItem } from './DashboardBarChart';
-import { formatNumber, formatUsd, seriesColor } from '../dashboard/dashboardColors';
+import { formatNumber, formatPercent, formatUsd, seriesColor } from '../dashboard/dashboardColors';
 import type { RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
 
 function useMeasuredChartWidth(minWidth = 320, fallback = 960) {
@@ -322,6 +322,8 @@ export function DashboardRevenueRenewalTimeline({
   onSelect,
 }: RevenueRenewalTimelineProps) {
   const selected = periods.find((p) => p.key === selectedKey) ?? null;
+  const totalRenewalCount = periods.reduce((sum, period) => sum + period.renewalCount, 0);
+  const totalRevenue = periods.reduce((sum, period) => sum + period.revenue, 0);
   const { wrapRef, width: w } = useMeasuredChartWidth();
   const h = 220;
   const pad = { l: 54, r: 48, t: 18, b: 40 };
@@ -442,8 +444,16 @@ export function DashboardRevenueRenewalTimeline({
                 <strong>{formatNumber(selected.renewalCount)}</strong>
               </div>
               <div className="pm-timeline-stat">
+                <span>% of renewals</span>
+                <strong>{formatPercent(selected.renewalCount, totalRenewalCount)}</strong>
+              </div>
+              <div className="pm-timeline-stat">
                 <span>Total revenue</span>
                 <strong>{formatUsd(selected.revenue)}</strong>
+              </div>
+              <div className="pm-timeline-stat">
+                <span>% of revenue</span>
+                <strong>{formatPercent(selected.revenue, totalRevenue)}</strong>
               </div>
               <div className="pm-timeline-stat">
                 <span>Min revenue</span>
@@ -458,7 +468,7 @@ export function DashboardRevenueRenewalTimeline({
                 <strong>{formatUsd(selected.avgRevenue)}</strong>
               </div>
             </div>
-          : <p className="field-help">Select a month or quarter to see min, max, and average revenue.</p>}
+          : <p className="field-help">Select a month or quarter to see share of total renewals and revenue, plus min, max, and average revenue.</p>}
         </>
       }
     </section>
