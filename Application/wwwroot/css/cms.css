@@ -251,15 +251,19 @@ main.page-shell.page-shell--dashboard-wide {
 }
 
 main.page-shell.page-shell--dashboard-wide .wide-card,
-main.page-shell.page-shell--dashboard-wide .dashboard-charts-layout {
+main.page-shell.page-shell--dashboard-wide .dashboard-charts-layout,
+main.page-shell.page-shell--dashboard-wide .pm-dash-card {
     max-width: none;
     width: 100%;
     margin-left: 0;
     margin-right: 0;
 }
 
-main.page-shell.page-shell--dashboard-wide .dashboard-chart-card {
+main.page-shell.page-shell--dashboard-wide .dashboard-chart-card,
+main.page-shell.page-shell--dashboard-wide .pm-timeline-card {
     width: 100%;
+    max-width: none;
+    box-sizing: border-box;
 }
 
 /* Client New/Edit: lock viewport; only the directory table scrolls */
@@ -5089,6 +5093,21 @@ a.link-button:hover,
 
 .pm-dash-span {
     grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+}
+
+.pm-dash-card .pm-timeline-fullbleed {
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+    width: calc(100% + 2.5rem);
+    box-sizing: border-box;
+}
+
+main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed {
+    margin-left: calc(-1.25rem - var(--page-shell-inline-pad));
+    margin-right: calc(-1.25rem - var(--page-shell-inline-pad));
+    width: calc(100% + 2.5rem + 2 * var(--page-shell-inline-pad));
 }
 
 .pm-timeline-card .dashboard-chart-title {
@@ -5131,8 +5150,16 @@ a.link-button:hover,
     color: #041018;
 }
 
+.pm-timeline-chart-wrap {
+    width: 100%;
+    min-width: 0;
+}
+
 .pm-timeline-svg {
+    width: 100%;
+    max-width: none;
     height: 230px;
+    display: block;
 }
 
 .pm-timeline-caption {

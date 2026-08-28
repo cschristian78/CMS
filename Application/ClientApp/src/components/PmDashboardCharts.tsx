@@ -1,6 +1,33 @@
+import { useEffect, useRef, useState } from 'react';
 import type { BarChartItem } from './DashboardBarChart';
 import { formatNumber, formatUsd, seriesColor } from '../dashboard/dashboardColors';
 import type { RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
+
+function useMeasuredChartWidth(minWidth = 320, fallback = 960) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(fallback);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) {
+      return undefined;
+    }
+
+    const measure = () => {
+      const next = Math.max(minWidth, Math.floor(el.clientWidth));
+      if (next > 0) {
+        setWidth(next);
+      }
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { wrapRef, width };
+}
 
 interface SliceItem {
   label: string;
@@ -295,7 +322,7 @@ export function DashboardRevenueRenewalTimeline({
   onSelect,
 }: RevenueRenewalTimelineProps) {
   const selected = periods.find((p) => p.key === selectedKey) ?? null;
-  const w = 720;
+  const { wrapRef, width: w } = useMeasuredChartWidth();
   const h = 220;
   const pad = { l: 54, r: 48, t: 18, b: 40 };
   const innerW = w - pad.l - pad.r;
@@ -341,6 +368,7 @@ export function DashboardRevenueRenewalTimeline({
       {periods.length === 0 ?
         <p className="field-help" role="status">No renewal dates to display.</p>
       : <>
+          <div ref={wrapRef} className="pm-timeline-chart-wrap">
           <svg viewBox={`0 0 ${w} ${h}`} className="pm-line-svg pm-timeline-svg" role="img" aria-label={ariaLabel}>
             <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#223550" />
             <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
@@ -398,6 +426,7 @@ export function DashboardRevenueRenewalTimeline({
               {formatNumber(maxRenewals)} renewals
             </text>
           </svg>
+          </div>
           <p className="field-help pm-timeline-caption">
             Bars = total LatestRevenue for projects renewing in the period. Orange line = renewal count.
             Click a period for revenue stats.
