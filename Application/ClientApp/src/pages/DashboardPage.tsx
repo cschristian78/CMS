@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiGet } from '../api';
-import DashboardBarChart, { type BarChartItem } from '../components/DashboardBarChart';
+import DashboardBarChart from '../components/DashboardBarChart';
 import {
   DashboardComboBar,
   DashboardDonutChart,
@@ -10,7 +10,6 @@ import {
   DashboardParetoChart,
   DashboardRevenueRenewalTimeline,
   DashboardScatterChart,
-  DashboardTreemap,
 } from '../components/PmDashboardCharts';
 import {
   applyGlobalFilters,
@@ -52,8 +51,6 @@ import {
   revenueTierColor,
   seriesColor,
 } from '../dashboard/dashboardColors';
-import { regionBarColor } from '../utils/regionBarColors';
-
 type DashTab = 'executive' | 'portfolio' | 'workload' | 'services' | 'health';
 
 type DrillState = {
@@ -69,20 +66,6 @@ const DATE_FIELD_BY_TAB: Record<DashTab, DateField> = {
   services: 'createdDate',
   health: 'latestRevenueDate',
 };
-
-function metricBars(
-  metrics: { label: string; count: number; revenue: number }[],
-  mode: 'count' | 'revenue',
-  fillFor?: (label: string, i: number) => string,
-): BarChartItem[] {
-  return metrics.map((m, i) => ({
-    label: m.label,
-    value: mode === 'revenue' ? m.revenue : m.count,
-    colorKey: m.label,
-    fill: fillFor?.(m.label, i),
-    displayValue: mode === 'revenue' ? formatUsd(m.revenue) : formatNumber(m.count),
-  }));
-}
 
 export default function DashboardPage() {
   const [dataset, setDataset] = useState<DashboardDataset | null>(null);
@@ -104,6 +87,7 @@ export default function DashboardPage() {
   const [filterService, setFilterService] = useState('');
   const [matrixBy, setMatrixBy] = useState<'client' | 'project'>('client');
   const [drill, setDrill] = useState<DrillState | null>(null);
+  const [execLink, setExecLink] = useState<{ rows: DashCell[][]; label: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -180,6 +164,7 @@ export default function DashboardPage() {
   const setFilter = (key: keyof GlobalDashFilters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setDrill(null);
+    setExecLink(null);
   };
 
   const openDrill = (title: string, rows: DashCell[][], inactive?: DashboardInactiveProject[]) => {
@@ -205,7 +190,8 @@ export default function DashboardPage() {
     return summarizePortfolio(scopedRows, col);
   }, [scopedRows, col]);
 
-  const detailRows = drill?.rows ?? scopedRows;
+  const detailRows = drill?.rows ?? (tab === 'executive' && execLink ? execLink.rows : scopedRows);
+  const detailTitle = drill?.title ?? (tab === 'executive' && execLink ? `Renewals ${execLink.label}` : 'All filtered projects');
 
   return (
     <>
@@ -295,7 +281,7 @@ export default function DashboardPage() {
               className={tab === id ? 'active' : undefined}
               role="tab"
               aria-selected={tab === id}
-              onClick={() => { setTab(id); setDrill(null); }}
+              onClick={() => { setTab(id); setDrill(null); setExecLink(null); }}
             >
               {label}
             </button>
@@ -305,7 +291,13 @@ export default function DashboardPage() {
         {dataset && col && !loading ? (
           <>
             {tab === 'executive' ? (
-              <ExecutiveTab rows={scopedRows} col={col} inactive={dataset.inactiveProjects} onDrill={openDrill} />
+              <ExecutiveTab
+                rows={scopedRows}
+                col={col}
+                inactive={dataset.inactiveProjects}
+                onDrill={openDrill}
+                onLinkChange={setExecLink}
+              />
             ) : null}
             {tab === 'portfolio' ? (
               <PortfolioTab
@@ -352,7 +344,7 @@ export default function DashboardPage() {
             ) : null}
 
             <DetailGrid
-              title={drill ? drill.title : 'All filtered projects'}
+              title={detailTitle}
               rows={detailRows}
               col={col}
               inactive={drill?.inactive}
@@ -368,76 +360,86 @@ export default function DashboardPage() {
 }
 
 function ExecutiveTab({
-  rows, col, inactive, onDrill,
+  rows, col, onDrill, onLinkChange,
 }: {
   rows: DashCell[][];
   col: DashColIndex;
   inactive: DashboardInactiveProject[];
   onDrill: (title: string, rows: DashCell[][], inactive?: DashboardInactiveProject[]) => void;
+  onLinkChange: (link: { rows: DashCell[][]; label: string } | null) => void;
 }) {
   const [timelineGrain, setTimelineGrain] = useState<TimelineGrain>('month');
   const [selectedTimelineKey, setSelectedTimelineKey] = useState<string | null>(null);
-  const byBu = groupMetrics(rows, col, col.businessUnit);
-  const byTier = sortTiers(groupMetrics(rows, col, col.revenueTier, 'Unknown'));
-  const byStatus = groupMetrics(rows, col, col.projectStatus, 'Active');
-  const trend = trendByMonth(rows, col, col.latestRevenueDate, 'revenue');
-  const topClients = groupMetrics(rows, col, col.clientName, '(No client)').slice(0, 15);
   const renewalTimeline = useMemo(
     () => buildRenewalTimeline(rows, col, timelineGrain),
     [rows, col, timelineGrain],
   );
-  const statusItems = [
-    ...byStatus.map((m) => ({ label: m.label, value: m.count, fill: projectStatusColor(m.label) })),
-    ...(inactive.length > 0 && !byStatus.some((s) => s.label.toLowerCase() === 'inactive')
-      ? [{ label: 'Inactive', value: inactive.length, fill: projectStatusColor('Inactive') }]
-      : []),
-  ];
+  const linkedRows = useMemo(() => {
+    if (!selectedTimelineKey) {
+      return rows;
+    }
+    return rows.filter((r) => {
+      const ymd = cellYmd(r, col.renewalDate);
+      const key = timelineGrain === 'month' ? monthKey(ymd) : quarterKey(ymd);
+      return key === selectedTimelineKey;
+    });
+  }, [rows, col, selectedTimelineKey, timelineGrain]);
+  const byTier = sortTiers(groupMetrics(linkedRows, col, col.revenueTier, 'Unknown'));
+  const topClients = groupMetrics(linkedRows, col, col.clientName, '(No client)').slice(0, 15);
+  const activeRows = linkedRows.filter((r) => blankLabel(cellText(r, col.projectStatus), 'Active') === 'Active');
+  const activeOnlineCount = activeRows.filter((r) => onlineLabel(r, col) === 'Online').length;
+  const activeOfflineCount = activeRows.length - activeOnlineCount;
 
   useEffect(() => {
     setSelectedTimelineKey(null);
   }, [timelineGrain, rows]);
 
+  useEffect(() => {
+    if (!selectedTimelineKey) {
+      onLinkChange(null);
+      return;
+    }
+    const period = renewalTimeline.find((p) => p.key === selectedTimelineKey);
+    onLinkChange(period ? { rows: linkedRows, label: period.label } : null);
+  }, [linkedRows, selectedTimelineKey, renewalTimeline, onLinkChange]);
+
   return (
     <div className="pm-dash-grid">
-      <DashboardBarChart
-        title="Revenue by Business Unit"
-        ariaLabel="Sum of LatestRevenue by BusinessUnitName"
-        orientation="horizontal"
-        items={metricBars(byBu, 'revenue', (label) => regionBarColor(label))}
-        onSelect={(item) => onDrill(`Business unit ${item.label}`, rows.filter((r) => blankLabel(cellText(r, col.businessUnit)) === item.label))}
-      />
-      <DashboardTreemap
-        title="Revenue treemap by Business Unit"
-        ariaLabel="Treemap of LatestRevenue by BusinessUnitName"
-        items={byBu.map((m) => ({ label: m.label, value: m.revenue, fill: regionBarColor(m.label) }))}
-        onSelect={(label) => onDrill(`Business unit ${label}`, rows.filter((r) => blankLabel(cellText(r, col.businessUnit)) === label))}
-      />
+      <div className="pm-dash-span">
+        <DashboardRevenueRenewalTimeline
+          title="Revenue and Renewals Timeline"
+          ariaLabel="Total LatestRevenue and renewal counts by RenewalDate month or quarter"
+          grain={timelineGrain}
+          periods={renewalTimeline}
+          selectedKey={selectedTimelineKey}
+          chartHeight={496}
+          onGrainChange={setTimelineGrain}
+          onSelect={(period) => {
+            setSelectedTimelineKey((prev) => (prev === period.key ? null : period.key));
+          }}
+        />
+      </div>
       <DashboardDonutChart
         title="Revenue Tier Distribution"
         ariaLabel="Count of projects by RevenueTier"
         items={byTier.map((m) => ({ label: m.label, value: m.count, fill: revenueTierColor(m.label) }))}
-        onSelect={(label) => onDrill(`Revenue tier ${label}`, rows.filter((r) => blankLabel(cellText(r, col.revenueTier), 'Unknown') === label))}
+        onSelect={(label) => onDrill(
+          `Revenue tier ${label}`,
+          linkedRows.filter((r) => blankLabel(cellText(r, col.revenueTier), 'Unknown') === label),
+        )}
       />
       <DashboardDonutChart
-        title="Active vs Inactive Projects"
-        ariaLabel="Count of projects by ProjectStatus"
-        items={statusItems}
+        title="Active Projects Online"
+        ariaLabel="Active projects online versus not online"
+        items={[
+          { label: 'Online', value: activeOnlineCount, fill: '#30d880' },
+          { label: 'Not Online', value: activeOfflineCount, fill: '#5a7080' },
+        ]}
         onSelect={(label) => {
-          if (label.toLowerCase() === 'inactive' && inactive.length > 0) {
-            onDrill('Inactive projects (not in vProject_Current)', [], inactive);
-            return;
-          }
-          onDrill(`Project status ${label}`, rows.filter((r) => blankLabel(cellText(r, col.projectStatus), 'Active') === label));
-        }}
-      />
-      <DashboardLineChart
-        title="Revenue Trend"
-        ariaLabel="Sum of LatestRevenue by LatestRevenueEffectiveDate month"
-        valueMode="usd"
-        items={trend.map((m) => ({ label: formatMonthLabel(m.label), value: m.revenue, displayValue: formatUsd(m.revenue) }))}
-        onSelect={(item) => {
-          const key = trend.find((t) => formatMonthLabel(t.label) === item.label)?.label ?? '';
-          onDrill(`Revenue month ${item.label}`, rows.filter((r) => monthKey(cellYmd(r, col.latestRevenueDate)) === key));
+          onDrill(
+            label === 'Online' ? 'Active projects online' : 'Active projects not online',
+            activeRows.filter((r) => onlineLabel(r, col) === (label === 'Online' ? 'Online' : 'Offline')),
+          );
         }}
       />
       <DashboardBarChart
@@ -447,28 +449,12 @@ function ExecutiveTab({
         items={topClients.map((m) => ({ label: `${m.label} (${m.count})`, value: m.revenue, displayValue: formatUsd(m.revenue) }))}
         onSelect={(item) => {
           const name = item.label.replace(/\s+\(\d+\)$/, '');
-          onDrill(`Client ${name}`, rows.filter((r) => blankLabel(cellText(r, col.clientName), '(No client)') === name));
+          onDrill(
+            `Client ${name}`,
+            linkedRows.filter((r) => blankLabel(cellText(r, col.clientName), '(No client)') === name),
+          );
         }}
       />
-      <div className="pm-dash-span">
-        <DashboardRevenueRenewalTimeline
-          title="Revenue and Renewals Timeline"
-          ariaLabel="Total LatestRevenue and renewal counts by RenewalDate month or quarter"
-          grain={timelineGrain}
-          periods={renewalTimeline}
-          selectedKey={selectedTimelineKey}
-          onGrainChange={setTimelineGrain}
-          onSelect={(period) => {
-            setSelectedTimelineKey(period.key);
-            const filtered = rows.filter((r) => {
-              const ymd = cellYmd(r, col.renewalDate);
-              const key = timelineGrain === 'month' ? monthKey(ymd) : quarterKey(ymd);
-              return key === period.key;
-            });
-            onDrill(`Renewals ${period.label}`, filtered);
-          }}
-        />
-      </div>
     </div>
   );
 }

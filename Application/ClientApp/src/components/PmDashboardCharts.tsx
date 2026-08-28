@@ -308,6 +308,7 @@ interface RevenueRenewalTimelineProps {
   grain: TimelineGrain;
   periods: RenewalTimelinePeriod[];
   selectedKey: string | null;
+  chartHeight?: number;
   onGrainChange: (grain: TimelineGrain) => void;
   onSelect: (period: RenewalTimelinePeriod) => void;
 }
@@ -318,6 +319,7 @@ export function DashboardRevenueRenewalTimeline({
   grain,
   periods,
   selectedKey,
+  chartHeight = 248,
   onGrainChange,
   onSelect,
 }: RevenueRenewalTimelineProps) {
@@ -330,7 +332,7 @@ export function DashboardRevenueRenewalTimeline({
   const minSlotWidth = 96;
   const barWidthRatio = 0.58;
   const w = Math.max(containerWidth, visiblePeriods.length * minSlotWidth);
-  const h = 248;
+  const h = chartHeight;
   const pad = { l: 28, r: 28, t: 22, b: 42 };
   const innerW = w - pad.l - pad.r;
   const innerH = h - pad.t - pad.b;
@@ -372,6 +374,7 @@ export function DashboardRevenueRenewalTimeline({
               <svg
                 viewBox={`0 0 ${w} ${h}`}
                 width={w}
+                height={h}
                 className="pm-line-svg pm-timeline-svg"
                 role="img"
                 aria-label={ariaLabel}
