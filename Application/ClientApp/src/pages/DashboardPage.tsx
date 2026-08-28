@@ -8,6 +8,7 @@ import {
   DashboardHeatmap,
   DashboardLineChart,
   DashboardParetoChart,
+  DashboardRevenueRenewalTimeline,
   DashboardScatterChart,
   DashboardTreemap,
 } from '../components/PmDashboardCharts';
@@ -16,6 +17,7 @@ import {
   blankLabel,
   buildAgingRows,
   buildColIndex,
+  buildRenewalTimeline,
   cellNumber,
   cellText,
   cellYmd,
@@ -29,6 +31,7 @@ import {
   normalizeDataset,
   onlineLabel,
   projectIdOf,
+  quarterKey,
   sortTiers,
   splitPeople,
   summarizePortfolio,
@@ -39,6 +42,7 @@ import {
   type DashboardInactiveProject,
   type DateField,
   type GlobalDashFilters,
+  type TimelineGrain,
 } from '../dashboard/dashboardData';
 import {
   agingBucketColor,
@@ -371,18 +375,27 @@ function ExecutiveTab({
   inactive: DashboardInactiveProject[];
   onDrill: (title: string, rows: DashCell[][], inactive?: DashboardInactiveProject[]) => void;
 }) {
+  const [timelineGrain, setTimelineGrain] = useState<TimelineGrain>('month');
+  const [selectedTimelineKey, setSelectedTimelineKey] = useState<string | null>(null);
   const byBu = groupMetrics(rows, col, col.businessUnit);
   const byTier = sortTiers(groupMetrics(rows, col, col.revenueTier, 'Unknown'));
   const byStatus = groupMetrics(rows, col, col.projectStatus, 'Active');
   const trend = trendByMonth(rows, col, col.latestRevenueDate, 'revenue');
   const topClients = groupMetrics(rows, col, col.clientName, '(No client)').slice(0, 15);
-  const pareto = groupMetrics(rows, col, col.clientName, '(No client)');
+  const renewalTimeline = useMemo(
+    () => buildRenewalTimeline(rows, col, timelineGrain),
+    [rows, col, timelineGrain],
+  );
   const statusItems = [
     ...byStatus.map((m) => ({ label: m.label, value: m.count, fill: projectStatusColor(m.label) })),
     ...(inactive.length > 0 && !byStatus.some((s) => s.label.toLowerCase() === 'inactive')
       ? [{ label: 'Inactive', value: inactive.length, fill: projectStatusColor('Inactive') }]
       : []),
   ];
+
+  useEffect(() => {
+    setSelectedTimelineKey(null);
+  }, [timelineGrain, rows]);
 
   return (
     <div className="pm-dash-grid">
@@ -438,11 +451,22 @@ function ExecutiveTab({
         }}
       />
       <div className="pm-dash-span">
-        <DashboardParetoChart
-          title="Revenue Concentration"
-          ariaLabel="Cumulative percent of LatestRevenue by ClientName"
-          items={pareto.map((m) => ({ label: m.label, value: m.revenue }))}
-          onSelect={(label) => onDrill(`Client ${label}`, rows.filter((r) => blankLabel(cellText(r, col.clientName), '(No client)') === label))}
+        <DashboardRevenueRenewalTimeline
+          title="Revenue and Renewals Timeline"
+          ariaLabel="Total LatestRevenue and renewal counts by RenewalDate month or quarter"
+          grain={timelineGrain}
+          periods={renewalTimeline}
+          selectedKey={selectedTimelineKey}
+          onGrainChange={setTimelineGrain}
+          onSelect={(period) => {
+            setSelectedTimelineKey(period.key);
+            const filtered = rows.filter((r) => {
+              const ymd = cellYmd(r, col.renewalDate);
+              const key = timelineGrain === 'month' ? monthKey(ymd) : quarterKey(ymd);
+              return key === period.key;
+            });
+            onDrill(`Renewals ${period.label}`, filtered);
+          }}
         />
       </div>
     </div>

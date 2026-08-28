@@ -422,6 +422,19 @@ export function monthKey(ymd: string): string {
   return ymd.length >= 7 ? ymd.slice(0, 7) : '';
 }
 
+export function quarterKey(ymd: string): string {
+  const month = monthKey(ymd);
+  if (!month) {
+    return '';
+  }
+  const monthNum = Number(month.slice(5, 7));
+  if (!Number.isFinite(monthNum) || monthNum < 1 || monthNum > 12) {
+    return '';
+  }
+  const quarter = Math.floor((monthNum - 1) / 3) + 1;
+  return `${month.slice(0, 4)}-Q${quarter}`;
+}
+
 export function formatMonthLabel(key: string): string {
   const m = key.trim().match(/^(\d{4})-(\d{2})$/);
   if (!m) {
@@ -430,6 +443,125 @@ export function formatMonthLabel(key: string): string {
   const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const idx = Number(m[2]) - 1;
   return `${names[idx] ?? m[2]} ${m[1]}`;
+}
+
+export function formatQuarterLabel(key: string): string {
+  const m = key.trim().match(/^(\d{4})-Q([1-4])$/i);
+  if (!m) {
+    return key;
+  }
+  return `Q${m[2]} ${m[1]}`;
+}
+
+export type TimelineGrain = 'month' | 'quarter';
+
+export interface RenewalTimelinePeriod {
+  key: string;
+  label: string;
+  revenue: number;
+  renewalCount: number;
+  minRevenue: number;
+  maxRevenue: number;
+  avgRevenue: number;
+}
+
+function nextMonthKey(key: string): string {
+  const m = key.match(/^(\d{4})-(\d{2})$/);
+  if (!m) {
+    return key;
+  }
+  let year = Number(m[1]);
+  let month = Number(m[2]) + 1;
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function nextQuarterKey(key: string): string {
+  const m = key.match(/^(\d{4})-Q([1-4])$/i);
+  if (!m) {
+    return key;
+  }
+  let year = Number(m[1]);
+  let quarter = Number(m[2]) + 1;
+  if (quarter > 4) {
+    quarter = 1;
+    year += 1;
+  }
+  return `${year}-Q${quarter}`;
+}
+
+function enumeratePeriodKeys(start: string, end: string, grain: TimelineGrain): string[] {
+  if (!start || !end || start > end) {
+    return start ? [start] : [];
+  }
+  const keys: string[] = [];
+  let cursor = start;
+  let guard = 0;
+  while (cursor <= end && guard < 240) {
+    keys.push(cursor);
+    cursor = grain === 'month' ? nextMonthKey(cursor) : nextQuarterKey(cursor);
+    guard += 1;
+  }
+  return keys;
+}
+
+/**
+ * Renewal calendar timeline: periods are driven by <c>RenewalDate</c>.
+ * Revenue is the sum of <c>LatestRevenue</c> for projects renewing in each period;
+ * renewalCount is the distinct project count for that period.
+ */
+export function buildRenewalTimeline(
+  rows: DashCell[][],
+  col: DashColIndex,
+  grain: TimelineGrain,
+): RenewalTimelinePeriod[] {
+  const map = new Map<string, { ids: Set<number>; revenues: number[] }>();
+  rows.forEach((row, ri) => {
+    const ymd = cellYmd(row, col.renewalDate);
+    const key = grain === 'month' ? monthKey(ymd) : quarterKey(ymd);
+    if (!key) {
+      return;
+    }
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = { ids: new Set(), revenues: [] };
+      map.set(key, bucket);
+    }
+    const pid = projectIdOf(row, col) ?? -(ri + 1);
+    if (bucket.ids.has(pid)) {
+      return;
+    }
+    bucket.ids.add(pid);
+    bucket.revenues.push(cellNumber(row, col.latestRevenue));
+  });
+
+  const present = [...map.keys()].sort((a, b) => a.localeCompare(b));
+  if (present.length === 0) {
+    return [];
+  }
+  const keys = enumeratePeriodKeys(present[0], present[present.length - 1], grain);
+
+  return keys.map((key) => {
+    const bucket = map.get(key);
+    const revenues = bucket?.revenues ?? [];
+    const renewalCount = bucket?.ids.size ?? 0;
+    const revenue = revenues.reduce((s, v) => s + v, 0);
+    const minRevenue = revenues.length > 0 ? Math.min(...revenues) : 0;
+    const maxRevenue = revenues.length > 0 ? Math.max(...revenues) : 0;
+    const avgRevenue = revenues.length > 0 ? revenue / revenues.length : 0;
+    return {
+      key,
+      label: grain === 'month' ? formatMonthLabel(key) : formatQuarterLabel(key),
+      revenue,
+      renewalCount,
+      minRevenue,
+      maxRevenue,
+      avgRevenue,
+    };
+  });
 }
 
 export function trendByMonth(
