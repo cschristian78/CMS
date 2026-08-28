@@ -138,3 +138,14 @@ export function formatPercent(value: number, total: number, fractionDigits = 1):
   }
   return `${formatNumber((value / total) * 100, fractionDigits)}%`;
 }
+
+export function formatTimelineBarUsd(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `$${formatNumber(value / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`;
+  }
+  if (abs >= 1_000) {
+    return `$${formatNumber(value / 1_000, abs >= 10_000 ? 0 : 1)}K`;
+  }
+  return formatUsd(value);
+}

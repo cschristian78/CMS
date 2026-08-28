@@ -1,9 +1,9 @@
 /*
-  Advance renewal dates by one year for projects whose RenewalDate is before today.
+  Move renewal dates back one year for projects whose RenewalDate is before today.
   Recalculates DueDate as two calendar months before the new RenewalDate.
   Projects with RenewalDate on or after today are unchanged.
 
-  Example: RenewalDate 2026-07-01 -> 2027-07-01, DueDate -> 2027-05-01
+  Example: RenewalDate 2027-07-01 -> 2026-07-01, DueDate -> 2026-05-01
 */
 SET NOCOUNT ON;
 SET QUOTED_IDENTIFIER ON;
@@ -15,8 +15,8 @@ BEGIN TRANSACTION;
 
 UPDATE p
 SET
-    RenewalDate = DATEADD(YEAR, 1, p.RenewalDate),
-    DueDate = DATEADD(MONTH, -2, DATEADD(YEAR, 1, p.RenewalDate)),
+    RenewalDate = DATEADD(YEAR, -1, p.RenewalDate),
+    DueDate = DATEADD(MONTH, -2, DATEADD(YEAR, -1, p.RenewalDate)),
     ModifiedDate = SYSUTCDATETIME()
 FROM dbo.tProject p
 WHERE p.RenewalDate IS NOT NULL

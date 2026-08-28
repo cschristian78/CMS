@@ -450,7 +450,7 @@ function ExecutiveTab({
           onDrill(`Client ${name}`, rows.filter((r) => blankLabel(cellText(r, col.clientName), '(No client)') === name));
         }}
       />
-      <div className="pm-dash-span pm-timeline-fullbleed">
+      <div className="pm-dash-span">
         <DashboardRevenueRenewalTimeline
           title="Revenue and Renewals Timeline"
           ariaLabel="Total LatestRevenue and renewal counts by RenewalDate month or quarter"

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BarChartItem } from './DashboardBarChart';
-import { formatNumber, formatPercent, formatUsd, seriesColor } from '../dashboard/dashboardColors';
+import { formatNumber, formatPercent, formatTimelineBarUsd, formatUsd, seriesColor } from '../dashboard/dashboardColors';
 import type { RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
 
 function useMeasuredChartWidth(minWidth = 320, fallback = 960) {
@@ -324,15 +324,20 @@ export function DashboardRevenueRenewalTimeline({
   const selected = periods.find((p) => p.key === selectedKey) ?? null;
   const totalRenewalCount = periods.reduce((sum, period) => sum + period.renewalCount, 0);
   const totalRevenue = periods.reduce((sum, period) => sum + period.revenue, 0);
-  const { wrapRef, width: w } = useMeasuredChartWidth();
-  const h = 220;
-  const pad = { l: 36, r: 36, t: 18, b: 40 };
+  const chartPeriods = periods.filter((period) => period.renewalCount > 0 || period.revenue > 0);
+  const visiblePeriods = chartPeriods.length > 0 ? chartPeriods : periods;
+  const { wrapRef, width: containerWidth } = useMeasuredChartWidth();
+  const minSlotWidth = 96;
+  const barWidthRatio = 0.58;
+  const w = Math.max(containerWidth, visiblePeriods.length * minSlotWidth);
+  const h = 248;
+  const pad = { l: 28, r: 28, t: 22, b: 42 };
   const innerW = w - pad.l - pad.r;
   const innerH = h - pad.t - pad.b;
-  const maxRevenue = periods.reduce((m, p) => Math.max(m, p.revenue), 0);
-  const maxRenewals = periods.reduce((m, p) => Math.max(m, p.renewalCount), 0);
-  const barW = periods.length > 0 ? innerW / periods.length : innerW;
-  const linePts = periods.map((period, i) => {
+  const maxRevenue = visiblePeriods.reduce((m, p) => Math.max(m, p.revenue), 0);
+  const maxRenewals = visiblePeriods.reduce((m, p) => Math.max(m, p.renewalCount), 0);
+  const barW = visiblePeriods.length > 0 ? innerW / visiblePeriods.length : innerW;
+  const linePts = visiblePeriods.map((period, i) => {
     const x = pad.l + i * barW + barW / 2;
     const y =
       pad.t +
@@ -341,7 +346,7 @@ export function DashboardRevenueRenewalTimeline({
     return { x, y, period };
   });
   const linePath = linePts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const labelStep = periods.length > 18 ? 3 : periods.length > 12 ? 2 : 1;
+  const labelStep = visiblePeriods.length > 18 ? 3 : visiblePeriods.length > 12 ? 2 : 1;
   const summaryRows: [string, string][] = selected
     ? [
         ['Period', selected.label],
@@ -364,27 +369,74 @@ export function DashboardRevenueRenewalTimeline({
       : <div className="pm-timeline-body">
           <div className="pm-timeline-main">
             <div ref={wrapRef} className="pm-timeline-chart-wrap">
-              <svg viewBox={`0 0 ${w} ${h}`} className="pm-line-svg pm-timeline-svg" role="img" aria-label={ariaLabel}>
+              <svg
+                viewBox={`0 0 ${w} ${h}`}
+                width={w}
+                className="pm-line-svg pm-timeline-svg"
+                role="img"
+                aria-label={ariaLabel}
+              >
                 <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#223550" />
                 <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
                 <line x1={w - pad.r} y1={pad.t} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
-                {periods.map((period, i) => {
+                {visiblePeriods.map((period, i) => {
+                  const slotX = pad.l + i * barW;
+                  const barWidth = Math.max(52, barW * barWidthRatio);
+                  const barX = slotX + (barW - barWidth) / 2;
+                  const barCenterX = barX + barWidth / 2;
                   const bh = maxRevenue > 0 ? (period.revenue / maxRevenue) * innerH : 0;
                   const isSelected = period.key === selectedKey;
+                  const barTop = pad.t + innerH - bh;
+                  const labelBandTop = Math.max(pad.t + 2, barTop - 30);
+                  const labelBandHeight = Math.max(24, barTop - labelBandTop - 2);
+                  const revenueY = labelBandTop + 11;
+                  const countY = labelBandTop + 23;
                   return (
-                    <rect
-                      key={`bar-${period.key}`}
-                      x={pad.l + i * barW + Math.max(1, barW * 0.12)}
-                      y={pad.t + innerH - bh}
-                      width={Math.max(3, barW * 0.76)}
-                      height={bh}
-                      fill={isSelected ? '#f08700' : '#20d4e8'}
-                      opacity={isSelected ? 1 : 0.88}
-                      className="pm-chart-hit"
-                      onClick={() => onSelect(period)}
-                    >
-                      <title>{`${period.label}: ${formatUsd(period.revenue)} revenue, ${formatNumber(period.renewalCount)} renewals`}</title>
-                    </rect>
+                    <g key={`bar-${period.key}`}>
+                      {period.renewalCount > 0 || period.revenue > 0 ?
+                        <rect
+                          x={barX}
+                          y={labelBandTop}
+                          width={barWidth}
+                          height={labelBandHeight}
+                          fill="#0b1a2a"
+                          opacity={0.92}
+                          pointerEvents="none"
+                        />
+                      : null}
+                      <rect
+                        x={barX}
+                        y={barTop}
+                        width={barWidth}
+                        height={Math.max(bh, period.renewalCount > 0 || period.revenue > 0 ? 4 : 0)}
+                        fill={isSelected ? '#f08700' : '#20d4e8'}
+                        opacity={isSelected ? 1 : 0.88}
+                        className="pm-chart-hit"
+                        onClick={() => onSelect(period)}
+                      >
+                        <title>{`${period.label}: ${formatUsd(period.revenue)} revenue, ${formatNumber(period.renewalCount)} renewals`}</title>
+                      </rect>
+                      {period.renewalCount > 0 || period.revenue > 0 ?
+                        <>
+                          <text
+                            x={barCenterX}
+                            y={revenueY}
+                            textAnchor="middle"
+                            className="pm-timeline-bar-label"
+                          >
+                            {formatTimelineBarUsd(period.revenue)}
+                          </text>
+                          <text
+                            x={barCenterX}
+                            y={countY}
+                            textAnchor="middle"
+                            className="pm-timeline-bar-label"
+                          >
+                            {formatNumber(period.renewalCount)} projects
+                          </text>
+                        </>
+                      : null}
+                    </g>
                   );
                 })}
                 {linePath ? <path d={linePath} fill="none" stroke="#f08700" strokeWidth="2.2" /> : null}
@@ -401,8 +453,8 @@ export function DashboardRevenueRenewalTimeline({
                     onClick={() => onSelect(p.period)}
                   />
                 ))}
-                {periods.map((period, i) =>
-                  i % labelStep === 0 || i === periods.length - 1 ?
+                {visiblePeriods.map((period, i) =>
+                  i % labelStep === 0 || i === visiblePeriods.length - 1 ?
                     <text
                       key={`label-${period.key}`}
                       x={pad.l + i * barW + barW / 2}

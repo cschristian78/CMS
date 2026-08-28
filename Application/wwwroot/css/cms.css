@@ -5111,8 +5111,10 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 }
 
 .pm-timeline-card {
-    padding-left: 0.55rem;
+    padding-left: 0.85rem;
     padding-right: 0.85rem;
+    overflow: hidden;
+    box-sizing: border-box;
 }
 
 .pm-timeline-card .dashboard-chart-title {
@@ -5124,6 +5126,8 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
     grid-template-columns: minmax(0, 1fr) minmax(15.5rem, max-content);
     gap: 0.85rem 1rem;
     align-items: start;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .pm-timeline-main {
@@ -5168,13 +5172,22 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 .pm-timeline-chart-wrap {
     width: 100%;
     min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .pm-timeline-svg {
-    width: 100%;
-    max-width: none;
-    height: 230px;
     display: block;
+    height: 248px;
+    max-width: none;
+}
+
+.pm-timeline-bar-label {
+    fill: #ffffff;
+    font-size: 9px;
+    font-weight: 700;
+    pointer-events: none;
 }
 
 .pm-timeline-caption {
