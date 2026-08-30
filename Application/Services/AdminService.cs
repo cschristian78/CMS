@@ -260,6 +260,12 @@ public sealed class AdminService : IAdminService
         await RefreshHomeListAsync(cancellationToken);
     }
 
+    public async Task HardDeleteClientAsync(int clientId, CancellationToken cancellationToken = default)
+    {
+        await _admin.HardDeleteClientAsync(clientId, cancellationToken);
+        await RefreshHomeListAsync(cancellationToken);
+    }
+
     public async Task<ClientAdminBulkParseResult> ParseClientImportCsvAsync(Stream csvStream, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(csvStream);
@@ -602,11 +608,23 @@ public sealed class AdminService : IAdminService
         await _admin.SetBusinessUnitActiveAsync(businessUnitId, isActive, cancellationToken);
     }
 
+    public async Task HardDeleteBusinessUnitAsync(int businessUnitId, CancellationToken cancellationToken = default)
+    {
+        await _admin.HardDeleteBusinessUnitAsync(businessUnitId, cancellationToken);
+        await RefreshHomeListAsync(cancellationToken);
+    }
+
     public async Task SaveBusinessClassAsync(BusinessClass businessClass, CancellationToken cancellationToken = default)
     {
         businessClass.BusinessClassName = businessClass.BusinessClassName?.Trim();
         businessClass.BusinessClassDescription = businessClass.BusinessClassDescription?.Trim();
         await _admin.SaveBusinessClassAsync(businessClass, cancellationToken);
+        await RefreshHomeListAsync(cancellationToken);
+    }
+
+    public async Task HardDeleteBusinessClassAsync(int businessClassId, CancellationToken cancellationToken = default)
+    {
+        await _admin.HardDeleteBusinessClassAsync(businessClassId, cancellationToken);
         await RefreshHomeListAsync(cancellationToken);
     }
 

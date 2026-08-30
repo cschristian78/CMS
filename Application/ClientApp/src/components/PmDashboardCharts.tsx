@@ -1,32 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment } from 'react';
 import type { BarChartItem } from './DashboardBarChart';
-import { formatNumber, formatPercent, formatTimelineBarUsd, formatUsd, seriesColor } from '../dashboard/dashboardColors';
+import { formatNumber, formatPercent, formatUsd, formatUsdThousands, seriesColor } from '../dashboard/dashboardColors';
 import type { RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
 
-function useMeasuredChartWidth(minWidth = 320, fallback = 960) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(fallback);
+const TIMELINE_REVENUE_FILL = '#20d4e8';
+const TIMELINE_COUNT_FILL = '#f08700';
 
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) {
-      return undefined;
-    }
-
-    const measure = () => {
-      const next = Math.max(minWidth, Math.floor(el.clientWidth));
-      if (next > 0) {
-        setWidth(next);
-      }
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return { wrapRef, width };
+function scaleBarPx(value: number, max: number, plotH: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  if (max <= 0) {
+    return 12;
+  }
+  return Math.max(8, Math.round((value / max) * plotH));
 }
 
 interface SliceItem {
@@ -308,7 +295,10 @@ interface RevenueRenewalTimelineProps {
   grain: TimelineGrain;
   periods: RenewalTimelinePeriod[];
   selectedKey: string | null;
+  /** Bar plot height in px — matches Top Clients by Revenue when 280. */
   chartHeight?: number;
+  wideChart?: boolean;
+  className?: string;
   onGrainChange: (grain: TimelineGrain) => void;
   onSelect: (period: RenewalTimelinePeriod) => void;
 }
@@ -319,191 +309,167 @@ export function DashboardRevenueRenewalTimeline({
   grain,
   periods,
   selectedKey,
-  chartHeight = 248,
+  chartHeight = 280,
+  wideChart = false,
+  className,
   onGrainChange,
   onSelect,
 }: RevenueRenewalTimelineProps) {
   const selected = periods.find((p) => p.key === selectedKey) ?? null;
   const totalRenewalCount = periods.reduce((sum, period) => sum + period.renewalCount, 0);
   const totalRevenue = periods.reduce((sum, period) => sum + period.revenue, 0);
+  const totalOnlineCount = periods.reduce((sum, period) => sum + period.onlineRenewalCount, 0);
+  const totalOnlineRevenue = periods.reduce((sum, period) => sum + period.onlineRevenue, 0);
   const chartPeriods = periods.filter((period) => period.renewalCount > 0 || period.revenue > 0);
   const visiblePeriods = chartPeriods.length > 0 ? chartPeriods : periods;
-  const { wrapRef, width: containerWidth } = useMeasuredChartWidth();
-  const minSlotWidth = 96;
-  const barWidthRatio = 0.58;
-  const w = Math.max(containerWidth, visiblePeriods.length * minSlotWidth);
-  const h = chartHeight;
-  const pad = { l: 28, r: 28, t: 22, b: 42 };
-  const innerW = w - pad.l - pad.r;
-  const innerH = h - pad.t - pad.b;
+  const plotH = chartHeight;
   const maxRevenue = visiblePeriods.reduce((m, p) => Math.max(m, p.revenue), 0);
   const maxRenewals = visiblePeriods.reduce((m, p) => Math.max(m, p.renewalCount), 0);
-  const barW = visiblePeriods.length > 0 ? innerW / visiblePeriods.length : innerW;
-  const linePts = visiblePeriods.map((period, i) => {
-    const x = pad.l + i * barW + barW / 2;
-    const y =
-      pad.t +
-      innerH -
-      (maxRenewals > 0 ? (period.renewalCount / maxRenewals) * innerH : 0);
-    return { x, y, period };
-  });
-  const linePath = linePts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const labelStep = visiblePeriods.length > 18 ? 3 : visiblePeriods.length > 12 ? 2 : 1;
   const summaryRows: [string, string][] = selected
     ? [
         ['Period', selected.label],
-        ['Renewals', formatNumber(selected.renewalCount)],
-        ['% of renewals', formatPercent(selected.renewalCount, totalRenewalCount)],
+        ['Projects', formatNumber(selected.renewalCount)],
+        ['Online projects', formatNumber(selected.onlineRenewalCount)],
+        ['% of projects', formatPercent(selected.renewalCount, totalRenewalCount)],
         ['Total revenue', formatUsd(selected.revenue)],
+        ['Online revenue', formatUsd(selected.onlineRevenue)],
         ['% of revenue', formatPercent(selected.revenue, totalRevenue)],
         ['Min revenue', formatUsd(selected.minRevenue)],
         ['Max revenue', formatUsd(selected.maxRevenue)],
         ['Average revenue', formatUsd(selected.avgRevenue)],
+        [
+          'Online share (projects)',
+          formatPercent(selected.onlineRenewalCount, selected.renewalCount),
+        ],
+        [
+          'Online share (revenue)',
+          formatPercent(selected.onlineRevenue, selected.revenue),
+        ],
       ]
     : [];
 
+  const cardClass = [
+    'dashboard-chart-card',
+    'pm-timeline-card',
+    'pm-dash-simple-bars',
+    wideChart ? 'pm-timeline-card--wide' : '',
+    className,
+  ].filter(Boolean).join(' ');
+
+  const grainToggle = (
+    <div className="pm-timeline-toggle" role="group" aria-label="Timeline grain">
+      <button
+        type="button"
+        className={'pm-timeline-toggle__btn' + (grain === 'month' ? ' is-active' : '')}
+        aria-pressed={grain === 'month'}
+        onClick={() => onGrainChange('month')}
+      >
+        Monthly
+      </button>
+      <button
+        type="button"
+        className={'pm-timeline-toggle__btn' + (grain === 'quarter' ? ' is-active' : '')}
+        aria-pressed={grain === 'quarter'}
+        onClick={() => onGrainChange('quarter')}
+      >
+        Quarterly
+      </button>
+    </div>
+  );
+
   return (
-    <section className="dashboard-chart-card pm-timeline-card" aria-label={ariaLabel}>
-      <h2 className="dashboard-chart-title">{title}</h2>
+    <section className={cardClass} aria-label={ariaLabel}>
+      <div className="pm-timeline-head">
+        <div className="pm-timeline-head-text">
+          <h2 className="dashboard-chart-title">{title}</h2>
+          {periods.length > 0 ?
+            <p className="pm-chart-value-key">
+              Cyan = Revenue ($000) · Yellow = Projects
+            </p>
+          : null}
+        </div>
+        {periods.length > 0 ? grainToggle : null}
+      </div>
 
       {periods.length === 0 ?
         <p className="field-help" role="status">No renewal dates to display.</p>
-      : <div className="pm-timeline-body">
+      : <div className={'pm-timeline-body' + (wideChart ? ' pm-timeline-body--chart-wide' : '')}>
           <div className="pm-timeline-main">
-            <div ref={wrapRef} className="pm-timeline-chart-wrap">
-              <svg
-                viewBox={`0 0 ${w} ${h}`}
-                width={w}
-                height={h}
-                className="pm-line-svg pm-timeline-svg"
-                role="img"
-                aria-label={ariaLabel}
+            <div className="bar-chart bar-chart--vertical" role="img" aria-label={ariaLabel}>
+              <div
+                className="bar-chart-plot pm-timeline-plot"
+                style={{ ['--bar-plot-height' as string]: `${plotH}px` }}
               >
-                <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#223550" />
-                <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
-                <line x1={w - pad.r} y1={pad.t} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
-                {visiblePeriods.map((period, i) => {
-                  const slotX = pad.l + i * barW;
-                  const barWidth = Math.max(52, barW * barWidthRatio);
-                  const barX = slotX + (barW - barWidth) / 2;
-                  const barCenterX = barX + barWidth / 2;
-                  const bh = maxRevenue > 0 ? (period.revenue / maxRevenue) * innerH : 0;
+                {visiblePeriods.map((period, index) => {
                   const isSelected = period.key === selectedKey;
-                  const barTop = pad.t + innerH - bh;
-                  const labelBandTop = Math.max(pad.t + 2, barTop - 30);
-                  const labelBandHeight = Math.max(24, barTop - labelBandTop - 2);
-                  const revenueY = labelBandTop + 11;
-                  const countY = labelBandTop + 23;
+                  const revH = scaleBarPx(period.revenue, maxRevenue, plotH);
+                  const countH = scaleBarPx(period.renewalCount, maxRenewals, plotH);
+                  const revShown = formatUsdThousands(period.revenue);
+                  const countShown = formatNumber(period.renewalCount);
                   return (
-                    <g key={`bar-${period.key}`}>
-                      {period.renewalCount > 0 || period.revenue > 0 ?
-                        <rect
-                          x={barX}
-                          y={labelBandTop}
-                          width={barWidth}
-                          height={labelBandHeight}
-                          fill="#0b1a2a"
-                          opacity={0.92}
-                          pointerEvents="none"
-                        />
+                    <Fragment key={period.key}>
+                      {index > 0 ?
+                        <div className="pm-timeline-set-gap" aria-hidden />
                       : null}
-                      <rect
-                        x={barX}
-                        y={barTop}
-                        width={barWidth}
-                        height={Math.max(bh, period.renewalCount > 0 || period.revenue > 0 ? 4 : 0)}
-                        fill={isSelected ? '#f08700' : '#20d4e8'}
-                        opacity={isSelected ? 1 : 0.88}
-                        className="pm-chart-hit"
+                      <button
+                        type="button"
+                        className={
+                          'pm-timeline-set pm-timeline-period bar-column--button' +
+                          (isSelected ? ' is-selected' : '')
+                        }
                         onClick={() => onSelect(period)}
+                        title={
+                          `${period.label}: ${formatUsd(period.revenue)} revenue, ` +
+                          `${formatNumber(period.renewalCount)} projects`
+                        }
                       >
-                        <title>{`${period.label}: ${formatUsd(period.revenue)} revenue, ${formatNumber(period.renewalCount)} renewals`}</title>
-                      </rect>
-                      {period.renewalCount > 0 || period.revenue > 0 ?
-                        <>
-                          <text
-                            x={barCenterX}
-                            y={revenueY}
-                            textAnchor="middle"
-                            className="pm-timeline-bar-label"
-                          >
-                            {formatTimelineBarUsd(period.revenue)}
-                          </text>
-                          <text
-                            x={barCenterX}
-                            y={countY}
-                            textAnchor="middle"
-                            className="pm-timeline-bar-label"
-                          >
-                            {formatNumber(period.renewalCount)} projects
-                          </text>
-                        </>
-                      : null}
-                    </g>
+                        <div className="pm-timeline-period-pair" aria-hidden>
+                          <div className="pm-timeline-series">
+                            <span className="bar-column-value" title={revShown}>
+                              {revShown || '\u00a0'}
+                            </span>
+                            <div className="bar-column-track pm-timeline-series-track">
+                              {(period.revenue > 0 || period.renewalCount > 0) ?
+                                <div
+                                  className="bar-column-fill"
+                                  style={{
+                                    height: `${Math.max(revH, period.revenue > 0 ? 8 : 4)}px`,
+                                    background: TIMELINE_REVENUE_FILL,
+                                  }}
+                                />
+                              : null}
+                            </div>
+                          </div>
+                          <div className="pm-timeline-series">
+                            <span className="bar-column-value" title={countShown}>
+                              {period.renewalCount > 0 ? countShown : '\u00a0'}
+                            </span>
+                            <div className="bar-column-track pm-timeline-series-track">
+                              {(period.revenue > 0 || period.renewalCount > 0) ?
+                                <div
+                                  className="bar-column-fill"
+                                  style={{
+                                    height: `${Math.max(countH, period.renewalCount > 0 ? 8 : 4)}px`,
+                                    background: TIMELINE_COUNT_FILL,
+                                  }}
+                                />
+                              : null}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="bar-column-label" title={period.label}>
+                          {period.label}
+                        </span>
+                      </button>
+                    </Fragment>
                   );
                 })}
-                {linePath ? <path d={linePath} fill="none" stroke="#f08700" strokeWidth="2.2" /> : null}
-                {linePts.map((p) => (
-                  <circle
-                    key={`dot-${p.period.key}`}
-                    cx={p.x}
-                    cy={p.y}
-                    r={p.period.key === selectedKey ? 5.5 : 4}
-                    fill="#f08700"
-                    stroke="#0b1a2a"
-                    strokeWidth="1"
-                    className="pm-chart-hit"
-                    onClick={() => onSelect(p.period)}
-                  />
-                ))}
-                {visiblePeriods.map((period, i) =>
-                  i % labelStep === 0 || i === visiblePeriods.length - 1 ?
-                    <text
-                      key={`label-${period.key}`}
-                      x={pad.l + i * barW + barW / 2}
-                      y={h - 12}
-                      textAnchor="middle"
-                      className="pm-axis-label"
-                    >
-                      {period.label}
-                    </text>
-                  : null,
-                )}
-                <text x="8" y={pad.t + 4} className="pm-axis-label">
-                  {formatUsd(maxRevenue)}
-                </text>
-                <text x={w - 8} y={pad.t + 4} textAnchor="end" className="pm-axis-label">
-                  {formatNumber(maxRenewals)} renewals
-                </text>
-              </svg>
+              </div>
             </div>
-            <p className="field-help pm-timeline-caption">
-              Bars = total LatestRevenue for projects renewing in the period. Orange line = renewal count.
-              Click a period for details.
-            </p>
           </div>
 
-          <aside className="pm-timeline-side" aria-label="Timeline period summary">
-            <div className="pm-timeline-toggle" role="group" aria-label="Timeline grain">
-              <button
-                type="button"
-                className={'pm-timeline-toggle__btn' + (grain === 'month' ? ' is-active' : '')}
-                aria-pressed={grain === 'month'}
-                onClick={() => onGrainChange('month')}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                className={'pm-timeline-toggle__btn' + (grain === 'quarter' ? ' is-active' : '')}
-                aria-pressed={grain === 'quarter'}
-                onClick={() => onGrainChange('quarter')}
-              >
-                Quarterly
-              </button>
-            </div>
-
-            {selected ?
+          {selected ?
+            <aside className="pm-timeline-side" aria-label="Timeline period summary">
               <table className="pm-timeline-summary" role="status" aria-live="polite">
                 <caption className="visually-hidden">Selected period summary</caption>
                 <tbody>
@@ -515,10 +481,12 @@ export function DashboardRevenueRenewalTimeline({
                   ))}
                 </tbody>
               </table>
-            : <p className="field-help pm-timeline-summary-empty">
-                Select a month or quarter on the chart to see period details.
-              </p>}
-          </aside>
+              <p className="field-help pm-timeline-online-totals">
+                Across timeline: {formatNumber(totalOnlineCount)} online projects ·{' '}
+                {formatUsdThousands(totalOnlineRevenue)} online revenue ($000)
+              </p>
+            </aside>
+          : null}
         </div>
       }
     </section>

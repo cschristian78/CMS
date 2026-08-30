@@ -47,10 +47,17 @@ import {
   agingBucketColor,
   formatNumber,
   formatUsd,
+  formatUsdThousands,
   projectStatusColor,
   revenueTierColor,
   seriesColor,
 } from '../dashboard/dashboardColors';
+import {
+  clientProjectListSortIndicator,
+  compareClientProjectListCellValues,
+  type ClientProjectListSortDirection,
+} from '../clientProjectList';
+
 type DashTab = 'executive' | 'portfolio' | 'workload' | 'services' | 'health';
 
 type DrillState = {
@@ -385,10 +392,11 @@ function ExecutiveTab({
     });
   }, [rows, col, selectedTimelineKey, timelineGrain]);
   const byTier = sortTiers(groupMetrics(linkedRows, col, col.revenueTier, 'Unknown'));
-  const topClients = groupMetrics(linkedRows, col, col.clientName, '(No client)').slice(0, 15);
-  const activeRows = linkedRows.filter((r) => blankLabel(cellText(r, col.projectStatus), 'Active') === 'Active');
-  const activeOnlineCount = activeRows.filter((r) => onlineLabel(r, col) === 'Online').length;
-  const activeOfflineCount = activeRows.length - activeOnlineCount;
+  const byAccountExecutive = groupMetrics(linkedRows, col, col.accountExecutive, '(No account executive)')
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  const byAnalyticsLead = groupMetrics(linkedRows, col, col.analyticsLead, '(No analytics lead)')
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  const topClients = groupMetrics(linkedRows, col, col.clientName, '(No client)').slice(0, 25);
 
   useEffect(() => {
     setSelectedTimelineKey(null);
@@ -404,7 +412,7 @@ function ExecutiveTab({
   }, [linkedRows, selectedTimelineKey, renewalTimeline, onLinkChange]);
 
   return (
-    <div className="pm-dash-grid">
+    <div className="pm-dash-grid pm-dash-grid--executive">
       <div className="pm-dash-span">
         <DashboardRevenueRenewalTimeline
           title="Revenue and Renewals Timeline"
@@ -412,49 +420,74 @@ function ExecutiveTab({
           grain={timelineGrain}
           periods={renewalTimeline}
           selectedKey={selectedTimelineKey}
-          chartHeight={496}
+          chartHeight={280}
+          wideChart
           onGrainChange={setTimelineGrain}
           onSelect={(period) => {
             setSelectedTimelineKey((prev) => (prev === period.key ? null : period.key));
           }}
         />
       </div>
-      <DashboardDonutChart
-        title="Revenue Tier Distribution"
-        ariaLabel="Count of projects by RevenueTier"
-        items={byTier.map((m) => ({ label: m.label, value: m.count, fill: revenueTierColor(m.label) }))}
-        onSelect={(label) => onDrill(
-          `Revenue tier ${label}`,
-          linkedRows.filter((r) => blankLabel(cellText(r, col.revenueTier), 'Unknown') === label),
-        )}
-      />
-      <DashboardDonutChart
-        title="Active Projects Online"
-        ariaLabel="Active projects online versus not online"
-        items={[
-          { label: 'Online', value: activeOnlineCount, fill: '#30d880' },
-          { label: 'Not Online', value: activeOfflineCount, fill: '#5a7080' },
-        ]}
-        onSelect={(label) => {
-          onDrill(
-            label === 'Online' ? 'Active projects online' : 'Active projects not online',
-            activeRows.filter((r) => onlineLabel(r, col) === (label === 'Online' ? 'Online' : 'Offline')),
-          );
-        }}
-      />
-      <DashboardBarChart
-        title="Top Clients by Revenue"
-        ariaLabel="Top 15 clients by sum of LatestRevenue"
-        orientation="horizontal"
-        items={topClients.map((m) => ({ label: `${m.label} (${m.count})`, value: m.revenue, displayValue: formatUsd(m.revenue) }))}
-        onSelect={(item) => {
-          const name = item.label.replace(/\s+\(\d+\)$/, '');
-          onDrill(
-            `Client ${name}`,
-            linkedRows.filter((r) => blankLabel(cellText(r, col.clientName), '(No client)') === name),
-          );
-        }}
-      />
+      <div className="pm-dash-row pm-dash-row--donuts">
+        <DashboardDonutChart
+          title="Revenue Tier Distribution"
+          ariaLabel="Count of projects by RevenueTier"
+          items={byTier.map((m) => ({ label: m.label, value: m.count, fill: revenueTierColor(m.label) }))}
+          onSelect={(label) => onDrill(
+            `Revenue tier ${label}`,
+            linkedRows.filter((r) => blankLabel(cellText(r, col.revenueTier), 'Unknown') === label),
+          )}
+        />
+        <DashboardDonutChart
+          title="Projects by Account Executive"
+          ariaLabel="Count of projects by Account Executive"
+          items={byAccountExecutive.map((m, i) => ({
+            label: m.label,
+            value: m.count,
+            fill: seriesColor(i, m.label),
+          }))}
+          onSelect={(label) => onDrill(
+            `Account executive ${label}`,
+            linkedRows.filter((r) => blankLabel(cellText(r, col.accountExecutive), '(No account executive)') === label),
+          )}
+        />
+        <DashboardDonutChart
+          title="Projects by Analytics Lead"
+          ariaLabel="Count of projects by Analytics Lead"
+          items={byAnalyticsLead.map((m, i) => ({
+            label: m.label,
+            value: m.count,
+            fill: seriesColor(i, m.label),
+          }))}
+          onSelect={(label) => onDrill(
+            `Analytics lead ${label}`,
+            linkedRows.filter((r) => blankLabel(cellText(r, col.analyticsLead), '(No analytics lead)') === label),
+          )}
+        />
+      </div>
+      <div className="pm-dash-span">
+        <DashboardBarChart
+          title="Top Clients by Revenue"
+          ariaLabel="Top 25 clients by sum of LatestRevenue"
+          orientation="vertical"
+          plotHeightPx={280}
+          className="pm-dash-clients-chart pm-dash-simple-bars"
+          valueKey="Revenue ($000)"
+          items={topClients.map((m) => ({
+            label: `${m.label} (${m.count})`,
+            value: m.revenue,
+            displayValue: formatUsdThousands(m.revenue),
+            fill: '#20d4e8',
+          }))}
+          onSelect={(item) => {
+            const name = item.label.replace(/\s+\(\d+\)$/, '');
+            onDrill(
+              `Client ${name}`,
+              linkedRows.filter((r) => blankLabel(cellText(r, col.clientName), '(No client)') === name),
+            );
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -833,6 +866,58 @@ function HealthTab({
   );
 }
 
+type DetailSortKey =
+  | 'client'
+  | 'projectNumber'
+  | 'projectName'
+  | 'type'
+  | 'status'
+  | 'tier'
+  | 'revenue'
+  | 'hours';
+
+const DETAIL_SORT_COLUMNS: {
+  key: DetailSortKey;
+  label: string;
+  kind: 'text' | 'number';
+}[] = [
+  { key: 'client', label: 'Client', kind: 'text' },
+  { key: 'projectNumber', label: 'Project Number', kind: 'text' },
+  { key: 'projectName', label: 'Project Name', kind: 'text' },
+  { key: 'type', label: 'Type', kind: 'text' },
+  { key: 'status', label: 'Status', kind: 'text' },
+  { key: 'tier', label: 'Tier', kind: 'text' },
+  { key: 'revenue', label: 'Latest Revenue', kind: 'number' },
+  { key: 'hours', label: 'Hours', kind: 'number' },
+];
+
+function detailSortValue(
+  row: DashCell[],
+  col: DashColIndex,
+  key: DetailSortKey,
+): string | number {
+  switch (key) {
+    case 'client':
+      return cellText(row, col.clientName);
+    case 'projectNumber':
+      return cellText(row, col.projectNumber);
+    case 'projectName':
+      return cellText(row, col.projectName);
+    case 'type':
+      return cellText(row, col.ptDescription);
+    case 'status':
+      return blankLabel(cellText(row, col.projectStatus), 'Active');
+    case 'tier':
+      return blankLabel(cellText(row, col.revenueTier), 'Unknown');
+    case 'revenue':
+      return cellNumber(row, col.latestRevenue);
+    case 'hours':
+      return cellNumber(row, col.totalHours);
+    default:
+      return '';
+  }
+}
+
 function DetailGrid({
   title, rows, col, inactive, onClear,
 }: {
@@ -842,6 +927,46 @@ function DetailGrid({
   inactive?: DashboardInactiveProject[];
   onClear?: () => void;
 }) {
+  const [sortKey, setSortKey] = useState<DetailSortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<ClientProjectListSortDirection>('asc');
+
+  useEffect(() => {
+    setSortKey(null);
+    setSortDirection('asc');
+  }, [title]);
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) {
+      return rows;
+    }
+    const colMeta = DETAIL_SORT_COLUMNS.find((c) => c.key === sortKey);
+    const kind = colMeta?.kind ?? 'text';
+    const indexed = rows.map((row, originalIndex) => ({ row, originalIndex }));
+    indexed.sort((left, right) => {
+      const cmp = compareClientProjectListCellValues(
+        detailSortValue(left.row, col, sortKey),
+        detailSortValue(right.row, col, sortKey),
+        kind,
+      );
+      if (cmp !== 0) {
+        return sortDirection === 'asc' ? cmp : -cmp;
+      }
+      return left.originalIndex - right.originalIndex;
+    });
+    return indexed.map((entry) => entry.row);
+  }, [rows, col, sortKey, sortDirection]);
+
+  const handleSort = (key: DetailSortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSortDirection('asc');
+      return key;
+    });
+  };
+
   return (
     <section className="dashboard-chart-card pm-detail">
       <div className="pm-detail-head">
@@ -852,8 +977,36 @@ function DetailGrid({
         <table className="dashboard-data-table dashboard-data-table--full home-client-project-table">
           <thead>
             <tr>
-              <th>Client</th><th>Project Number</th><th>Project Name</th><th>Type</th>
-              <th>Status</th><th>Tier</th><th>Latest Revenue</th><th>Hours</th><th></th>
+              {DETAIL_SORT_COLUMNS.map((column, ci) => (
+                <th key={column.key} scope="col">
+                  <button
+                    type="button"
+                    className="home-client-project-table__sort-btn"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSort(column.key);
+                    }}
+                    aria-sort={
+                      sortKey === column.key ?
+                        sortDirection === 'asc' ?
+                          'ascending'
+                        : 'descending'
+                      : 'none'
+                    }
+                  >
+                    {column.label}
+                    <span className="home-client-project-table__sort-indicator" aria-hidden="true">
+                      {clientProjectListSortIndicator(
+                        ci,
+                        sortKey === null ? null : DETAIL_SORT_COLUMNS.findIndex((c) => c.key === sortKey),
+                        sortDirection,
+                      )}
+                    </span>
+                  </button>
+                </th>
+              ))}
+              <th scope="col"><span className="sr-only">Edit</span></th>
             </tr>
           </thead>
           <tbody>
@@ -868,7 +1021,7 @@ function DetailGrid({
                 <td><Link to={`/projects/${p.projectID}`}>Edit</Link></td>
               </tr>
             ))}
-            {rows.slice(0, 200).map((row, i) => {
+            {sortedRows.slice(0, 200).map((row, i) => {
               const pid = projectIdOf(row, col);
               const status = blankLabel(cellText(row, col.projectStatus), 'Active');
               const tier = blankLabel(cellText(row, col.revenueTier), 'Unknown');

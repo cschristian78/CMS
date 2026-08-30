@@ -38,6 +38,7 @@ public interface IAdminService
     Task<IReadOnlyList<ClientAdminRow>> ListClientsAsync(string? searchTerm, bool includeInactive, CancellationToken cancellationToken = default);
     Task<int> SaveClientAsync(ClientAdminSaveRequest request, CancellationToken cancellationToken = default);
     Task SoftDeleteClientAsync(int clientId, CancellationToken cancellationToken = default);
+    Task HardDeleteClientAsync(int clientId, CancellationToken cancellationToken = default);
 
     Task<ClientAdminBulkParseResult> ParseClientImportCsvAsync(Stream csvStream, CancellationToken cancellationToken = default);
     Task<ClientAdminBulkVerifyResult> VerifyClientImportRowsAsync(IReadOnlyList<ClientAdminImportRowDto> rows, CancellationToken cancellationToken = default);
@@ -48,7 +49,9 @@ public interface IAdminService
     Task SaveProjectTypeAsync(ProjectType projectType, CancellationToken cancellationToken = default);
     Task SaveBusinessUnitAsync(BusinessUnit businessUnit, CancellationToken cancellationToken = default);
     Task SetBusinessUnitActiveAsync(int businessUnitId, bool isActive, CancellationToken cancellationToken = default);
+    Task HardDeleteBusinessUnitAsync(int businessUnitId, CancellationToken cancellationToken = default);
     Task SaveBusinessClassAsync(BusinessClass businessClass, CancellationToken cancellationToken = default);
+    Task HardDeleteBusinessClassAsync(int businessClassId, CancellationToken cancellationToken = default);
     Task SaveClientCategoryAsync(ClientCategory category, CancellationToken cancellationToken = default);
     Task SaveClientTypeAsync(ClientType clientType, CancellationToken cancellationToken = default);
     Task SetClientTypeActiveAsync(int clientTypeId, bool isActive, CancellationToken cancellationToken = default);

@@ -1156,6 +1156,54 @@ textarea {
     background: #e8f0fc;
 }
 
+.admin-context-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    appearance: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    cursor: default;
+}
+
+.admin-context-menu {
+    position: fixed;
+    z-index: 1201;
+    min-width: 10.5rem;
+    padding: 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(24, 54, 89, 0.22);
+}
+
+.admin-context-menu__item {
+    display: block;
+    width: 100%;
+    appearance: none;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.9rem;
+    text-align: left;
+    padding: 0.45rem 0.65rem;
+    cursor: pointer;
+}
+
+.admin-context-menu__item:hover,
+.admin-context-menu__item:focus-visible {
+    background: #f0f4fa;
+    outline: none;
+}
+
+.admin-context-menu__item--danger {
+    color: #b91c1c;
+}
+
 .admin-user-pick-name {
     display: flex;
     align-items: center;
@@ -2096,7 +2144,7 @@ textarea {
 
 .bar-chart--vertical .bar-column-track {
     width: 100%;
-    height: 160px;
+    height: var(--bar-plot-height, 160px);
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -2311,20 +2359,12 @@ textarea {
 .dashboard-tabular-filters--home .dashboard-filter-field--bc,
 .dashboard-tabular-filters--home .dashboard-filter-field--status,
 .dashboard-tabular-filters--home .dashboard-filter-field--online,
-.dashboard-tabular-filters--home .dashboard-filter-field--project-type {
+.dashboard-tabular-filters--home .dashboard-filter-field--project-type,
+.dashboard-tabular-filters--home .dashboard-filter-field--analytics-lead {
     flex: 0 0 auto;
     width: auto;
     min-width: 0;
     max-width: none;
-}
-
-.dashboard-tabular-filters--home .dashboard-filter-field--analytics-lead {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 10.5rem;
-    max-width: 16rem;
-    position: relative;
-    z-index: 4;
 }
 
 .dashboard-tabular-filters--home .dashboard-filter-field--client {
@@ -2358,76 +2398,6 @@ textarea {
 
 .dashboard-filter-field--grow {
     min-width: 0;
-}
-
-.home-multi-select {
-    position: relative;
-    width: 100%;
-}
-
-.home-multi-select__button {
-    display: block;
-    width: 100%;
-    min-width: 10.5rem;
-    max-width: 16rem;
-    padding: 0.32rem 0.4rem;
-    font-size: 0.72rem;
-    line-height: 1.25;
-    text-align: left;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.home-multi-select__menu {
-    position: absolute;
-    top: calc(100% + 0.15rem);
-    left: 0;
-    z-index: 30;
-    min-width: 100%;
-    width: max-content;
-    max-width: 22rem;
-    max-height: 16rem;
-    overflow: auto;
-    padding: 0.35rem 0.4rem 0.45rem;
-    background: #fff;
-    border: 1px solid #c5ccd4;
-}
-
-.home-multi-select__menu-actions {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.3rem;
-}
-
-.home-multi-select__text-btn {
-    border: 0;
-    background: none;
-    padding: 0;
-    font-size: 0.7rem;
-    cursor: pointer;
-    text-decoration: underline;
-}
-
-.home-multi-select__option {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.35rem;
-    font-size: 0.72rem;
-    line-height: 1.3;
-    padding: 0.12rem 0;
-    cursor: pointer;
-}
-
-.home-multi-select__option span {
-    min-width: 0;
-}
-
-.home-multi-select__empty {
-    margin: 0;
-    font-size: 0.72rem;
 }
 
 .home-column-filter-badge {
@@ -5091,6 +5061,321 @@ a.link-button:hover,
     align-items: start;
 }
 
+.pm-dash-grid--executive {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+}
+
+.pm-dash-row--donuts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: stretch;
+}
+
+.pm-dash-row--donuts .dashboard-chart-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 19rem;
+}
+
+.pm-dash-row--donuts .pm-donut {
+    flex: 1;
+    grid-template-columns: minmax(9.5rem, 10.5rem) minmax(0, 1fr);
+    align-items: start;
+}
+
+.pm-dash-row--donuts .pm-donut-svg {
+    width: 10.5rem;
+    height: 10.5rem;
+}
+
+.pm-dash-row--donuts .pm-donut-total {
+    font-size: 14px;
+}
+
+.pm-dash-row--donuts .pm-donut-total-label {
+    font-size: 9px;
+}
+
+/* Fit ~10 legend rows; reserve gutter so scrollbar never covers values */
+.pm-donut .pm-legend {
+    max-height: 11.25rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+    padding-right: 0.45rem;
+    gap: 0.1rem;
+    box-sizing: border-box;
+}
+
+.pm-donut .pm-legend-btn {
+    font-size: 0.7rem;
+    line-height: 1.2;
+    grid-template-columns: 0.55rem minmax(0, 1fr) max-content;
+    column-gap: 0.3rem;
+    padding: 0.04rem 0.2rem 0.04rem 0;
+    min-height: 0;
+}
+
+.pm-donut .pm-legend-btn span:nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-donut .pm-legend-btn strong {
+    justify-self: end;
+    padding-inline-end: 0.1rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pm-donut .pm-swatch {
+    width: 0.55rem;
+    height: 0.55rem;
+}
+
+/* Shared vertical bar style: Top Clients + Revenue/Renewals Timeline */
+.pm-dash-simple-bars,
+.pm-dash-clients-chart {
+    --pm-bar-gap: 0.55rem;
+    --pm-bar-track-width: 2.75rem;
+}
+
+.pm-dash-simple-bars .bar-chart.bar-chart--vertical,
+.pm-dash-clients-chart .bar-chart.bar-chart--vertical {
+    margin-top: 0.35rem;
+}
+
+.pm-dash-simple-bars .bar-chart--vertical .bar-chart-plot,
+.pm-dash-clients-chart .bar-chart--vertical .bar-chart-plot {
+    position: relative;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: var(--pm-bar-gap);
+    min-height: calc(var(--bar-plot-height, 160px) + 4.75rem);
+    padding: 0.15rem 0 0;
+}
+
+.pm-dash-simple-bars .bar-chart--vertical .bar-column,
+.pm-dash-clients-chart .bar-chart--vertical .bar-column {
+    flex: 1 1 0;
+    min-width: var(--pm-bar-track-width);
+    max-width: none;
+    display: grid;
+    grid-template-rows: 1.5rem var(--bar-plot-height, 160px) minmax(2.6rem, auto);
+    align-items: center;
+    justify-items: center;
+    gap: 0.4rem;
+    height: auto;
+}
+
+.pm-dash-simple-bars .bar-chart--vertical .bar-column-value,
+.pm-dash-clients-chart .bar-chart--vertical .bar-column-value {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    min-height: 1.5rem;
+    height: 1.5rem;
+    margin: 0;
+    padding: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--primary);
+}
+
+.pm-dash-simple-bars .bar-chart--vertical .bar-column-track,
+.pm-dash-clients-chart .bar-chart--vertical .bar-column-track {
+    position: relative;
+    width: 100%;
+    max-width: var(--pm-bar-track-width);
+    height: var(--bar-plot-height, 160px);
+    margin: 0 auto;
+    background: transparent !important;
+    border-radius: 0;
+    overflow: visible;
+    display: block;
+}
+
+.pm-dash-simple-bars .bar-chart--vertical .bar-column-fill,
+.pm-dash-clients-chart .bar-chart--vertical .bar-column-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    margin: 0;
+    border-radius: 3px 3px 0 0;
+    background: #20d4e8;
+}
+
+.pm-dash-simple-bars .bar-chart--vertical .bar-column-label,
+.pm-dash-clients-chart .bar-chart--vertical .bar-column-label {
+    width: 100%;
+    min-height: 2.6rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.pm-timeline-plot.bar-chart-plot {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    /*
+     * 1) Sets are fixed width (bars + within-set gap)
+     * 2) .pm-timeline-set-gap flexes equally to consume leftover full width
+     */
+    gap: 0;
+    justify-content: flex-start;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: auto;
+}
+
+/* Even leftover space between period sets (after set widths are fixed) */
+.pm-timeline-set-gap {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    align-self: stretch;
+    pointer-events: none;
+}
+
+.pm-timeline-line-overlay {
+    display: none;
+}
+
+.pm-dash-simple-bars .bar-column--button.is-selected .bar-column-fill {
+    background: #f08700;
+}
+
+/*
+ * Timeline period set = revenue bar + project-count bar.
+ * Width is fixed first; between-set gaps take whatever remains.
+ */
+.pm-timeline-plot .pm-timeline-period,
+.pm-timeline-plot .pm-timeline-set {
+    flex: 0 0 auto;
+    flex-shrink: 0;
+    width: calc(2 * var(--pm-bar-track-width) + var(--pm-bar-gap));
+    min-width: calc(2 * var(--pm-bar-track-width) + var(--pm-bar-gap));
+    max-width: calc(2 * var(--pm-bar-track-width) + var(--pm-bar-gap));
+    display: grid;
+    grid-template-rows: auto minmax(2.6rem, auto);
+    align-items: stretch;
+    justify-items: stretch;
+    gap: 0.4rem;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.pm-timeline-plot .pm-timeline-period.is-selected,
+.pm-timeline-plot .pm-timeline-set.is-selected {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    background: rgba(240, 135, 0, 0.06);
+}
+
+.pm-timeline-period-pair {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: stretch;
+    /* Applied first: matches Top Clients bar gap */
+    gap: var(--pm-bar-gap);
+    width: 100%;
+    min-width: calc(2 * var(--pm-bar-track-width) + var(--pm-bar-gap));
+}
+
+.pm-timeline-series {
+    flex: 0 0 var(--pm-bar-track-width);
+    width: var(--pm-bar-track-width);
+    min-width: var(--pm-bar-track-width);
+    display: grid;
+    grid-template-rows: 1.5rem var(--bar-plot-height, 160px);
+    align-items: center;
+    justify-items: center;
+    gap: 0.4rem;
+    height: auto;
+}
+
+.pm-timeline-series .bar-column-value {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    min-height: 1.5rem;
+    height: 1.5rem;
+    margin: 0;
+    padding: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--primary);
+    overflow: visible;
+}
+
+.pm-timeline-series-track.bar-column-track {
+    position: relative;
+    width: 100%;
+    max-width: var(--pm-bar-track-width);
+    height: var(--bar-plot-height, 160px);
+    margin: 0 auto;
+    background: transparent !important;
+    border-radius: 0;
+    overflow: visible;
+    display: block;
+}
+
+.pm-timeline-series-track .bar-column-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    margin: 0;
+    border-radius: 3px 3px 0 0;
+}
+
+.pm-timeline-plot .pm-timeline-period .bar-column-label,
+.pm-timeline-plot .pm-timeline-set .bar-column-label {
+    width: 100%;
+    min-height: 2.6rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.pm-timeline-online-totals {
+    margin: 0.65rem 0 0;
+}
+
 .pm-dash-span {
     grid-column: 1 / -1;
     width: 100%;
@@ -5108,17 +5393,82 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
     margin-left: calc(-1.25rem - var(--page-shell-inline-pad));
     margin-right: calc(-1.25rem - var(--page-shell-inline-pad));
     width: calc(100% + 2.5rem + 2 * var(--page-shell-inline-pad));
+    max-width: none;
+    padding-left: max(0.85rem, var(--page-shell-inline-pad));
+    padding-right: max(0.85rem, var(--page-shell-inline-pad));
+    box-sizing: border-box;
+}
+
+.pm-timeline-card--wide {
+    width: 100%;
+    max-width: 100%;
+}
+
+.pm-timeline-card--wide .pm-timeline-main,
+.pm-timeline-card--wide .pm-timeline-body {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.pm-timeline-card--wide .pm-timeline-main .bar-chart {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.pm-timeline-card--wide .pm-timeline-chart-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.pm-timeline-card--wide .pm-timeline-svg {
+    display: block;
+    width: 100%;
+    max-width: 100%;
 }
 
 .pm-timeline-card {
+    width: 100%;
+    max-width: 100%;
     padding-left: 0.85rem;
     padding-right: 0.85rem;
     overflow: hidden;
     box-sizing: border-box;
 }
 
-.pm-timeline-card .dashboard-chart-title {
+.pm-timeline-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.65rem 1rem;
     margin-bottom: 0.55rem;
+}
+
+.pm-timeline-head-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.pm-timeline-head .dashboard-chart-title {
+    margin: 0;
+}
+
+.pm-chart-value-key {
+    margin: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.dashboard-chart-card > .pm-chart-value-key {
+    margin: -0.45rem 0 0.65rem;
 }
 
 .pm-timeline-body {
@@ -5130,8 +5480,26 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
     min-width: 0;
 }
 
+.pm-timeline-body--chart-wide {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.pm-timeline-body--chart-wide .pm-timeline-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.85rem 1.25rem;
+    min-width: 0;
+}
+
+.pm-timeline-body--chart-wide .pm-timeline-summary {
+    flex: 1 1 22rem;
+}
+
 .pm-timeline-main {
     min-width: 0;
+    width: 100%;
+    max-width: 100%;
 }
 
 .pm-timeline-side {
@@ -5184,9 +5552,49 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 
 .pm-timeline-bar-label {
     fill: #ffffff;
-    font-size: 9px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     font-weight: 700;
     pointer-events: none;
+}
+
+.pm-timeline-value-label {
+    fill: var(--primary, #f08700);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    pointer-events: none;
+}
+
+.pm-timeline-period-label {
+    fill: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    pointer-events: none;
+}
+
+.pm-timeline-card--wide .pm-timeline-bar-label,
+.pm-timeline-card--wide .pm-timeline-value-label {
+    font-size: 11.5px;
+}
+
+.pm-timeline-card--wide .pm-timeline-period-label {
+    font-size: 14px;
+}
+
+.pm-timeline-card--wide .pm-timeline-caption {
+    font-size: 0.92rem;
+}
+
+.pm-timeline-card--wide .pm-timeline-toggle__btn {
+    font-size: 0.88rem;
+    padding: 0.45rem 0.85rem;
+}
+
+.pm-timeline-card--wide .pm-timeline-summary th,
+.pm-timeline-card--wide .pm-timeline-summary td {
+    font-size: 0.9rem;
 }
 
 .pm-timeline-caption {
@@ -5453,6 +5861,7 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 @media (max-width: 900px) {
     .pm-kpi-row,
     .pm-dash-grid,
+    .pm-dash-row--donuts,
     .pm-donut {
         grid-template-columns: 1fr;
     }

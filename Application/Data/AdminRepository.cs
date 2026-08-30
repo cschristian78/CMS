@@ -340,6 +340,38 @@ public sealed class AdminRepository : IAdminRepository
         return businessUnitId;
     }
 
+    public async Task HardDeleteBusinessUnitAsync(int businessUnitId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _db.ExecuteAsync("dbo.usp_BusinessUnit_HardDelete",
+            [
+                SqlParameterFactory.Int("@BusinessUnitID", businessUnitId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number is 50001 or 50002)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
+        }
+    }
+
+    public async Task HardDeleteBusinessClassAsync(int businessClassId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _db.ExecuteAsync("dbo.usp_BusinessClass_HardDelete",
+            [
+                SqlParameterFactory.Int("@BusinessClassID", businessClassId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number is 50001 or 50002)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
+        }
+    }
+
     public async Task<int> SaveBusinessClassAsync(BusinessClass bc, CancellationToken cancellationToken = default)
     {
         if (bc.BusinessClassID > 0)
@@ -586,6 +618,22 @@ public sealed class AdminRepository : IAdminRepository
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
         ], cancellationToken);
         return clientId;
+    }
+
+    public async Task HardDeleteClientAsync(int clientId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _db.ExecuteAsync("dbo.usp_Client_HardDelete",
+            [
+                SqlParameterFactory.Int("@ClientID", clientId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number is 50001 or 50002)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
+        }
     }
 
     /// <summary>Coerce an arbitrary status string to one of the allowed values, defaulting to Active.</summary>

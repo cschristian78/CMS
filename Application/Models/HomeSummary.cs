@@ -2,11 +2,11 @@ namespace ClientManagementSystem.Models;
 
 public sealed class HomeSummary
 {
-    /// <summary>Distinct <c>ClientID</c> in <c>dbo.vProject_Current</c> with Active client status
-    /// and Active project (same scope as Total Revenue and the Executive dashboard).</summary>
-    public int UniqueClientCount { get; set; }
+    /// <summary>Distinct active <c>ProjectID</c> values in <c>dbo.vProject_Current</c> with Active
+    /// client status and Active project (same scope as Total Revenue).</summary>
+    public int ActiveProjectCount { get; set; }
 
-    /// <summary>Distinct active <c>ProjectID</c> values in scope for the current filters.</summary>
+    /// <summary>Distinct active <c>ProjectID</c> values in scope for the current Main list filters.</summary>
     public int DistinctProjectCount { get; set; }
 
     /// <summary>Sum of latest revenue for all Active clients and Active projects (ignores Main list filters).</summary>

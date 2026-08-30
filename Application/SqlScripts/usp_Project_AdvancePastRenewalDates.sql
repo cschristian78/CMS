@@ -4,6 +4,8 @@
   Projects with RenewalDate on or after today are unchanged.
 
   Example: RenewalDate 2027-07-01 -> 2026-07-01, DueDate -> 2026-05-01
+
+  use bms_cms
 */
 SET NOCOUNT ON;
 SET QUOTED_IDENTIFIER ON;
@@ -19,8 +21,8 @@ SET
     DueDate = DATEADD(MONTH, -2, DATEADD(YEAR, -1, p.RenewalDate)),
     ModifiedDate = SYSUTCDATETIME()
 FROM dbo.tProject p
-WHERE p.RenewalDate IS NOT NULL
-  AND p.RenewalDate < @Today;
+--WHERE p.RenewalDate IS NOT NULL
+ -- AND p.RenewalDate < @Today;
 
 SELECT @@ROWCOUNT AS ProjectsUpdated;
 
@@ -30,3 +32,5 @@ BEGIN
 END
 
 COMMIT TRANSACTION;
+
+select * from tproject

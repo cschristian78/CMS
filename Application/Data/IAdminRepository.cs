@@ -30,8 +30,10 @@ public interface IAdminRepository
 
     Task<int> SaveBusinessUnitAsync(BusinessUnit businessUnit, CancellationToken cancellationToken = default);
     Task<int> SetBusinessUnitActiveAsync(int businessUnitId, bool isActive, CancellationToken cancellationToken = default);
+    Task HardDeleteBusinessUnitAsync(int businessUnitId, CancellationToken cancellationToken = default);
 
     Task<int> SaveBusinessClassAsync(BusinessClass businessClass, CancellationToken cancellationToken = default);
+    Task HardDeleteBusinessClassAsync(int businessClassId, CancellationToken cancellationToken = default);
 
     Task<int> SaveClientCategoryAsync(ClientCategory category, CancellationToken cancellationToken = default);
     Task<int> SaveClientTypeAsync(ClientType clientType, CancellationToken cancellationToken = default);
@@ -57,6 +59,7 @@ public interface IAdminRepository
     Task<IReadOnlyList<ClientAdminRow>> ListClientsAsync(string? searchTerm, bool includeInactive, CancellationToken cancellationToken = default);
     Task<int> SaveClientAsync(ClientAdminSaveRequest request, CancellationToken cancellationToken = default);
     Task<int> SoftDeleteClientAsync(int clientId, CancellationToken cancellationToken = default);
+    Task HardDeleteClientAsync(int clientId, CancellationToken cancellationToken = default);
 
     // Services
     Task<IReadOnlyList<Service>> GetServicesAsync(bool includeDeleted = false, CancellationToken cancellationToken = default);

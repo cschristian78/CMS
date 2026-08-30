@@ -152,6 +152,75 @@ BEGIN
     END CATCH
 END;
 GO
+CREATE OR ALTER PROCEDURE usp_BusinessUnit_HardDelete
+    @BusinessUnitID INT,
+    @ActingUserID   INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tBusinessUnit WHERE BusinessUnitID = @BusinessUnitID)
+        THROW 50001, 'tBusinessUnit not found.', 1;
+
+    DECLARE @ActiveProjectCount INT =
+    (
+        SELECT COUNT(DISTINCT p.ProjectID)
+          FROM dbo.tProject AS p
+         INNER JOIN dbo.tProjectRef AS pr
+            ON pr.ProjectID = p.ProjectID
+           AND pr.IsActive = 1
+         INNER JOIN dbo.tClientRef AS cr
+            ON cr.ClientRefID = pr.ClientRefID
+         WHERE cr.BusinessUnitID = @BusinessUnitID
+           AND p.IsActive = 1
+    );
+
+    IF @ActiveProjectCount > 0
+        THROW 50002, 'This business unit cannot be deleted because it is associated with active projects. Please remove the project before deleting the business unit.', 1;
+
+    DECLARE @BusinessUnitName VARCHAR(100);
+    SELECT @BusinessUnitName = BusinessUnitName
+      FROM dbo.tBusinessUnit
+     WHERE BusinessUnitID = @BusinessUnitID;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessUnit',
+            @EntityID   = @BusinessUnitID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove',
+            @FieldName  = NULL,
+            @OldValue   = @BusinessUnitName,
+            @NewValue   = NULL;
+
+        UPDATE dbo.tClientRef
+           SET BusinessUnitID = NULL
+         WHERE BusinessUnitID = @BusinessUnitID;
+
+        IF COL_LENGTH(N'dbo.tBusinessClass', N'BusinessUnitID') IS NOT NULL
+        BEGIN
+            DECLARE @clearBcSql nvarchar(400) =
+                N'UPDATE dbo.tBusinessClass SET BusinessUnitID = NULL WHERE BusinessUnitID = @BusinessUnitID';
+            EXEC sys.sp_executesql
+                @clearBcSql,
+                N'@BusinessUnitID INT',
+                @BusinessUnitID = @BusinessUnitID;
+        END;
+
+        DELETE FROM dbo.tBusinessUnit
+         WHERE BusinessUnitID = @BusinessUnitID;
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+GO
 
 --tBusinessClass
 CREATE OR ALTER PROCEDURE usp_CreateTable_tBusinessClass
@@ -304,6 +373,65 @@ BEGIN
             @EntityID   = @BusinessClassID,
             @UserID     = @ActingUserID,
             @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+GO
+CREATE OR ALTER PROCEDURE usp_BusinessClass_HardDelete
+    @BusinessClassID INT,
+    @ActingUserID    INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tBusinessClass WHERE BusinessClassID = @BusinessClassID)
+        THROW 50001, 'tBusinessClass not found.', 1;
+
+    DECLARE @ActiveProjectCount INT =
+    (
+        SELECT COUNT(DISTINCT p.ProjectID)
+          FROM dbo.tProject AS p
+         INNER JOIN dbo.tProjectRef AS pr
+            ON pr.ProjectID = p.ProjectID
+           AND pr.IsActive = 1
+         INNER JOIN dbo.tClientRef AS cr
+            ON cr.ClientRefID = pr.ClientRefID
+         WHERE cr.BusinessClassID = @BusinessClassID
+           AND p.IsActive = 1
+    );
+
+    IF @ActiveProjectCount > 0
+        THROW 50002, 'This business class cannot be deleted because it is associated with active projects. Please remove the project before deleting the business class.', 1;
+
+    DECLARE @BusinessClassName VARCHAR(100);
+    SELECT @BusinessClassName = BusinessClassName
+      FROM dbo.tBusinessClass
+     WHERE BusinessClassID = @BusinessClassID;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'BusinessClass',
+            @EntityID   = @BusinessClassID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove',
+            @FieldName  = NULL,
+            @OldValue   = @BusinessClassName,
+            @NewValue   = NULL;
+
+        UPDATE dbo.tClientRef
+           SET BusinessClassID = NULL
+         WHERE BusinessClassID = @BusinessClassID;
+
+        DELETE FROM dbo.tBusinessClass
+         WHERE BusinessClassID = @BusinessClassID;
 
         COMMIT TRAN;
     END TRY
@@ -1865,6 +1993,121 @@ BEGIN
             @EntityID   = @ClientID,
             @UserID     = @ActingUserID,
             @Action     = 'SoftDelete';
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+GO
+CREATE OR ALTER PROCEDURE usp_Client_HardDelete
+    @ClientID     INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tClient WHERE ClientID = @ClientID)
+        THROW 50001, 'tClient not found.', 1;
+
+    DECLARE @ActiveProjectCount INT =
+    (
+        SELECT COUNT(DISTINCT p.ProjectID)
+          FROM dbo.tProject AS p
+         INNER JOIN dbo.tProjectRef AS pr
+            ON pr.ProjectID = p.ProjectID
+           AND pr.IsActive = 1
+         INNER JOIN dbo.tClientRef AS cr
+            ON cr.ClientRefID = pr.ClientRefID
+         WHERE cr.ClientID = @ClientID
+           AND p.IsActive = 1
+    );
+
+    IF @ActiveProjectCount > 0
+        THROW 50002, 'This client cannot be deleted because it is associated with active projects. Please remove the project before deleting the client.', 1;
+
+    DECLARE @ClientName VARCHAR(150);
+    SELECT @ClientName = ClientName
+      FROM dbo.tClient
+     WHERE ClientID = @ClientID;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'Client',
+            @EntityID   = @ClientID,
+            @UserID     = @ActingUserID,
+            @Action     = 'Remove',
+            @FieldName  = NULL,
+            @OldValue   = @ClientName,
+            @NewValue   = NULL;
+
+        DECLARE @Projects TABLE (ProjectID INT NOT NULL PRIMARY KEY);
+
+        INSERT INTO @Projects (ProjectID)
+        SELECT DISTINCT p.ProjectID
+          FROM dbo.tProject AS p
+         INNER JOIN dbo.tProjectRef AS pr
+            ON pr.ProjectID = p.ProjectID
+         INNER JOIN dbo.tClientRef AS cr
+            ON cr.ClientRefID = pr.ClientRefID
+         WHERE cr.ClientID = @ClientID;
+
+        IF EXISTS (SELECT 1 FROM @Projects)
+        BEGIN
+            IF OBJECT_ID(N'dbo.tProjectTimeEntry', N'U') IS NOT NULL
+            BEGIN
+                DELETE te
+                  FROM dbo.tProjectTimeEntry AS te
+                 INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = te.ProjectRefID
+                 INNER JOIN @Projects AS x ON x.ProjectID = pr.ProjectID;
+            END;
+
+            IF OBJECT_ID(N'dbo.tProjectCalendarItem', N'U') IS NOT NULL
+            BEGIN
+                DELETE ci
+                  FROM dbo.tProjectCalendarItem AS ci
+                 INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = ci.ProjectRefID
+                 INNER JOIN @Projects AS x ON x.ProjectID = pr.ProjectID;
+            END;
+
+            IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
+            BEGIN
+                DELETE pf
+                  FROM dbo.tProjectFile AS pf
+                 INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = pf.ProjectRefID
+                 INNER JOIN @Projects AS x ON x.ProjectID = pr.ProjectID;
+            END;
+
+            IF OBJECT_ID(N'dbo.tProjectTag', N'U') IS NOT NULL
+            BEGIN
+                DELETE pt
+                  FROM dbo.tProjectTag AS pt
+                 INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = pt.ProjectRefID
+                 INNER JOIN @Projects AS x ON x.ProjectID = pr.ProjectID;
+            END;
+
+            DELETE pr
+              FROM dbo.tProjectRef AS pr
+             INNER JOIN @Projects AS x ON x.ProjectID = pr.ProjectID;
+
+            DELETE p
+              FROM dbo.tProject AS p
+             INNER JOIN @Projects AS x ON x.ProjectID = p.ProjectID;
+        END;
+
+        IF OBJECT_ID(N'dbo.tClientTag', N'U') IS NOT NULL
+        BEGIN
+            DELETE FROM dbo.tClientTag
+             WHERE ClientID = @ClientID;
+        END;
+
+        DELETE FROM dbo.tClient
+         WHERE ClientID = @ClientID;
 
         COMMIT TRAN;
     END TRY

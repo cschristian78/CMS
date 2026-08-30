@@ -109,23 +109,23 @@ public sealed class HomeRepository : IHomeRepository
 
         var totalProjectRevenue = totalRevenueRows.Count > 0 ? totalRevenueRows[0] : 0d;
 
-        // Same universe as Total Revenue / Online tiles and the Executive dashboard:
-        // distinct clients in dbo.vProject_Current with Active client status and Active project.
-        const string activeClientCountSql = """
-            SELECT CAST(COUNT(DISTINCT v.ClientID) AS int) AS UniqueClientCount
+        // Same universe as Total Revenue / Online tiles:
+        // distinct Active projects in dbo.vProject_Current (Active client + Active project).
+        const string activeProjectCountSql = """
+            SELECT CAST(COUNT(DISTINCT v.ProjectID) AS int) AS ActiveProjectCount
               FROM dbo.vProject_Current AS v
-             WHERE v.ClientID IS NOT NULL
+             WHERE v.ProjectID IS NOT NULL
                AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
                AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
             """;
 
-        var activeClientCount = await _db.QueryTextAsync(
-            activeClientCountSql,
-            static r => r.GetInt32(r.GetOrdinal("UniqueClientCount")),
+        var activeProjectCountRows = await _db.QueryTextAsync(
+            activeProjectCountSql,
+            static r => r.GetInt32(r.GetOrdinal("ActiveProjectCount")),
             null,
             cancellationToken);
 
-        var uniqueClientCount = activeClientCount.Count > 0 ? activeClientCount[0] : 0;
+        var activeProjectCount = activeProjectCountRows.Count > 0 ? activeProjectCountRows[0] : 0;
 
         // Global online roll-ups (same Active client/project scope as revenue; ignore list filters
         // so the Online Projects tile is not zeroed by the Online/Offline dropdown).
@@ -213,7 +213,7 @@ public sealed class HomeRepository : IHomeRepository
 
         return new HomeSummary
         {
-            UniqueClientCount = uniqueClientCount,
+            ActiveProjectCount = activeProjectCount,
             DistinctProjectCount = row.DistinctProjectCount,
             TotalProjectRevenue = totalProjectRevenue,
             OnlineProjectCount = onlineRow.OnlineProjectCount,

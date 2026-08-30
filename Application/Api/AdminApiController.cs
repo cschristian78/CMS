@@ -235,6 +235,14 @@ public sealed class AdminApiController : ControllerBase
             return Ok(new { message = "Client deactivated." });
         });
 
+    [HttpPost("clients/{clientId:int}/delete")]
+    public Task<ActionResult> HardDeleteClientAsync(int clientId, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            await _adminService.HardDeleteClientAsync(clientId, cancellationToken);
+            return Ok(new { message = "Client deleted." });
+        });
+
     [HttpPost("clients/bulk-import/parse")]
     [RequestFormLimits(MultipartBodyLengthLimit = 10_485_760)]
     [RequestSizeLimit(10_485_760)]
@@ -315,9 +323,25 @@ public sealed class AdminApiController : ControllerBase
     public Task<ActionResult> SetBusinessUnitActiveAsync(int businessUnitId, [FromQuery] bool isActive, CancellationToken cancellationToken)
         => RunAsync(async () => { await _adminService.SetBusinessUnitActiveAsync(businessUnitId, isActive, cancellationToken); return Ok(new { message = isActive ? "Activated." : "Deactivated." }); });
 
+    [HttpPost("business-units/{businessUnitId:int}/delete")]
+    public Task<ActionResult> HardDeleteBusinessUnitAsync(int businessUnitId, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            await _adminService.HardDeleteBusinessUnitAsync(businessUnitId, cancellationToken);
+            return Ok(new { message = "Business unit deleted." });
+        });
+
     [HttpPost("business-classes/save")]
     public Task<ActionResult> SaveBusinessClassAsync([FromBody] BusinessClass bc, CancellationToken cancellationToken)
         => RunAsync(async () => { await _adminService.SaveBusinessClassAsync(bc, cancellationToken); return Ok(new { message = "Business class saved." }); });
+
+    [HttpPost("business-classes/{businessClassId:int}/delete")]
+    public Task<ActionResult> HardDeleteBusinessClassAsync(int businessClassId, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            await _adminService.HardDeleteBusinessClassAsync(businessClassId, cancellationToken);
+            return Ok(new { message = "Business class deleted." });
+        });
 
     [HttpPost("client-categories/save")]
     public Task<ActionResult> SaveClientCategoryAsync([FromBody] ClientCategory c, CancellationToken cancellationToken)

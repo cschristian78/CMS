@@ -132,6 +132,14 @@ export function formatNumber(n: number, fractionDigits = 0): string {
   }).format(n);
 }
 
+/** USD amount divided by 1,000 (chart labels; pair with a "$000" key). */
+export function formatUsdThousands(n: number): string {
+  if (!Number.isFinite(n)) {
+    return '$0';
+  }
+  return `$${formatNumber(Math.round(n / 1000))}`;
+}
+
 export function formatPercent(value: number, total: number, fractionDigits = 1): string {
   if (total <= 0) {
     return '—';
@@ -140,12 +148,5 @@ export function formatPercent(value: number, total: number, fractionDigits = 1):
 }
 
 export function formatTimelineBarUsd(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) {
-    return `$${formatNumber(value / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`;
-  }
-  if (abs >= 1_000) {
-    return `$${formatNumber(value / 1_000, abs >= 10_000 ? 0 : 1)}K`;
-  }
-  return formatUsd(value);
+  return formatUsdThousands(value);
 }

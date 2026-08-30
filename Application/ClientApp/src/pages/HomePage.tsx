@@ -137,7 +137,7 @@ interface HomeProjectTypeCount {
 }
 
 interface HomeSummary {
-  uniqueClientCount: number;
+  activeProjectCount: number;
   /** Distinct ProjectID in filtered list scope; omitted or zero when summary is global (unfiltered). */
   distinctProjectCount?: number;
   totalProjectRevenue: number;
@@ -323,99 +323,6 @@ function isAnalyticsLeadColumn(columnName: string): boolean {
   return normalizeColumnName(columnName) === 'analyticslead';
 }
 
-function HomeAnalyticsLeadMultiSelect({
-  options,
-  selected,
-  disabled,
-  onChange,
-}: {
-  options: string[];
-  selected: string[];
-  disabled: boolean;
-  onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const selectedSet = useMemo(() => new Set(selected.map((s) => s.trim().toLowerCase())), [selected]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      const root = rootRef.current;
-      if (!root || (event.target instanceof Node && root.contains(event.target))) {
-        return;
-      }
-      setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
-  const summary =
-    selected.length === 0
-      ? 'All analytics leads'
-      : selected.length === 1
-        ? selected[0]
-        : `${selected.length} selected`;
-
-  const toggleName = (name: string) => {
-    const key = name.trim().toLowerCase();
-    if (selectedSet.has(key)) {
-      onChange(selected.filter((s) => s.trim().toLowerCase() !== key));
-      return;
-    }
-    onChange([...selected, name]);
-  };
-
-  return (
-    <div className="home-multi-select" ref={rootRef}>
-      <button
-        type="button"
-        id="home-filter-analytics-lead"
-        className="home-multi-select__button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={disabled}
-        title={summary}
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        {summary}
-      </button>
-      {open ? (
-        <div className="home-multi-select__menu" role="listbox" aria-multiselectable="true" aria-labelledby="home-filter-analytics-lead">
-          <div className="home-multi-select__menu-actions">
-            <button type="button" className="home-multi-select__text-btn" onClick={() => onChange([...options])}>
-              Select all
-            </button>
-            <button type="button" className="home-multi-select__text-btn" onClick={() => onChange([])}>
-              Clear
-            </button>
-          </div>
-          {options.length === 0 ? (
-            <p className="home-multi-select__empty">No analytics leads in the current list.</p>
-          ) : (
-            options.map((name) => {
-              const checked = selectedSet.has(name.trim().toLowerCase());
-              return (
-                <label key={name} className="home-multi-select__option">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleName(name)}
-                  />
-                  <span title={name}>{name}</span>
-                </label>
-              );
-            })
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /** Size a native select to the selected label so the box ends just after the text. */
 function sizeSelectToSelectedText(select: HTMLSelectElement) {
   const option = select.options[select.selectedIndex];
@@ -464,7 +371,10 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const [clientNameSearch, setClientNameSearch] = useState(initialHomeFilters.client);
   // ProjectType filter is sourced from unique PTDescription values in dbo.vProject_Current.
   const [filterProjectType, setFilterProjectType] = useState(initialHomeFilters.projectType);
-  const [filterAnalyticsLeads, setFilterAnalyticsLeads] = useState<string[]>(initialHomeFilters.analyticsLeads);
+  const [filterAnalyticsLeads, setFilterAnalyticsLeads] = useState<string[]>(() => {
+    const leads = initialHomeFilters.analyticsLeads;
+    return leads.length > 0 ? [leads[0]] : [];
+  });
   const homeFilterBarRef = useRef<HTMLDivElement | null>(null);
   const [gridEditPrompt, setGridEditPrompt] = useState<HomeGridEditPromptState | null>(null);
   const [hardDeletePrompt, setHardDeletePrompt] = useState<HomeHardDeletePromptState | null>(null);
@@ -542,17 +452,6 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     // Initial load (and remount after navigating back) - Apply filters / Refresh for mid-page changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const skipAnalyticsLeadAutoApply = useRef(true);
-  useEffect(() => {
-    if (skipAnalyticsLeadAutoApply.current) {
-      skipAnalyticsLeadAutoApply.current = false;
-      return;
-    }
-    void loadProjectList(false);
-    // Apply as soon as Analytics Lead checkboxes change; other filters still use Apply filters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterAnalyticsLeads]);
 
   // Keep Main filters across navigation until the user changes them again.
   useEffect(() => {
@@ -1137,10 +1036,10 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       {summaryError ? <div className="alert alert-error narrow-card">{summaryError}</div> : null}
 
       <section className="tile-grid tile-grid--home" aria-label="Summary statistics">
-        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Active clients">
-          <span className="tile-title">Active clients</span>
-          <span className="tile-stat-value">{summary != null ? summary.uniqueClientCount : '...'}</span>
-          <span className="tile-stat-detail">With an active project</span>
+        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Active Projects">
+          <span className="tile-title">Active Projects</span>
+          <span className="tile-stat-value">{summary != null ? summary.activeProjectCount : '...'}</span>
+          <span className="tile-stat-detail">All Active projects</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Total Revenue (USD)">
           <span className="tile-title">Total Revenue (USD)</span>
@@ -1263,12 +1162,24 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
             </div>
             <div className="dashboard-filter-field dashboard-filter-field--analytics-lead">
               <label htmlFor="home-filter-analytics-lead">Analytics Lead</label>
-              <HomeAnalyticsLeadMultiSelect
-                options={filterOptions?.analyticsLeadNames ?? []}
-                selected={filterAnalyticsLeads}
+              <select
+                id="home-filter-analytics-lead"
+                className="home-filter-select--fit"
+                value={filterAnalyticsLeads[0] ?? ''}
+                onChange={(e) => {
+                  const next = e.target.value.trim();
+                  setFilterAnalyticsLeads(next ? [next] : []);
+                }}
                 disabled={listLoading}
-                onChange={setFilterAnalyticsLeads}
-              />
+                title={filterAnalyticsLeads[0] || 'All analytics leads'}
+              >
+                <option value="">All analytics leads</option>
+                {(filterOptions?.analyticsLeadNames ?? []).map((s) => (
+                  <option key={s} value={s} title={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="dashboard-filter-field dashboard-filter-field--grow dashboard-filter-field--client">
               <label htmlFor="home-filter-client">Client</label>

@@ -14,6 +14,10 @@ interface DashboardBarChartProps {
   items: BarChartItem[];
   ariaLabel: string;
   orientation?: 'vertical' | 'horizontal';
+  plotHeightPx?: number;
+  className?: string;
+  /** Shown under the title (e.g. unit key for chart values). */
+  valueKey?: string;
   onSelect?: (item: BarChartItem) => void;
 }
 
@@ -22,9 +26,11 @@ export default function DashboardBarChart({
   items,
   ariaLabel,
   orientation = 'vertical',
+  plotHeightPx = 160,
+  className,
+  valueKey,
   onSelect,
 }: DashboardBarChartProps) {
-  const plotHeightPx = 160;
   const max = items.reduce((m, x) => {
     const v = Number(x.value);
     return Number.isFinite(v) && v > m ? v : m;
@@ -41,10 +47,13 @@ export default function DashboardBarChart({
     return Math.max(8, Math.round((v / max) * plotHeightPx));
   };
 
+  const cardClass = ['dashboard-chart-card', className].filter(Boolean).join(' ');
+
   if (orientation === 'horizontal') {
     return (
-      <section className="dashboard-chart-card" aria-label={ariaLabel}>
+      <section className={cardClass} aria-label={ariaLabel}>
         <h2 className="dashboard-chart-title">{title}</h2>
+        {valueKey ? <p className="pm-chart-value-key">{valueKey}</p> : null}
         {items.length === 0 ?
           <p className="field-help" role="status">
             No data to display.
@@ -78,14 +87,15 @@ export default function DashboardBarChart({
   }
 
   return (
-    <section className="dashboard-chart-card" aria-label={ariaLabel}>
+    <section className={cardClass} aria-label={ariaLabel}>
       <h2 className="dashboard-chart-title">{title}</h2>
+      {valueKey ? <p className="pm-chart-value-key">{valueKey}</p> : null}
       {items.length === 0 ?
         <p className="field-help" role="status">
           No data to display.
         </p>
       : <div className="bar-chart bar-chart--vertical" role="img" aria-label={ariaLabel}>
-          <div className="bar-chart-plot">
+          <div className="bar-chart-plot" style={{ ['--bar-plot-height' as string]: `${plotHeightPx}px` }}>
             {items.map((item) => {
               const fill = item.fill ?? regionBarColor(item.colorKey ?? item.label);
               const h = barHeightPx(item.value);
@@ -97,7 +107,7 @@ export default function DashboardBarChart({
                   key={`${item.label}-${item.colorKey ?? ''}`}
                   onClick={() => onSelect?.(item)}
                 >
-                  <span className="bar-column-value">{shown}</span>
+                  <span className="bar-column-value" title={shown || undefined}>{shown || '\u00a0'}</span>
                   <div className="bar-column-track" aria-hidden>
                     {item.value > 0 ?
                       <div
@@ -106,7 +116,7 @@ export default function DashboardBarChart({
                       />
                     : null}
                   </div>
-                  <span className="bar-column-label">{item.label}</span>
+                  <span className="bar-column-label" title={item.label}>{item.label}</span>
                 </button>
               );
             })}

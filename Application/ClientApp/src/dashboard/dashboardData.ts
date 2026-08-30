@@ -41,6 +41,8 @@ export interface DashColIndex {
   dueDate: number;
   userGroupName: number;
   totalHours: number;
+  analyticsLead: number;
+  accountExecutive: number;
 }
 
 export type DateField = 'latestRevenueDate' | 'createdDate' | 'renewalDate' | 'dueDate';
@@ -122,6 +124,8 @@ export function buildColIndex(columns: string[]): DashColIndex {
     dueDate: findDashColumn(columns, 'DueDate'),
     userGroupName: findDashColumn(columns, 'UserGroupName', 'UGName'),
     totalHours: findDashColumn(columns, 'TotalHours'),
+    analyticsLead: findDashColumn(columns, 'Analytics Lead', 'AnalyticsLead'),
+    accountExecutive: findDashColumn(columns, 'Account Executive', 'AccountExecutive'),
   };
 }
 
@@ -460,6 +464,10 @@ export interface RenewalTimelinePeriod {
   label: string;
   revenue: number;
   renewalCount: number;
+  /** LatestRevenue sum for projects that are Online in the period. */
+  onlineRevenue: number;
+  /** Distinct Online project count in the period. */
+  onlineRenewalCount: number;
   minRevenue: number;
   maxRevenue: number;
   avgRevenue: number;
@@ -512,13 +520,19 @@ function enumeratePeriodKeys(start: string, end: string, grain: TimelineGrain): 
  * Renewal calendar timeline: periods are driven by <c>RenewalDate</c>.
  * Revenue is the sum of <c>LatestRevenue</c> for projects renewing in each period;
  * renewalCount is the distinct project count for that period.
+ * Online metrics use <c>ProjectOnline</c> / <c>IsOnline</c>.
  */
 export function buildRenewalTimeline(
   rows: DashCell[][],
   col: DashColIndex,
   grain: TimelineGrain,
 ): RenewalTimelinePeriod[] {
-  const map = new Map<string, { ids: Set<number>; revenues: number[] }>();
+  const map = new Map<string, {
+    ids: Set<number>;
+    revenues: number[];
+    onlineIds: Set<number>;
+    onlineRevenues: number[];
+  }>();
   rows.forEach((row, ri) => {
     const ymd = cellYmd(row, col.renewalDate);
     const key = grain === 'month' ? monthKey(ymd) : quarterKey(ymd);
@@ -527,7 +541,7 @@ export function buildRenewalTimeline(
     }
     let bucket = map.get(key);
     if (!bucket) {
-      bucket = { ids: new Set(), revenues: [] };
+      bucket = { ids: new Set(), revenues: [], onlineIds: new Set(), onlineRevenues: [] };
       map.set(key, bucket);
     }
     const pid = projectIdOf(row, col) ?? -(ri + 1);
@@ -535,7 +549,12 @@ export function buildRenewalTimeline(
       return;
     }
     bucket.ids.add(pid);
-    bucket.revenues.push(cellNumber(row, col.latestRevenue));
+    const rev = cellNumber(row, col.latestRevenue);
+    bucket.revenues.push(rev);
+    if (cellBool(row, col.isOnline)) {
+      bucket.onlineIds.add(pid);
+      bucket.onlineRevenues.push(rev);
+    }
   });
 
   const present = [...map.keys()].sort((a, b) => a.localeCompare(b));
@@ -549,6 +568,8 @@ export function buildRenewalTimeline(
     const revenues = bucket?.revenues ?? [];
     const renewalCount = bucket?.ids.size ?? 0;
     const revenue = revenues.reduce((s, v) => s + v, 0);
+    const onlineRevenue = (bucket?.onlineRevenues ?? []).reduce((s, v) => s + v, 0);
+    const onlineRenewalCount = bucket?.onlineIds.size ?? 0;
     const minRevenue = revenues.length > 0 ? Math.min(...revenues) : 0;
     const maxRevenue = revenues.length > 0 ? Math.max(...revenues) : 0;
     const avgRevenue = revenues.length > 0 ? revenue / revenues.length : 0;
@@ -557,6 +578,8 @@ export function buildRenewalTimeline(
       label: grain === 'month' ? formatMonthLabel(key) : formatQuarterLabel(key),
       revenue,
       renewalCount,
+      onlineRevenue,
+      onlineRenewalCount,
       minRevenue,
       maxRevenue,
       avgRevenue,
@@ -600,9 +623,10 @@ export function trendByMonth(
 export function sortTiers(metrics: NamedMetric[]): NamedMetric[] {
   const order = new Map(REVENUE_TIER_ORDER.map((t, i) => [compactName(t), i]));
   return [...metrics].sort((a, b) => {
-    const ai = order.get(compactName(a.label)) ?? 99;
-    const bi = order.get(compactName(b.label)) ?? 99;
-    return ai - bi || a.label.localeCompare(b.label);
+    const ai = order.get(compactName(a.label)) ?? -1;
+    const bi = order.get(compactName(b.label)) ?? -1;
+    // Descending by tier (highest revenue band first).
+    return bi - ai || a.label.localeCompare(b.label);
   });
 }
 

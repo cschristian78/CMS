@@ -834,6 +834,15 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const userPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [copyEmail, setCopyEmail] = useState('');
   const [userRemoveDialogOpen, setUserRemoveDialogOpen] = useState(false);
+  const [buDeleteBlockedMessage, setBuDeleteBlockedMessage] = useState<string | null>(null);
+  const [bcDeleteBlockedMessage, setBcDeleteBlockedMessage] = useState<string | null>(null);
+  const [clientDeleteBlockedMessage, setClientDeleteBlockedMessage] = useState<string | null>(null);
+  const [clientContextMenu, setClientContextMenu] = useState<{
+    clientId: number;
+    clientName: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const [userBulkWizardOpen, setUserBulkWizardOpen] = useState(false);
   const [userBulkRows, setUserBulkRows] = useState<UserImportRow[]>([]);
@@ -1362,25 +1371,36 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   };
 
-  const removeClient = async () => {
-    if (selectedClientId === '') {
-      window.alert('Select a client to deactivate.');
+  const deleteClient = async (clientId?: number) => {
+    const targetId = clientId ?? (selectedClientId === '' ? null : selectedClientId);
+    if (targetId == null) {
+      window.alert('Select a client to delete.');
       return;
     }
-    if (!window.confirm('Deactivate this client? It will be hidden from the active list (IsActive = 0).')) {
+    setClientContextMenu(null);
+    const selected = admin?.clients.find((x) => x.clientID === targetId);
+    const name = (selected?.clientName ?? '').trim() || `Client ${targetId}`;
+    if (!window.confirm(`Permanently delete "${name}" from the database?\n\nThis removes the client and related client references. This cannot be undone.`)) {
       return;
     }
-    const clientID = selectedClientId;
     try {
-      await apiPostJson(`/api/admin/clients/${clientID}/soft-delete`, {});
-      flash('success', 'Client deactivated.');
-      if (clientForm.clientID === clientID) {
+      await apiPostJson(`/api/admin/clients/${targetId}/delete`, {});
+      flash('success', 'Client deleted.');
+      if (clientForm.clientID === targetId) {
         clearClientForm();
       }
       setSelectedClientId('');
       await reload();
     } catch (err) {
-      flash('error', err instanceof ApiError ? err.message : 'Deactivate failed.');
+      const message = err instanceof ApiError ? err.message : 'Delete failed.';
+      if (/active projects/i.test(message) || /cannot be deleted/i.test(message)) {
+        setClientDeleteBlockedMessage(
+          message ||
+            'This client cannot be deleted because it is associated with active projects. Please remove the project before deleting the client.',
+        );
+        return;
+      }
+      flash('error', message);
     }
   };
 
@@ -2399,15 +2419,26 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       window.alert('Select a business unit to remove.');
       return;
     }
-    if (!window.confirm('Remove the selected business unit?')) {
+    const selected = admin?.businessUnits.find((x) => x.businessUnitID === selectedSegId);
+    const name = (selected?.businessUnitName ?? '').trim() || `Business Unit ${selectedSegId}`;
+    if (!window.confirm(`Permanently delete "${name}" from the database?\n\nThis cannot be undone.`)) {
       return;
     }
     try {
-      await apiPostJson(`/api/admin/business-units/${selectedSegId}/active?isActive=false`, {});
-      flash('success', 'Business unit deactivated.');
+      await apiPostJson(`/api/admin/business-units/${selectedSegId}/delete`, {});
+      flash('success', 'Business unit deleted.');
+      clearSeg();
       await reload();
     } catch (err) {
-      flash('error', err instanceof ApiError ? err.message : 'Remove failed.');
+      const message = err instanceof ApiError ? err.message : 'Remove failed.';
+      if (/active projects/i.test(message) || /cannot be deleted/i.test(message)) {
+        setBuDeleteBlockedMessage(
+          message ||
+            'This business unit cannot be deleted because it is associated with active projects. Please remove the project before deleting the business unit.',
+        );
+        return;
+      }
+      flash('error', message);
     }
   };
 
@@ -2458,15 +2489,26 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       window.alert('Select a business class to remove.');
       return;
     }
-    if (!window.confirm('Remove the selected business class?')) {
+    const selected = admin?.businessClasses.find((x) => x.businessClassID === selectedBcId);
+    const name = (selected?.businessClassName ?? '').trim() || `Business Class ${selectedBcId}`;
+    if (!window.confirm(`Permanently delete "${name}" from the database?\n\nThis cannot be undone.`)) {
       return;
     }
     try {
-      flash('error', 'Business classes cannot be hard-deleted in the new schema. Reassign clients first, then this row can be retired.');
-      return;
+      await apiPostJson(`/api/admin/business-classes/${selectedBcId}/delete`, {});
+      flash('success', 'Business class deleted.');
+      clearBc();
       await reload();
     } catch (err) {
-      flash('error', err instanceof ApiError ? err.message : 'Remove failed.');
+      const message = err instanceof ApiError ? err.message : 'Remove failed.';
+      if (/active projects/i.test(message) || /cannot be deleted/i.test(message)) {
+        setBcDeleteBlockedMessage(
+          message ||
+            'This business class cannot be deleted because it is associated with active projects. Please remove the project before deleting the business class.',
+        );
+        return;
+      }
+      flash('error', message);
     }
   };
 
@@ -4512,10 +4554,24 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                         role="option"
                         aria-selected={selectedClientId === c.clientID}
                         className={'admin-user-pick-row' + (selectedClientId === c.clientID ? ' selected' : '')}
-                        onClick={() => setSelectedClientId(c.clientID)}
+                        onClick={() => {
+                          setClientContextMenu(null);
+                          setSelectedClientId(c.clientID);
+                        }}
                         onDoubleClick={() => {
+                          setClientContextMenu(null);
                           setSelectedClientId(c.clientID);
                           editClientFromSelection(c);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setSelectedClientId(c.clientID);
+                          setClientContextMenu({
+                            clientId: c.clientID,
+                            clientName: name,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
                         }}
                       >
                         <span className="admin-user-pick-name">
@@ -4668,14 +4724,102 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 <button type="button" className="secondary-button" onClick={() => editClientFromSelection()}>
                   Edit Client
                 </button>
-                <button type="button" className="danger-button" onClick={() => void removeClient()}>
-                  Remove Client
+                <button type="button" className="danger-button" onClick={() => void deleteClient()}>
+                  Delete Client
                 </button>
               </div>
             </form>
           </div>
         </div>
       </section>
+
+      {buDeleteBlockedMessage ? (
+        <div
+          className="bulk-import-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bu-delete-blocked-title"
+        >
+          <div className="bulk-import-panel card">
+            <h2 id="bu-delete-blocked-title">Cannot delete business unit</h2>
+            <p className="field-help" role="alert">
+              {buDeleteBlockedMessage}
+            </p>
+            <div className="button-row bulk-import-actions">
+              <button type="button" className="primary-button" onClick={() => setBuDeleteBlockedMessage(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bcDeleteBlockedMessage ? (
+        <div
+          className="bulk-import-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bc-delete-blocked-title"
+        >
+          <div className="bulk-import-panel card">
+            <h2 id="bc-delete-blocked-title">Cannot delete business class</h2>
+            <p className="field-help" role="alert">
+              {bcDeleteBlockedMessage}
+            </p>
+            <div className="button-row bulk-import-actions">
+              <button type="button" className="primary-button" onClick={() => setBcDeleteBlockedMessage(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {clientDeleteBlockedMessage ? (
+        <div
+          className="bulk-import-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="client-delete-blocked-title"
+        >
+          <div className="bulk-import-panel card">
+            <h2 id="client-delete-blocked-title">Cannot delete client</h2>
+            <p className="field-help" role="alert">
+              {clientDeleteBlockedMessage}
+            </p>
+            <div className="button-row bulk-import-actions">
+              <button type="button" className="primary-button" onClick={() => setClientDeleteBlockedMessage(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {clientContextMenu ? (
+        <>
+          <button
+            type="button"
+            className="admin-context-menu-backdrop"
+            aria-label="Close client menu"
+            onClick={() => setClientContextMenu(null)}
+          />
+          <div
+            className="admin-context-menu"
+            role="menu"
+            style={{ top: clientContextMenu.y, left: clientContextMenu.x }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="admin-context-menu__item admin-context-menu__item--danger"
+              onClick={() => void deleteClient(clientContextMenu.clientId)}
+            >
+              Delete Client
+            </button>
+          </div>
+        </>
+      ) : null}
 
       {userRemoveDialogOpen ? (
         <div
