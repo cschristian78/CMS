@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using ClientManagementSystem.Models;
 
 namespace ClientManagementSystem.Services;
@@ -47,6 +48,13 @@ public sealed class ProjectFileUploadSessionStore : IProjectFileUploadSessionSto
 {
     public const int DefaultChunkSizeBytes = 4 * 1024 * 1024; // 4 MB — safely under IIS default ~28.6 MB
 
+    private static readonly JsonSerializerOptions SessionJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     private readonly ConcurrentDictionary<string, ProjectFileUploadSessionInfo> _sessions = new(StringComparer.Ordinal);
     private readonly string _root;
     private readonly ILogger<ProjectFileUploadSessionStore> _logger;
@@ -91,7 +99,7 @@ public sealed class ProjectFileUploadSessionStore : IProjectFileUploadSessionSto
             CreatedUtc = DateTime.UtcNow
         };
 
-        File.WriteAllText(Path.Combine(dir, "meta.json"), JsonSerializer.Serialize(meta));
+        File.WriteAllText(Path.Combine(dir, "meta.json"), JsonSerializer.Serialize(meta, SessionJsonOptions));
         _sessions[sessionId] = meta;
         return meta;
     }
@@ -117,7 +125,7 @@ public sealed class ProjectFileUploadSessionStore : IProjectFileUploadSessionSto
 
         try
         {
-            var meta = JsonSerializer.Deserialize<ProjectFileUploadSessionInfo>(File.ReadAllText(jsonPath));
+            var meta = JsonSerializer.Deserialize<ProjectFileUploadSessionInfo>(File.ReadAllText(jsonPath), SessionJsonOptions);
             if (meta is null)
             {
                 return null;

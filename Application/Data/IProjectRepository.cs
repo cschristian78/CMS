@@ -67,6 +67,7 @@ public interface IProjectRepository
     Task<int> AddFileAsync(ProjectFile file, CancellationToken cancellationToken = default);
     Task UpdateFileMetadataAsync(
         int projectFileId,
+        string? category,
         string? description,
         string? versionLabel,
         DateTime? dataAsOf,

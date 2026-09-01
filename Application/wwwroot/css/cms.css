@@ -967,21 +967,25 @@ textarea {
 .project-workflow-card .project-calendar-table {
     table-layout: fixed;
     width: 100%;
+    min-width: 58rem;
 }
 
 .project-workflow-card .project-calendar-table th:nth-child(1),
 .project-workflow-card .project-calendar-table td:nth-child(1) {
-    width: 7.75rem;
+    width: 10.5rem;
+    min-width: 10.5rem;
 }
 
 .project-workflow-card .project-calendar-table th:nth-child(2),
 .project-workflow-card .project-calendar-table td:nth-child(2) {
-    width: 12rem;
+    width: 20rem;
+    min-width: 20rem;
 }
 
 .project-workflow-card .project-calendar-table th:nth-child(3),
 .project-workflow-card .project-calendar-table td:nth-child(3) {
-    width: 11rem;
+    width: 12.5rem;
+    min-width: 12.5rem;
 }
 
 .project-workflow-card .project-calendar-table th:nth-child(4),
@@ -1024,6 +1028,31 @@ textarea {
 .home-modal-dialog.project-calendar-edit-dialog {
     width: 62.5vw; /* 5/8 of the screen */
     max-width: 62.5vw;
+}
+
+.home-modal-dialog.project-data-file-edit-dialog {
+    width: min(42rem, 92vw);
+    max-width: 92vw;
+}
+
+.project-data-file-edit-dialog .form-grid {
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: 0.65rem 0.85rem;
+    margin-top: 0.75rem;
+}
+
+.project-data-file-edit-dialog textarea {
+    min-height: 5.5rem;
+    resize: vertical;
+}
+
+.project-data-file-edit-dialog .home-modal-actions {
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.project-data-file-edit-dialog .home-modal-actions .danger-button {
+    margin-right: auto;
 }
 
 .project-calendar-edit-dialog .form-grid {
@@ -1786,6 +1815,11 @@ textarea {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
+}
+
+.admin-usergroup-new-panel #ug-group-num[readonly] {
+    opacity: 1;
+    cursor: default;
 }
 
 .admin-usergroup-new-panel form {
@@ -4158,12 +4192,93 @@ a.link-button:hover,
 }
 
 .home-modal-dialog.project-add-data-dialog {
-    width: min(46rem, 100%);
-    max-height: min(90vh, 48rem);
+    width: 50vw;
+    max-width: 50vw;
+    height: auto;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+    .home-modal-dialog.project-add-data-dialog {
+        width: min(50vw, calc(100vw - 2rem));
+        max-width: min(50vw, calc(100vw - 2rem));
+    }
 }
 
 .project-add-data-dialog .project-file-upload-meta {
     margin-top: 0.35rem;
+    flex-shrink: 0;
+}
+
+.project-add-data-dialog .home-modal-body,
+.project-add-data-dialog .project-file-choose-row,
+.project-add-data-dialog .home-modal-actions {
+    flex-shrink: 0;
+}
+
+.project-add-data-assigned {
+    margin-top: 0.85rem;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.project-add-data-assigned__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--accent, #f08700);
+}
+
+.project-add-data-assigned__help {
+    margin: 0;
+}
+
+.project-add-data-assigned__table-wrap {
+    max-height: 14rem;
+    overflow: auto;
+    border: 1px solid rgba(125, 186, 233, 0.45);
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.project-add-data-assigned__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.project-add-data-assigned__table th,
+.project-add-data-assigned__table td {
+    padding: 0.4rem 0.55rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(125, 186, 233, 0.22);
+    vertical-align: top;
+}
+
+.project-add-data-assigned__table th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-deep, #080e18);
+    color: var(--accent, #f08700);
+    font-weight: 600;
+    z-index: 1;
+}
+
+.project-add-data-assigned__table td {
+    color: var(--white, #e8f0f8);
+    word-break: break-word;
+}
+
+.project-add-data-assigned__empty {
+    color: var(--muted, #8a97a5);
+    font-style: italic;
 }
 
 .project-data-browser {
@@ -4286,6 +4401,15 @@ a.link-button:hover,
 
 .project-data-file-row {
     cursor: pointer;
+}
+
+.project-data-file-table--readonly tbody td {
+    vertical-align: middle;
+}
+
+.project-data-file-table--readonly .project-data-file-active-cell {
+    font-size: 0.875rem;
+    color: var(--text-muted, #5a6472);
 }
 
 .project-data-file-row:hover td {
@@ -4785,6 +4909,19 @@ a.link-button:hover,
  * Only table column borders separate cells - inputs/selects are borderless and transparent.
  * Title (2), Received (4), Completed (5), Notes (6) match Type/Owner.
  */
+.project-workflow-card .project-calendar-table tbody td:nth-child(1),
+.project-workflow-card .project-calendar-table tbody td:nth-child(2),
+.project-workflow-card .project-calendar-table tbody td:nth-child(3) {
+    overflow: visible;
+    white-space: normal;
+    vertical-align: top;
+}
+
+.project-workflow-card .project-calendar-table tbody td:nth-child(1) select,
+.project-workflow-card .project-calendar-table tbody td:nth-child(2) input {
+    white-space: normal;
+}
+
 .project-workflow-card .project-calendar-table tbody td {
     padding: 0 !important;
     vertical-align: middle !important;

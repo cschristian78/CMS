@@ -12,7 +12,7 @@ public sealed class ProjectFile
     public string BlobPath { get; set; } = string.Empty;
     public string BlobUrl { get; set; } = string.Empty;
 
-    /// <summary>SourceData | ExposureData | LossData | ClaimsData</summary>
+    /// <summary>SourceData | ExposureData | LossData | ClaimsData | CorrespondenceData | SubmissionData</summary>
     public string Category { get; set; } = "SourceData";
 
     public string? Description { get; set; }
@@ -39,9 +39,10 @@ public sealed class ProjectFile
     public string? DownloadUrl { get; set; }
 }
 
-/// <summary>Body for updating project-file metadata (description / version / data-as-of / process-Active).</summary>
+/// <summary>Body for updating project-file metadata (classification / description / version / data-as-of / process-Active).</summary>
 public sealed class ProjectFileUpdateRequest
 {
+    public string? Category { get; set; }
     public string? Description { get; set; }
     public string? VersionLabel { get; set; }
     public DateTime? DataAsOf { get; set; }

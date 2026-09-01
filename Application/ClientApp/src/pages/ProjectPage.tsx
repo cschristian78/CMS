@@ -7,7 +7,7 @@ import {
   type ProjectGridNavigationState,
 } from '../workflows/projectGridPrefill';
 import { formatBusinessClassDisplay } from '../utils/businessClassDisplay';
-import { formatCalendarDateDisplay, toInputDateValue } from '../utils/dateInput';
+import { formatCalendarDateDisplay, toApiDateValue, toInputDateValue } from '../utils/dateInput';
 import type { FlashFn } from '../App';
 import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
 import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
@@ -19,6 +19,7 @@ import {
   pickClientSlice,
   pickProjectSlice,
   projectSliceEqual,
+  sanitizeProjectFormForApi,
   serviceIdsEqual,
   type ProjectTabId,
 } from '../projectTabPersistence';
@@ -225,20 +226,96 @@ interface ProjectFileRow {
 
 type ProjectTab = 'client' | 'project' | 'projectData' | 'services' | 'calendar' | 'time' | 'revenue' | 'notes';
 
+const PROJECT_TAB_IDS: ProjectTab[] = [
+  'client',
+  'project',
+  'projectData',
+  'services',
+  'calendar',
+  'time',
+  'revenue',
+  'notes',
+];
+
+function parseProjectTabParam(value: string | null): ProjectTab | null {
+  if (!value) {
+    return null;
+  }
+  return PROJECT_TAB_IDS.includes(value as ProjectTab) ? (value as ProjectTab) : null;
+}
+
 const PROJECT_DATA_CATEGORIES = [
-  { value: 'SourceData', label: 'Source Data' },
+  { value: 'ClaimsData', label: 'Claims Data' },
+  { value: 'CorrespondenceData', label: 'Correspondence' },
   { value: 'ExposureData', label: 'Exposure Data' },
   { value: 'LossData', label: 'Loss Data' },
-  { value: 'ClaimsData', label: 'Claims Data' },
+  { value: 'SourceData', label: 'Source Data' },
+  { value: 'SubmissionData', label: 'Submission' },
 ] as const;
 
 const PROJECT_DATA_VERSIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 
 type ProjectDataCategory = (typeof PROJECT_DATA_CATEGORIES)[number]['value'];
 
+type ProjectFileUploadMeta = {
+  category: ProjectDataCategory;
+  description: string;
+  versionLabel: string;
+  dataAsOf: string;
+};
+
+type ProjectFileDraft = {
+  category: ProjectDataCategory;
+  description: string;
+  versionLabel: string;
+  dataAsOf: string;
+  isCurrent: boolean;
+};
+
 function formatProjectDataCategory(category?: string | null): string {
   const match = PROJECT_DATA_CATEGORIES.find((c) => c.value === category);
   return match?.label ?? (category?.trim() || 'Source Data');
+}
+
+function normalizeProjectDataCategory(value?: string | null): ProjectDataCategory {
+  const trimmed = (value ?? '').trim();
+  const match = PROJECT_DATA_CATEGORIES.find((c) => c.value === trimmed);
+  if (match) {
+    return match.value;
+  }
+  const byLabel = PROJECT_DATA_CATEGORIES.find(
+    (c) => c.label.localeCompare(trimmed, undefined, { sensitivity: 'base' }) === 0,
+  );
+  return byLabel?.value ?? 'SourceData';
+}
+
+/** Coerce API project-file rows (camelCase or PascalCase) for list/sync. */
+function normalizeProjectFileRow(raw: unknown): ProjectFileRow | null {
+  if (raw === null || typeof raw !== 'object') {
+    return null;
+  }
+  const o = raw as Record<string, unknown>;
+  const id = Number(o.projectFileID ?? o.ProjectFileID);
+  if (!Number.isFinite(id) || id <= 0) {
+    return null;
+  }
+  return {
+    projectFileID: id,
+    projectID: Number(o.projectID ?? o.ProjectID ?? 0),
+    originalFileName: String(o.originalFileName ?? o.OriginalFileName ?? ''),
+    contentType: (o.contentType ?? o.ContentType ?? null) as string | null,
+    byteLength: Number(o.byteLength ?? o.ByteLength ?? 0),
+    category: normalizeProjectDataCategory(String(o.category ?? o.Category ?? 'SourceData')),
+    description: (o.description ?? o.Description ?? null) as string | null,
+    versionLabel: (o.versionLabel ?? o.VersionLabel ?? null) as string | null,
+    dataAsOf: (o.dataAsOf ?? o.DataAsOf ?? null) as string | null,
+    isCurrent: !!(o.isCurrent ?? o.IsCurrent),
+    uploadedByUserID: Number(o.uploadedByUserID ?? o.UploadedByUserID ?? 0),
+    uploadedByName: (o.uploadedByName ?? o.UploadedByName ?? null) as string | null,
+    createdDate: (o.createdDate ?? o.CreatedDate ?? null) as string | null,
+    downloadUrl: (o.downloadUrl ?? o.DownloadUrl ?? null) as string | null,
+    blobUrl: (o.blobUrl ?? o.BlobUrl ?? null) as string | null,
+  };
 }
 
 function normalizeProjectDataVersion(value?: string | null): string {
@@ -474,9 +551,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const timeTrackerRef = useRef<ProjectTimeTrackerHandle | null>(null);
   const [baselineModel, setBaselineModel] = useState<ProjectFormModel | null>(null);
   const [baselineCalendarItems, setBaselineCalendarItems] = useState<ProjectCalendarItemDraft[]>([]);
-  const [baselineFileDrafts, setBaselineFileDrafts] = useState<
-    Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>
-  >({});
+  const [baselineFileDrafts, setBaselineFileDrafts] = useState<Record<number, ProjectFileDraft>>({});
   const [baselineNotes, setBaselineNotes] = useState<ProjectNoteRow[]>([]);
   const [tabSaveBusy, setTabSaveBusy] = useState(false);
   const [pendingSaveTabs, setPendingSaveTabs] = useState<ProjectTabId[] | null>(null);
@@ -494,12 +569,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [notes, setNotes] = useState<ProjectNoteRow[]>([]);
   const [projectFiles, setProjectFiles] = useState<ProjectFileRow[]>([]);
   const [projectFilesBusy, setProjectFilesBusy] = useState(false);
-  const [projectFileUploadMeta, setProjectFileUploadMeta] = useState<{
-    category: ProjectDataCategory;
-    description: string;
-    versionLabel: string;
-    dataAsOf: string;
-  }>({
+  const [projectFileUploadMeta, setProjectFileUploadMeta] = useState<ProjectFileUploadMeta>({
     category: 'SourceData',
     description: '',
     versionLabel: '1',
@@ -508,9 +578,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [pendingProjectFiles, setPendingProjectFiles] = useState<File[]>([]);
   const [showAddDataForm, setShowAddDataForm] = useState(false);
   const [selectedProjectFileId, setSelectedProjectFileId] = useState<number | ''>('');
-  const [projectFileDrafts, setProjectFileDrafts] = useState<
-    Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>
-  >({});
+  const [projectFileEditId, setProjectFileEditId] = useState<number | null>(null);
+  const [projectFileEditDraft, setProjectFileEditDraft] = useState<ProjectFileDraft | null>(null);
+  const [projectFileDrafts, setProjectFileDrafts] = useState<Record<number, ProjectFileDraft>>({});
   const projectFilesInputRef = useRef<HTMLInputElement | null>(null);
   const projectDataDropDepthRef = useRef(0);
   const [projectDataDropActive, setProjectDataDropActive] = useState(false);
@@ -900,6 +970,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model != null, searchParams.get('selectUserGroup'), searchParams.get('focusProjectName')]);
 
+  // Deep-link to a project tab, e.g. /projects/90?tab=calendar from notification emails.
+  useEffect(() => {
+    const tab = parseProjectTabParam(searchParams.get('tab'));
+    if (!tab) {
+      return;
+    }
+    if (!isEdit && (tab === 'time' || tab === 'revenue' || tab === 'notes')) {
+      return;
+    }
+    setActiveTab(tab);
+  }, [isEdit, searchParams.get('tab')]);
+
   useEffect(() => {
     if (!model || model.clientID <= 0) {
       return;
@@ -1209,8 +1291,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         itemType: row.itemType,
         title: row.title.trim(),
         ownerUserID: typeof row.ownerUserID === 'number' && row.ownerUserID > 0 ? row.ownerUserID : null,
-        receivedDate: row.receivedDate ? row.receivedDate : null,
-        completedDate: row.completedDate ? row.completedDate : null,
+        receivedDate: toApiDateValue(row.receivedDate),
+        completedDate: toApiDateValue(row.completedDate),
         notes: row.notes.trim().length > 0 ? row.notes.trim() : null,
         sortOrder: index,
         isActive: true,
@@ -1230,9 +1312,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       })),
     );
 
-  const fileDraftsSignature = (
-    drafts: Record<number, { description: string; versionLabel: string; dataAsOf: string; isCurrent: boolean }>,
-  ) => JSON.stringify(drafts);
+  const fileDraftsSignature = (drafts: Record<number, ProjectFileDraft>) => JSON.stringify(drafts);
 
   const isTabDirty = useCallback(
     (tab: ProjectTabId): boolean => {
@@ -1414,13 +1494,13 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           }));
 
       const resolvedUgid = merged.ugid > 0 ? merged.ugid : 0;
-      const payload = {
+      const payload = sanitizeProjectFormForApi({
         ...merged,
         projectID: projectId,
         ugid: resolvedUgid,
         userGroupID: resolvedUgid,
         calendarItems: calendarPayload,
-      } as ProjectFormModel;
+      } as ProjectFormModel);
 
       await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
       await apiPostJson(`/api/projects/${projectId}/calendar`, {
@@ -1437,7 +1517,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
     if (tabs.includes('projectData')) {
       if (pendingProjectFiles.length > 0) {
-        await uploadProjectFilesTo(projectId, pendingProjectFiles);
+        await uploadProjectFilesTo(projectId, pendingProjectFiles, projectFileUploadMeta);
       }
       for (const [idStr, draft] of Object.entries(projectFileDrafts)) {
         const fileId = Number(idStr);
@@ -1449,12 +1529,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           draft.description !== base.description ||
           draft.versionLabel !== base.versionLabel ||
           draft.dataAsOf !== base.dataAsOf ||
-          draft.isCurrent !== base.isCurrent
+          draft.isCurrent !== base.isCurrent ||
+          draft.category !== base.category
         ) {
           if (!draft.dataAsOf.trim()) {
             throw new Error('Data As Of is required for file metadata changes.');
           }
           await apiPostJson(`/api/projects/${projectId}/files/${fileId}`, {
+            category: draft.category,
             description: draft.description,
             versionLabel: normalizeProjectDataVersion(draft.versionLabel),
             dataAsOf: draft.dataAsOf.trim(),
@@ -1674,14 +1756,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         ...modelWithoutUgAlias
       } = model as ProjectFormModel & { userGroupID?: number; uGID?: number };
       const resolvedUgid = model.ugid > 0 ? model.ugid : 0;
-      const payload: ProjectFormModel = {
+      const payload = sanitizeProjectFormForApi({
         ...modelWithoutUgAlias,
         projectID: isEdit ? projectId : model.projectID,
         ugid: resolvedUgid,
         // Canonical name expected by ProjectFormViewModel.UserGroupID
         ...( { userGroupID: resolvedUgid } as object ),
         calendarItems: calendarPayload as ProjectFormModel['calendarItems'],
-      } as ProjectFormModel;
+      } as ProjectFormModel);
       const result = await apiPostJson<{ projectId: number; message: string }>('/api/projects', payload);
       const savedId = result.projectId;
       let projectMessage = result.message;
@@ -1708,7 +1790,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         setProjectFilesBusy(true);
         try {
           const files = pendingProjectFiles;
-          await uploadProjectFilesTo(savedId, files);
+          const uploadMeta = projectFileUploadMeta;
+          await uploadProjectFilesTo(savedId, files, uploadMeta);
           projectMessage = `${projectMessage} Uploaded ${files.length} project data file(s).`.trim();
         } catch (fileErr) {
           flash(
@@ -1880,22 +1963,25 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   };
 
   const syncProjectFiles = (rows: ProjectFileRow[], captureBaseline = false) => {
-    const list = Array.isArray(rows) ? rows : [];
+    const list = (Array.isArray(rows) ? rows : [])
+      .map(normalizeProjectFileRow)
+      .filter((row): row is ProjectFileRow => row !== null);
     setProjectFiles(list);
     const drafts = Object.fromEntries(
       list.map((f) => [
         f.projectFileID,
         {
+          category: normalizeProjectDataCategory(f.category),
           description: f.description ?? '',
           versionLabel: normalizeProjectDataVersion(f.versionLabel),
           dataAsOf: toInputDateValue(f.dataAsOf),
           isCurrent: !!f.isCurrent,
         },
       ]),
-    );
+    ) as Record<number, ProjectFileDraft>;
     setProjectFileDrafts(drafts);
     if (captureBaseline) {
-      setBaselineFileDrafts(JSON.parse(JSON.stringify(drafts)));
+      setBaselineFileDrafts(JSON.parse(JSON.stringify(drafts)) as Record<number, ProjectFileDraft>);
     }
     setSelectedProjectFileId((prev) => {
       if (prev !== '' && list.some((f) => f.projectFileID === prev)) {
@@ -1998,12 +2084,23 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     attachDroppedProjectFiles(filesFromDataTransfer(e.dataTransfer));
   };
 
-  const uploadProjectFilesTo = async (targetProjectId: number, files: File[]) => {
+  const uploadProjectFilesTo = async (
+    targetProjectId: number,
+    files: File[],
+    meta: ProjectFileUploadMeta = projectFileUploadMeta,
+  ) => {
     if (targetProjectId <= 0 || files.length === 0) {
       return;
     }
 
-    if (!projectFileUploadMeta.dataAsOf.trim()) {
+    const uploadMeta: ProjectFileUploadMeta = {
+      category: meta.category,
+      description: meta.description,
+      versionLabel: meta.versionLabel,
+      dataAsOf: meta.dataAsOf,
+    };
+
+    if (!uploadMeta.dataAsOf.trim()) {
       throw new Error('Data As Of is required before uploading.');
     }
 
@@ -2017,10 +2114,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         fileName: file.name,
         contentType: file.type || 'application/octet-stream',
         byteLength: file.size,
-        category: projectFileUploadMeta.category,
-        description: projectFileUploadMeta.description.trim() || null,
-        versionLabel: normalizeProjectDataVersion(projectFileUploadMeta.versionLabel),
-        dataAsOf: projectFileUploadMeta.dataAsOf.trim(),
+        category: uploadMeta.category,
+        description: uploadMeta.description.trim() || null,
+        versionLabel: normalizeProjectDataVersion(uploadMeta.versionLabel),
+        dataAsOf: uploadMeta.dataAsOf.trim(),
       });
 
       const chunkSize = start.chunkSizeBytes > 0 ? start.chunkSizeBytes : 4 * 1024 * 1024;
@@ -2050,12 +2147,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     } else {
       syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${targetProjectId}/files`));
     }
-    setProjectFileUploadMeta({
-      category: projectFileUploadMeta.category,
+    setProjectFileUploadMeta((prev) => ({
+      category: uploadMeta.category,
       description: '',
       versionLabel: '1',
       dataAsOf: '',
-    });
+    }));
     setPendingProjectFiles([]);
     if (projectFilesInputRef.current) {
       projectFilesInputRef.current.value = '';
@@ -2085,7 +2182,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     setProjectFilesBusy(true);
     try {
       const files = pendingProjectFiles;
-      await uploadProjectFilesTo(projectId, files);
+      await uploadProjectFilesTo(projectId, files, projectFileUploadMeta);
       flash('success', `Uploaded ${files.length} file(s).`);
       setShowAddDataForm(false);
     } catch (err) {
@@ -2128,39 +2225,95 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
-  const handleSaveProjectFileMetadata = async (fileId: number) => {
-    if (!isEdit || projectId === undefined) {
+  const projectFileDraftFor = (file: ProjectFileRow): ProjectFileDraft => {
+    const existing = projectFileDrafts[file.projectFileID];
+    if (existing) {
+      return { ...existing };
+    }
+    return {
+      category: normalizeProjectDataCategory(file.category),
+      description: file.description ?? '',
+      versionLabel: normalizeProjectDataVersion(file.versionLabel),
+      dataAsOf: toInputDateValue(file.dataAsOf),
+      isCurrent: !!file.isCurrent,
+    };
+  };
+
+  const openProjectFileEdit = (fileId: number) => {
+    if (!isEdit || projectFilesBusy) {
       return;
+    }
+    const file = projectFiles.find((f) => f.projectFileID === fileId);
+    if (!file) {
+      return;
+    }
+    setSelectedProjectFileId(fileId);
+    setProjectFileEditId(fileId);
+    setProjectFileEditDraft(projectFileDraftFor(file));
+  };
+
+  const closeProjectFileEdit = () => {
+    setProjectFileEditId(null);
+    setProjectFileEditDraft(null);
+  };
+
+  const handleSaveProjectFileMetadata = async (fileId: number, draftOverride?: ProjectFileDraft) => {
+    if (!isEdit || projectId === undefined) {
+      return false;
     }
 
     const file = projectFiles.find((f) => f.projectFileID === fileId);
-    const draft = projectFileDrafts[fileId] ?? {
-      description: '',
-      versionLabel: '1',
-      dataAsOf: '',
-      isCurrent: !!file?.isCurrent,
-    };
+    const draft = draftOverride ??
+      projectFileDrafts[fileId] ?? {
+        category: normalizeProjectDataCategory(file?.category),
+        description: '',
+        versionLabel: '1',
+        dataAsOf: '',
+        isCurrent: !!file?.isCurrent,
+      };
     if (!draft.dataAsOf.trim()) {
       flash('error', 'Data As Of is required.');
-      return;
+      return false;
     }
 
     setProjectFilesBusy(true);
     try {
       const rows = await apiPostJson<ProjectFileRow[]>(`/api/projects/${projectId}/files/${fileId}`, {
+        category: draft.category,
         description: draft.description,
         versionLabel: normalizeProjectDataVersion(draft.versionLabel),
         dataAsOf: draft.dataAsOf.trim(),
         clearDataAsOf: false,
         isCurrent: draft.isCurrent,
       });
-      syncProjectFiles(rows);
+      syncProjectFiles(rows, true);
       flash('success', 'File metadata saved.');
+      return true;
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Could not save file metadata.');
+      return false;
     } finally {
       setProjectFilesBusy(false);
     }
+  };
+
+  const applyProjectFileEdit = async () => {
+    if (projectFileEditId === null || !projectFileEditDraft) {
+      return;
+    }
+    const saved = await handleSaveProjectFileMetadata(projectFileEditId, projectFileEditDraft);
+    if (saved) {
+      closeProjectFileEdit();
+    }
+  };
+
+  const handleDeleteProjectFileFromEdit = async () => {
+    if (projectFileEditId === null) {
+      return;
+    }
+    const fileId = projectFileEditId;
+    closeProjectFileEdit();
+    await handleDeleteProjectFile(fileId);
   };
 
   const handleDeleteRevenue = async (revenueId: number) => {
@@ -2364,6 +2517,127 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         </div>
       : null}
 
+      {projectFileEditId !== null && projectFileEditDraft ?
+        <div
+          className="home-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="project-file-edit-title"
+          onClick={closeProjectFileEdit}
+        >
+          <div
+            className="home-modal-dialog project-data-file-edit-dialog"
+            onClick={(e: MouseEvent) => e.stopPropagation()}
+          >
+            <h2 id="project-file-edit-title" className="home-modal-title">
+              Edit project data
+            </h2>
+            <p className="home-modal-body">
+              {projectFiles.find((f) => f.projectFileID === projectFileEditId)?.originalFileName ??
+                'Project data file'}
+            </p>
+            <div className="form-grid">
+              <label htmlFor="projectFileEditCategory">Classification</label>
+              <select
+                id="projectFileEditCategory"
+                value={projectFileEditDraft.category}
+                disabled={projectFilesBusy}
+                onChange={(e) =>
+                  setProjectFileEditDraft((prev) =>
+                    prev ?
+                      { ...prev, category: e.target.value as ProjectDataCategory }
+                    : prev,
+                  )
+                }
+              >
+                {PROJECT_DATA_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="projectFileEditVersion">Version</label>
+              <select
+                id="projectFileEditVersion"
+                value={normalizeProjectDataVersion(projectFileEditDraft.versionLabel)}
+                disabled={projectFilesBusy}
+                onChange={(e) =>
+                  setProjectFileEditDraft((prev) => (prev ? { ...prev, versionLabel: e.target.value } : prev))
+                }
+              >
+                {PROJECT_DATA_VERSIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="projectFileEditDataAsOf">Data As Of</label>
+              <input
+                id="projectFileEditDataAsOf"
+                type="date"
+                required
+                value={projectFileEditDraft.dataAsOf}
+                disabled={projectFilesBusy}
+                onChange={(e) =>
+                  setProjectFileEditDraft((prev) => (prev ? { ...prev, dataAsOf: e.target.value } : prev))
+                }
+              />
+
+              <label htmlFor="projectFileEditDescription">Description</label>
+              <textarea
+                id="projectFileEditDescription"
+                className="project-file-upload-description"
+                value={projectFileEditDraft.description}
+                disabled={projectFilesBusy}
+                onChange={(e) =>
+                  setProjectFileEditDraft((prev) => (prev ? { ...prev, description: e.target.value } : prev))
+                }
+                maxLength={1000}
+                rows={4}
+                placeholder="Short note about this file"
+              />
+
+              <label htmlFor="projectFileEditActive">Active</label>
+              <label className="project-file-active-inline" htmlFor="projectFileEditActive">
+                <input
+                  id="projectFileEditActive"
+                  type="checkbox"
+                  checked={projectFileEditDraft.isCurrent}
+                  disabled={projectFilesBusy}
+                  onChange={(e) =>
+                    setProjectFileEditDraft((prev) => (prev ? { ...prev, isCurrent: e.target.checked } : prev))
+                  }
+                />
+                Mark as the active file for this classification
+              </label>
+            </div>
+            <div className="home-modal-actions">
+              <button
+                type="button"
+                className="danger-button"
+                disabled={projectFilesBusy}
+                onClick={() => void handleDeleteProjectFileFromEdit()}
+              >
+                Remove file
+              </button>
+              <button type="button" className="secondary-button" disabled={projectFilesBusy} onClick={closeProjectFileEdit}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={projectFilesBusy}
+                onClick={() => void applyProjectFileEdit()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      : null}
+
       {showAddDataForm ? (
         <div
           className="home-modal-overlay"
@@ -2380,8 +2654,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               Add Data
             </h2>
             <p className="home-modal-body">
-              Upload project data files to Azure Blob storage and classify them as Source, Exposure, Loss, or Claims
-              data.
+              Upload project data files to Azure Blob storage and classify them as Source, Exposure, Loss, Claims,
+              Correspondence, or Submission data.
               {!isEdit
                 ? ' On a new project, choose files and metadata here, then click Save Project to create the project and upload them.'
                 : ' Choose files and metadata, then Upload to send them to blob storage.'}
@@ -2411,10 +2685,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     id="projectFileUploadCategory"
                     value={projectFileUploadMeta.category}
                     onChange={(e) =>
-                      setProjectFileUploadMeta({
-                        ...projectFileUploadMeta,
+                      setProjectFileUploadMeta((prev) => ({
+                        ...prev,
                         category: e.target.value as ProjectDataCategory,
-                      })
+                      }))
                     }
                     disabled={projectFilesBusy}
                   >
@@ -2431,7 +2705,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     id="projectFileUploadVersion"
                     value={normalizeProjectDataVersion(projectFileUploadMeta.versionLabel)}
                     onChange={(e) =>
-                      setProjectFileUploadMeta({ ...projectFileUploadMeta, versionLabel: e.target.value })
+                      setProjectFileUploadMeta((prev) => ({ ...prev, versionLabel: e.target.value }))
                     }
                     disabled={projectFilesBusy}
                   >
@@ -2450,7 +2724,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     required
                     value={projectFileUploadMeta.dataAsOf}
                     onChange={(e) =>
-                      setProjectFileUploadMeta({ ...projectFileUploadMeta, dataAsOf: e.target.value })
+                      setProjectFileUploadMeta((prev) => ({ ...prev, dataAsOf: e.target.value }))
                     }
                     disabled={projectFilesBusy}
                   />
@@ -2463,13 +2737,64 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   className="project-file-upload-description"
                   value={projectFileUploadMeta.description}
                   onChange={(e) =>
-                    setProjectFileUploadMeta({ ...projectFileUploadMeta, description: e.target.value })
+                    setProjectFileUploadMeta((prev) => ({ ...prev, description: e.target.value }))
                   }
                   maxLength={1000}
                   rows={5}
                   placeholder="Short note about this upload"
                   disabled={projectFilesBusy}
                 />
+              </div>
+            </div>
+
+            <div className="project-add-data-assigned" aria-label="Data already assigned to this project">
+              <h3 className="project-add-data-assigned__title">Assigned project data</h3>
+              <p className="field-help project-add-data-assigned__help">
+                Files already linked to this project, with their source classification.
+              </p>
+              <div className="project-add-data-assigned__table-wrap">
+                <table className="project-add-data-assigned__table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Name</th>
+                      <th scope="col">Classification</th>
+                      <th scope="col">Version</th>
+                      <th scope="col">Data As Of</th>
+                      <th scope="col">Uploaded by</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectFiles.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="project-add-data-assigned__empty">
+                          {!isEdit
+                            ? 'No files assigned yet. Upload after you save the project, or queue files above.'
+                            : 'No files assigned to this project yet.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      [...projectFiles]
+                        .sort((a, b) => {
+                          const cat = formatProjectDataCategory(a.category).localeCompare(
+                            formatProjectDataCategory(b.category),
+                          );
+                          if (cat !== 0) {
+                            return cat;
+                          }
+                          return (a.originalFileName || '').localeCompare(b.originalFileName || '');
+                        })
+                        .map((f) => (
+                          <tr key={f.projectFileID}>
+                            <td title={f.originalFileName}>{f.originalFileName}</td>
+                            <td>{formatProjectDataCategory(f.category)}</td>
+                            <td>{normalizeProjectDataVersion(f.versionLabel)}</td>
+                            <td>{formatCalendarDateDisplay(f.dataAsOf) || '—'}</td>
+                            <td>{(f.uploadedByName ?? '').trim() || '—'}</td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -2823,8 +3148,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             </div>
             <div className="admin-edit-card project-panel-tab-card">
               <p className="field-help">
-                Files stored in Azure Blob storage. Mark one file <strong>Active</strong> per classification so the team
-                knows which file to process. Use <strong>Add Data</strong> or drag files onto the list to upload.
+                Read-only list of project data files in Azure Blob storage. Double-click a row to edit classification,
+                version, data-as-of date, description, or the <strong>Active</strong> flag (one active file per
+                classification). Use <strong>Add Data</strong> or drag files onto the list to upload.
                 {!isEdit
                   ? ' On a new project, add files first, then click Save Project to create the project and upload them.'
                   : null}
@@ -2859,7 +3185,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                         Drop files to add data
                       </div>
                     ) : null}
-                    <table className="project-data-file-table">
+                    <table className="project-data-file-table project-data-file-table--readonly">
                       <thead>
                         <tr>
                           <th scope="col">Classification</th>
@@ -2872,91 +3198,30 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                       </thead>
                       <tbody>
                         {projectFiles.map((f) => {
-                          const draft = projectFileDrafts[f.projectFileID] ?? {
-                            description: f.description ?? '',
-                            versionLabel: normalizeProjectDataVersion(f.versionLabel),
-                            dataAsOf: toInputDateValue(f.dataAsOf),
-                            isCurrent: !!f.isCurrent,
-                          };
                           const url = f.downloadUrl || f.blobUrl || '';
                           const selected = selectedProjectFileId === f.projectFileID;
+                          const isActive = !!f.isCurrent;
                           return (
                             <tr
                               key={f.projectFileID}
                               className={
                                 'project-data-file-row' +
                                 (selected ? ' project-data-file-row--selected' : '') +
-                                (draft.isCurrent ? ' project-data-file-row--active' : '')
+                                (isActive ? ' project-data-file-row--active' : '')
                               }
                               aria-selected={selected}
+                              title={isEdit ? 'Double-click to edit metadata' : undefined}
                               onClick={() => setSelectedProjectFileId(f.projectFileID)}
+                              onDoubleClick={() => openProjectFileEdit(f.projectFileID)}
                             >
                               <td>{formatProjectDataCategory(f.category)}</td>
                               <td className="project-data-file-name" title={f.originalFileName}>
                                 {f.originalFileName}
                               </td>
-                              <td>
-                                <select
-                                  aria-label={`Version for ${f.originalFileName}`}
-                                  value={normalizeProjectDataVersion(draft.versionLabel)}
-                                  disabled={projectFilesBusy}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    setSelectedProjectFileId(f.projectFileID);
-                                    setProjectFileDrafts((prev) => ({
-                                      ...prev,
-                                      [f.projectFileID]: {
-                                        ...draft,
-                                        versionLabel: e.target.value,
-                                      },
-                                    }));
-                                  }}
-                                >
-                                  {PROJECT_DATA_VERSIONS.map((v) => (
-                                    <option key={v} value={v}>
-                                      {v}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td>
-                                <input
-                                  type="date"
-                                  aria-label={`Data As Of for ${f.originalFileName}`}
-                                  required
-                                  value={draft.dataAsOf}
-                                  disabled={projectFilesBusy}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    setSelectedProjectFileId(f.projectFileID);
-                                    setProjectFileDrafts((prev) => ({
-                                      ...prev,
-                                      [f.projectFileID]: {
-                                        ...draft,
-                                        dataAsOf: e.target.value,
-                                      },
-                                    }));
-                                  }}
-                                />
-                              </td>
+                              <td>{normalizeProjectDataVersion(f.versionLabel)}</td>
+                              <td>{formatCalendarDateDisplay(f.dataAsOf) || '—'}</td>
                               <td className="project-data-file-active-cell">
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Active for ${f.originalFileName}`}
-                                  checked={!!draft.isCurrent}
-                                  disabled={projectFilesBusy}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    setSelectedProjectFileId(f.projectFileID);
-                                    setProjectFileDrafts((prev) => ({
-                                      ...prev,
-                                      [f.projectFileID]: {
-                                        ...draft,
-                                        isCurrent: e.target.checked,
-                                      },
-                                    }));
-                                  }}
-                                />
+                                {isActive ? 'Yes' : 'No'}
                               </td>
                               <td>
                                 {url ? (
@@ -2989,32 +3254,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   </div>
                 </div>
 
-                <div className="project-file-row-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={projectFilesBusy || selectedProjectFileId === ''}
-                    onClick={() => {
-                      if (selectedProjectFileId !== '') {
-                        void handleSaveProjectFileMetadata(selectedProjectFileId);
-                      }
-                    }}
-                  >
-                    Save row
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-button"
-                    disabled={projectFilesBusy || selectedProjectFileId === ''}
-                    onClick={() => {
-                      if (selectedProjectFileId !== '') {
-                        void handleDeleteProjectFile(selectedProjectFileId);
-                      }
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
                 {renderTabActions('projectData')}
               </div>
             </div>

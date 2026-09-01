@@ -31,7 +31,7 @@ BEGIN
         Category         VARCHAR(40)     NOT NULL
             CONSTRAINT DF_tProjectFile_Category DEFAULT ('SourceData')
             CONSTRAINT CK_tProjectFile_Category
-                CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData')),
+                CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData')),
         Description      NVARCHAR(1000)  NULL,
         VersionLabel     NVARCHAR(40)    NULL,
         DataAsOf         DATE            NULL,
@@ -82,6 +82,15 @@ END
 GO
 
 IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.tProjectFile', N'Category') IS NULL
+BEGIN
+    ALTER TABLE dbo.tProjectFile
+        ADD Category VARCHAR(40) NOT NULL
+            CONSTRAINT DF_tProjectFile_Category_Add DEFAULT ('SourceData');
+END
+GO
+
+IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
 BEGIN
     /* Migrate legacy categories → SourceData, then refresh CHECK constraint. */
     UPDATE dbo.tProjectFile
@@ -101,7 +110,7 @@ BEGIN
 
     ALTER TABLE dbo.tProjectFile WITH NOCHECK
         ADD CONSTRAINT CK_tProjectFile_Category
-            CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData'));
+            CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData'));
 
     DECLARE @dfName sysname =
     (
@@ -244,7 +253,7 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@BlobPath)), N'') IS NULL
         THROW 50002, 'BlobPath is required.', 1;
 
-    IF @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData')
+    IF @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData')
         SET @Category = 'SourceData';
 
     IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID AND IsActive = 1)
@@ -308,6 +317,7 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.usp_ProjectFile_UpdateMetadata
     @ProjectFileID INT,
+    @Category      VARCHAR(40) = NULL,
     @Description   NVARCHAR(1000) = NULL,
     @VersionLabel  NVARCHAR(40) = NULL,
     @DataAsOf      DATE = NULL,
@@ -320,6 +330,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM dbo.tProjectFile WHERE ProjectFileID = @ProjectFileID AND IsActive = 1)
         THROW 50001, 'Project file not found or inactive.', 1;
 
+    IF @Category IS NOT NULL
+       AND @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData')
+        SET @Category = 'SourceData';
+
     SET @Description = NULLIF(LTRIM(RTRIM(@Description)), N'');
     SET @VersionLabel = NULLIF(LTRIM(RTRIM(@VersionLabel)), N'');
 
@@ -327,7 +341,8 @@ BEGIN
         BEGIN TRAN;
 
         UPDATE dbo.tProjectFile
-           SET Description = @Description,
+           SET Category = COALESCE(@Category, Category),
+               Description = @Description,
                VersionLabel = @VersionLabel,
                DataAsOf = @DataAsOf,
                ModifiedDate = SYSUTCDATETIME()

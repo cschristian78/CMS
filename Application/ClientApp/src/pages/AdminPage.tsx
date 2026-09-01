@@ -2063,6 +2063,22 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     return `#${g.ugid} | ${num} | ${name} | ${members}`;
   };
 
+  /** Preview next group number as max(numeric UserGroupNumber) + 1. */
+  const nextUserGroupNumberFromRows = (rows: UserGroupListRow[]): string => {
+    let max = 0;
+    for (const g of rows) {
+      const raw = (g.userGroupNumber ?? '').trim();
+      if (!raw) {
+        continue;
+      }
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n) && n > max) {
+        max = n;
+      }
+    }
+    return String(max + 1);
+  };
+
   const memberLineLabel = (m: AdminGroupMember) => {
     const u =
       m.username?.trim() ||
@@ -2160,17 +2176,22 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     setSelectedUserGroupId('');
     setGroupEditUgid(0);
     setGroupEditName('');
-    setGroupEditNumber('');
     setLoadedGroupMembers([]);
     setPendingGroupMembers([]);
     setSelectedMemberRowKey('');
     setIsCreatingGroup(true);
+    // Default immediately to max+1 from loaded groups, then confirm via API.
+    const localNext = nextUserGroupNumberFromRows(admin?.userGroupSummaries ?? []);
+    setGroupEditNumber(localNext);
     void (async () => {
       try {
         const data = await apiGet<{ nextUserGroupNumber: string }>('/api/admin/groups/next-number');
-        setGroupEditNumber(data.nextUserGroupNumber ?? '');
+        const fromApi = (data.nextUserGroupNumber ?? '').trim();
+        if (fromApi) {
+          setGroupEditNumber(fromApi);
+        }
       } catch {
-        // Number is assigned on save if preview fails.
+        // Keep local max+1 preview if the API call fails.
       }
     })();
   };
@@ -3514,7 +3535,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             <div id="lstbxNewUserGroup" className="admin-edit-card project-panel-tab-card admin-usergroup-new-panel">
               <p className="field-help">
                 {isCreatingGroup
-                  ? 'New group: enter a name, pick users and roles, then save. Group number is assigned automatically.'
+                  ? 'New group: enter a name, pick users and roles, then save. Group number defaults to the next available (max + 1).'
                   : groupEditUgid > 0
                     ? 'Editing selected group. Update details, manage members, then save.'
                     : 'Select a group and choose Edit, or choose Add to create a new group.'}
@@ -3535,11 +3556,16 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   <input
                     id="ug-group-num"
                     maxLength={50}
-                    placeholder={isCreatingGroup ? 'Auto-assigned' : 'Required'}
+                    placeholder={isCreatingGroup ? 'Next number' : 'Required'}
                     value={groupEditNumber}
                     onChange={(e) => setGroupEditNumber(e.target.value)}
-                    disabled={groupPanelBusy || isCreatingGroup}
+                    disabled={groupPanelBusy}
                     readOnly={isCreatingGroup}
+                    title={
+                      isCreatingGroup
+                        ? 'Auto-assigned as max existing group number + 1'
+                        : undefined
+                    }
                   />
                 </div>
 

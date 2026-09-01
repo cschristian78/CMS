@@ -22,6 +22,7 @@ public sealed class ProjectService : IProjectService
     private readonly IAdminRepository _admin;
     private readonly IDashboardRepository _dashboard;
     private readonly IProjectBlobStorage _blobs;
+    private readonly ICalendarOwnerNotificationService _calendarOwnerNotifications;
     private readonly ILogger<ProjectService>? _logger;
 
     public ProjectService(
@@ -31,6 +32,7 @@ public sealed class ProjectService : IProjectService
         IAdminRepository admin,
         IDashboardRepository dashboard,
         IProjectBlobStorage blobs,
+        ICalendarOwnerNotificationService calendarOwnerNotifications,
         ILogger<ProjectService>? logger = null)
     {
         _projects = projects;
@@ -39,6 +41,7 @@ public sealed class ProjectService : IProjectService
         _admin = admin;
         _dashboard = dashboard;
         _blobs = blobs;
+        _calendarOwnerNotifications = calendarOwnerNotifications;
         _logger = logger;
     }
 
@@ -417,9 +420,18 @@ public sealed class ProjectService : IProjectService
         }
 
         items ??= Array.Empty<ProjectCalendarItem>();
+        var beforeSave = await _projects.ListCalendarItemsAsync(projectId, cancellationToken);
         await _projects.ReplaceCalendarItemsAsync(projectId, items, cancellationToken);
+        var afterSave = await _projects.ListCalendarItemsAsync(projectId, cancellationToken);
         var saved = items.Count(i => !string.IsNullOrWhiteSpace(i.Title));
         _logger?.LogInformation("Saved {Count} calendar item(s) for ProjectID {ProjectID}.", saved, projectId);
+
+        await _calendarOwnerNotifications.TryNotifyOwnersAfterSaveAsync(
+            existing,
+            beforeSave,
+            afterSave,
+            cancellationToken);
+
         return saved;
     }
 
@@ -616,7 +628,11 @@ public sealed class ProjectService : IProjectService
         }
 
         // Null means leave unchanged; empty string clears the field.
-        if (request.Description is not null || request.VersionLabel is not null || request.DataAsOf.HasValue || request.ClearDataAsOf)
+        if (request.Category is not null
+            || request.Description is not null
+            || request.VersionLabel is not null
+            || request.DataAsOf.HasValue
+            || request.ClearDataAsOf)
         {
             var nextDataAsOf = request.ClearDataAsOf
                 ? null
@@ -624,6 +640,7 @@ public sealed class ProjectService : IProjectService
 
             await _projects.UpdateFileMetadataAsync(
                 projectFileId,
+                request.Category,
                 request.Description is not null ? request.Description : file.Description,
                 request.VersionLabel is not null ? request.VersionLabel : file.VersionLabel,
                 nextDataAsOf,

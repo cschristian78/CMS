@@ -51,6 +51,55 @@ public sealed class AdminRepository : IAdminRepository
         return rows.ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    public async Task<IReadOnlyList<UserContactInfo>> GetUserContactInfoByIdsAsync(
+        IEnumerable<int> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = userIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        const string sql = """
+            SELECT
+                u.UserID,
+                u.Email,
+                LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))) AS FullName
+              FROM dbo.tUser AS u
+             WHERE u.IsActive = 1
+               AND u.UserID IN (
+                   SELECT TRY_CAST(LTRIM(RTRIM(value)) AS INT)
+                     FROM STRING_SPLIT(@UserIds, CHAR(31))
+                    WHERE TRY_CAST(LTRIM(RTRIM(value)) AS INT) IS NOT NULL
+               )
+             ORDER BY u.LastName, u.FirstName, u.UserID;
+            """;
+
+        var payload = string.Join((char)31, ids);
+        return await _db.QueryTextAsync(
+            sql,
+            static r =>
+            {
+                var email = r.TryGetNullableString("Email") ?? string.Empty;
+                var fullName = r.TryGetNullableString("FullName") ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(fullName))
+                {
+                    fullName = email;
+                }
+
+                return new UserContactInfo(
+                    r.GetInt32OrDefault("UserID"),
+                    email.Trim(),
+                    fullName.Trim());
+            },
+            [SqlParameterFactory.NVarChar("@UserIds", -1, payload)],
+            cancellationToken);
+    }
+
     private async Task<bool> ExistsScalarAsync(string sql, SqlParameter parameter, CancellationToken cancellationToken)
     {
         var rows = await _db.QueryTextAsync(sql, static r => r.GetInt32(0), [parameter], cancellationToken);

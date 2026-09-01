@@ -41,6 +41,12 @@ export function toInputDateValue(value: string | Date | null | undefined): strin
   return formatYmd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
 }
 
+/** yyyy-MM-dd or null for JSON POST bodies — never send "" to nullable DateTime fields. */
+export function toApiDateValue(value: string | Date | null | undefined): string | null {
+  const iso = toInputDateValue(value);
+  return iso || null;
+}
+
 /** Display a calendar date as MM/DD/YYYY (no time component). */
 export function formatCalendarDateDisplay(value: string | null | undefined): string {
   const iso = toInputDateValue(value);

@@ -715,20 +715,25 @@ public sealed class ProjectRepository : IProjectRepository
 
     public Task UpdateFileMetadataAsync(
         int projectFileId,
+        string? category,
         string? description,
         string? versionLabel,
         DateTime? dataAsOf,
         CancellationToken cancellationToken = default)
-        => _db.ExecuteAsync(
+    {
+        var normalizedCategory = category is null ? null : NormalizeFileCategory(category);
+        return _db.ExecuteAsync(
             "dbo.usp_ProjectFile_UpdateMetadata",
             [
                 SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.VarChar("@Category", 40, normalizedCategory),
                 SqlParameterFactory.NVarChar("@Description", 1000, description),
                 SqlParameterFactory.NVarChar("@VersionLabel", 40, versionLabel),
                 SqlParameterFactory.Date("@DataAsOf", dataAsOf),
                 SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
             ],
             cancellationToken);
+    }
 
     public Task SetFileCurrentAsync(
         int projectFileId,
@@ -759,11 +764,13 @@ public sealed class ProjectRepository : IProjectRepository
         var value = (category ?? string.Empty).Trim();
         return value switch
         {
-            "SourceData" or "ExposureData" or "LossData" or "ClaimsData" => value,
+            "SourceData" or "ExposureData" or "LossData" or "ClaimsData" or "CorrespondenceData" or "SubmissionData" => value,
             "Source Data" => "SourceData",
             "Exposure Data" => "ExposureData",
             "Loss Data" => "LossData",
             "Claims Data" => "ClaimsData",
+            "Correspondence" => "CorrespondenceData",
+            "Submission" => "SubmissionData",
             // Legacy values mapped forward
             "ClientData" or "Contract" or "Invoice" or "Other" => "SourceData",
             _ => "SourceData"

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using ClientManagementSystem.Data;
 using ClientManagementSystem.Models;
 using ClientManagementSystem.Security;
+using ClientManagementSystem.Serialization;
 using ClientManagementSystem.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
@@ -28,6 +29,7 @@ builder.Services.AddControllersWithViews(options =>
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.Converters.Add(new NullableDateTimeJsonConverter());
     });
 
 builder.Services
@@ -72,6 +74,10 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<HomeClientProjectBulkImportService>();
 builder.Services.AddScoped<IHomeService, HomeService>();
 builder.Services.AddHttpClient();
+
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<ICalendarOwnerNotificationService, CalendarOwnerNotificationService>();
 
 var app = builder.Build();
 

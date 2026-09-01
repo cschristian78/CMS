@@ -1,3 +1,5 @@
+import { toApiDateValue } from './utils/dateInput';
+
 /** Helpers for Edit Project per-tab dirty detection and change summaries. */
 
 export type ProjectTabId =
@@ -72,12 +74,30 @@ export function pickProjectSlice(m: {
     projectName: m.projectName ?? '',
     ugid: m.ugid ?? 0,
     projectTypeID: m.projectTypeID ?? 0,
-    renewalDate: m.renewalDate ?? null,
-    dueDate: m.dueDate ?? null,
+    renewalDate: toApiDateValue(m.renewalDate),
+    dueDate: toApiDateValue(m.dueDate),
     statusID: m.statusID ?? 0,
     revenueAmount: m.revenueAmount ?? null,
-    revenueEffectiveDate: m.revenueEffectiveDate ?? null,
-    revenueChangeReason: m.revenueChangeReason ?? null,
+    revenueEffectiveDate: toApiDateValue(m.revenueEffectiveDate),
+    revenueChangeReason: (m.revenueChangeReason ?? '').trim() || null,
+  };
+}
+
+/** Normalize date strings before POST /api/projects so ASP.NET can bind DateTime? fields. */
+export function sanitizeProjectFormForApi<
+  T extends {
+    renewalDate?: string | null;
+    dueDate?: string | null;
+    revenueEffectiveDate?: string | null;
+    revenueChangeReason?: string | null;
+  },
+>(model: T): T {
+  return {
+    ...model,
+    renewalDate: toApiDateValue(model.renewalDate),
+    dueDate: toApiDateValue(model.dueDate),
+    revenueEffectiveDate: toApiDateValue(model.revenueEffectiveDate),
+    revenueChangeReason: (model.revenueChangeReason ?? '').trim() || null,
   };
 }
 
