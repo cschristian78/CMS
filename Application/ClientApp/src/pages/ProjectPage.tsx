@@ -152,6 +152,7 @@ interface ProjectCalendarItemDraft {
 interface UserGroupMemberOption {
   userID: number;
   userFullName: string;
+  email?: string;
 }
 
 const CALENDAR_ITEM_TYPES: ProjectCalendarItemDraft['itemType'][] = [
@@ -1236,6 +1237,49 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       cancelled = true;
     };
   }, [model?.ugid]);
+
+  const buildCalendarPageUrl = () => {
+    if (projectId === undefined || Number.isNaN(projectId)) {
+      return `${window.location.origin}/projects/new?tab=calendar`;
+    }
+    return `${window.location.origin}/projects/${projectId}?tab=calendar`;
+  };
+
+  const handleNotifyTeam = () => {
+    if (!model) {
+      return;
+    }
+    if (model.ugid <= 0) {
+      flash('error', 'Select a User Group on the Project Info tab before notifying the team.');
+      setActiveTab('project');
+      return;
+    }
+
+    const emails = [
+      ...new Set(
+        ownerOptions
+          .map((member) => (member.email ?? '').trim())
+          .filter((email) => email.length > 0),
+      ),
+    ];
+    if (emails.length === 0) {
+      flash('error', 'No email addresses were found for members of the selected user group.');
+      return;
+    }
+
+    const clientName = (model.clientName ?? '').trim();
+    const projectName = (model.projectName ?? '').trim();
+    const subject = [clientName, projectName].filter(Boolean).join(' ').trim() || 'Project calendar';
+    const calendarUrl = buildCalendarPageUrl();
+    const body = [
+      'Please review the Analytics Calendar for this project:',
+      '',
+      calendarUrl,
+    ].join('\r\n');
+
+    const mailto = `mailto:${emails.map(encodeURIComponent).join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
 
   const updateCalendarItem = (tempId: string, patch: Partial<ProjectCalendarItemDraft>) => {
     setCalendarItems((prev) => prev.map((row) => (row.tempId === tempId ? { ...row, ...patch } : row)));
@@ -2395,6 +2439,21 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         >
           Cancel
         </button>
+        {tab === 'calendar' ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={tabSaveBusy || model.ugid <= 0}
+            onClick={handleNotifyTeam}
+            title={
+              model.ugid <= 0
+                ? 'Select a User Group on Project Info first'
+                : 'Open your email app with user group members and a link to this calendar'
+            }
+          >
+            Notify Team
+          </button>
+        ) : null}
         {isTabDirty(tab) ? <span className="field-help project-tab-dirty-hint">Unsaved changes</span> : null}
       </div>
     );

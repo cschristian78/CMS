@@ -714,7 +714,8 @@ public sealed class ProjectService : IProjectService
                 userID = m.UserID,
                 userFullName = string.IsNullOrWhiteSpace(m.UserFullName)
                     ? (m.Username ?? $"User {m.UserID}")
-                    : m.UserFullName.Trim()
+                    : m.UserFullName.Trim(),
+                email = (m.Email ?? string.Empty).Trim()
             })
             .ToList();
     }
