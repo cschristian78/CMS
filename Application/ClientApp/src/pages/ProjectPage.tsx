@@ -11,6 +11,7 @@ import { formatCalendarDateDisplay, toApiDateValue, toInputDateValue } from '../
 import type { FlashFn } from '../App';
 import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
 import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
+import ProjectAnalysisProfileTab from '../components/ProjectAnalysisProfileTab';
 import {
   PROJECT_TAB_LABELS,
   clientSliceEqual,
@@ -162,6 +163,8 @@ const CALENDAR_ITEM_TYPES: ProjectCalendarItemDraft['itemType'][] = [
   'Other',
 ];
 
+const CALENDAR_NOTIFY_CC = 'Scott.Christian@bmsgroup.com';
+
 function newCalendarDraft(sortOrder = 0): ProjectCalendarItemDraft {
   return {
     tempId: `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -216,7 +219,7 @@ interface ProjectFileRow {
   description?: string | null;
   versionLabel?: string | null;
   dataAsOf?: string | null;
-  /** Process-Active: the file currently marked for processing. */
+  /** Process-Active: file marked for processing (multiple may be Active). */
   isCurrent?: boolean;
   uploadedByUserID: number;
   uploadedByName?: string | null;
@@ -225,13 +228,23 @@ interface ProjectFileRow {
   blobUrl?: string | null;
 }
 
-type ProjectTab = 'client' | 'project' | 'projectData' | 'services' | 'calendar' | 'time' | 'revenue' | 'notes';
+type ProjectTab =
+  | 'client'
+  | 'project'
+  | 'projectData'
+  | 'services'
+  | 'analysisProfile'
+  | 'calendar'
+  | 'time'
+  | 'revenue'
+  | 'notes';
 
 const PROJECT_TAB_IDS: ProjectTab[] = [
   'client',
   'project',
   'projectData',
   'services',
+  'analysisProfile',
   'calendar',
   'time',
   'revenue',
@@ -591,6 +604,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     isPinned: false,
   });
   const [userGroupOptionsForClient, setUserGroupOptionsForClient] = useState<SelectOption[]>([]);
+  const [appPublicBaseUrl, setAppPublicBaseUrl] = useState('');
   const [clientBuFilter, setClientBuFilter] = useState<number | ''>('');
   const [clientBcFilter, setClientBcFilter] = useState<number | ''>('');
   const [clientTypeFilter, setClientTypeFilter] = useState<number | ''>('');
@@ -872,6 +886,25 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await apiGet<{ publicBaseUrl?: string }>('/api/app/config');
+        if (!cancelled) {
+          setAppPublicBaseUrl((data.publicBaseUrl ?? '').trim());
+        }
+      } catch {
+        if (!cancelled) {
+          setAppPublicBaseUrl('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -1239,10 +1272,11 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   }, [model?.ugid]);
 
   const buildCalendarPageUrl = () => {
+    const base = (appPublicBaseUrl || window.location.origin).replace(/\/$/, '');
     if (projectId === undefined || Number.isNaN(projectId)) {
-      return `${window.location.origin}/projects/new?tab=calendar`;
+      return `${base}/projects/new?tab=calendar`;
     }
-    return `${window.location.origin}/projects/${projectId}?tab=calendar`;
+    return `${base}/projects/${projectId}?tab=calendar`;
   };
 
   const handleNotifyTeam = () => {
@@ -1269,7 +1303,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
     const clientName = (model.clientName ?? '').trim();
     const projectName = (model.projectName ?? '').trim();
-    const subject = [clientName, projectName].filter(Boolean).join(' ').trim() || 'Project calendar';
+    const subjectBase = [clientName, projectName].filter(Boolean).join(' ').trim() || 'Project calendar';
+    const subject = `${subjectBase}: Project Update`;
     const calendarUrl = buildCalendarPageUrl();
     const body = [
       'Please review the Analytics Calendar for this project:',
@@ -1277,7 +1312,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       calendarUrl,
     ].join('\r\n');
 
-    const mailto = `mailto:${emails.map(encodeURIComponent).join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const mailto = `mailto:${emails.map(encodeURIComponent).join(';')}?cc=${encodeURIComponent(CALENDAR_NOTIFY_CC)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = mailto;
   };
 
@@ -2391,6 +2426,21 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const adminGroupsReturnPath = isEdit && projectId !== undefined ? `/projects/${projectId}` : '/projects/new';
   const adminGroupsHref = `/admin?tab=groups&returnTo=${encodeURIComponent(adminGroupsReturnPath)}`;
 
+  const activeProjectFilePrefill = useMemo(() => {
+    const active =
+      projectFiles.find((f) => f.isCurrent) ??
+      projectFiles.find((f) => (f.versionLabel ?? '').trim().length > 0);
+    if (!active) {
+      return null;
+    }
+    return {
+      versionLabel: (active.versionLabel ?? '').trim(),
+      dataAsOf: active.dataAsOf ?? '',
+      originalFileName: active.originalFileName ?? '',
+      projectFileID: active.projectFileID,
+    };
+  }, [projectFiles]);
+
   if (loadError) {
     return (
       <div className="client-workflow-fill client-workflow-error">
@@ -2669,7 +2719,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     setProjectFileEditDraft((prev) => (prev ? { ...prev, isCurrent: e.target.checked } : prev))
                   }
                 />
-                Mark as the active file for this classification
+                Mark as Active for processing
               </label>
             </div>
             <div className="home-modal-actions">
@@ -2895,6 +2945,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           {projectTabBtn('project', 'Project Info')}
           {projectTabBtn('projectData', 'Project Data')}
           {projectTabBtn('services', 'Services')}
+          {isEdit ? projectTabBtn('analysisProfile', 'Analysis Profile') : null}
           {projectTabBtn('calendar', 'Calendar')}
           {isEdit ? projectTabBtn('time', 'Time tracker') : null}
           {isEdit ? projectTabBtn('revenue', 'Revenue history') : null}
@@ -3208,8 +3259,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             <div className="admin-edit-card project-panel-tab-card">
               <p className="field-help">
                 Read-only list of project data files in Azure Blob storage. Double-click a row to edit classification,
-                version, data-as-of date, description, or the <strong>Active</strong> flag (one active file per
-                classification). Use <strong>Add Data</strong> or drag files onto the list to upload.
+                version, data-as-of date, description, or the <strong>Active</strong> flag (multiple files may be Active).
+                Use <strong>Add Data</strong> or drag files onto the list to upload.
                 {!isEdit
                   ? ' On a new project, add files first, then click Save Project to create the project and upload them.'
                   : null}
@@ -3438,6 +3489,25 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </table>
             </div>
             {renderTabActions('services')}
+            </div>
+          </div>
+
+          <div id="project-tab-analysis-profile" className={projectTabClass('analysisProfile')}>
+            <h2>Analysis Profile</h2>
+            <div className="admin-edit-card project-panel-tab-card">
+              {isEdit && projectId !== undefined && model ? (
+                <ProjectAnalysisProfileTab
+                  projectId={projectId}
+                  projectName={model.projectName ?? ''}
+                  clientName={model.clientName ?? ''}
+                  clientId={model.clientID}
+                  activeProjectFile={activeProjectFilePrefill}
+                  isActive={activeTab === 'analysisProfile'}
+                  flash={flash}
+                />
+              ) : (
+                <p className="field-help">Save the project first to configure Moodys and Verisk analysis profiles.</p>
+              )}
             </div>
           </div>
 

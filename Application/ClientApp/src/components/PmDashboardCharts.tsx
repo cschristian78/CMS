@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import type { BarChartItem } from './DashboardBarChart';
 import { formatNumber, formatPercent, formatUsd, formatUsdThousands, seriesColor } from '../dashboard/dashboardColors';
-import type { RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
+import type { NamedMetric, RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
 
 const TIMELINE_REVENUE_FILL = '#20d4e8';
 const TIMELINE_COUNT_FILL = '#f08700';
@@ -19,6 +19,7 @@ function scaleBarPx(value: number, max: number, plotH: number): number {
 interface SliceItem {
   label: string;
   value: number;
+  revenue?: number;
   fill?: string;
 }
 
@@ -27,6 +28,66 @@ interface DonutChartProps {
   items: SliceItem[];
   ariaLabel: string;
   onSelect?: (label: string) => void;
+}
+
+// ---------------------------------------------------------------------------
+// LeadTableExhibit – shows all account executive names with totals.
+// ---------------------------------------------------------------------------
+interface LeadTableExhibitProps {
+  title: string;
+  items: NamedMetric[];       // pre-sorted, full list (no slicing done outside)
+  ariaLabel: string;
+  onSelect?: (label: string) => void;
+}
+
+export function LeadTableExhibit({ title, items, ariaLabel, onSelect }: LeadTableExhibitProps) {
+  const totalCount   = items.reduce((s, m) => s + m.count, 0);
+  const totalRevenue = items.reduce((s, m) => s + m.revenue, 0);
+
+  return (
+    <section className="dashboard-chart-card pm-lead-table-exhibit" aria-label={ariaLabel}>
+      <h2 className="dashboard-chart-title">{title}</h2>
+      {items.length === 0 || totalCount === 0 ?
+        <p className="field-help" role="status">No data to display.</p>
+      : <div className="pm-lead-table-wrap">
+          <table className="pm-lead-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col" className="num">Projects</th>
+                <th scope="col" className="num">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((m, i) => (
+                <tr key={m.label} className={onSelect ? 'pm-lead-table-row--clickable' : undefined}>
+                  <td>
+                    <button
+                      type="button"
+                      className="pm-lead-table-btn"
+                      onClick={() => onSelect?.(m.label)}
+                    >
+                      <span className="pm-swatch" style={{ background: seriesColor(i, m.label) }} />
+                      {m.label}
+                    </button>
+                  </td>
+                  <td className="num">{formatNumber(m.count)}</td>
+                  <td className="num">{formatUsd(m.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="pm-lead-table-total">
+                <td>Total</td>
+                <td className="num">{formatNumber(totalCount)}</td>
+                <td className="num">{formatUsd(totalRevenue)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      }
+    </section>
+  );
 }
 
 function polar(cx: number, cy: number, r: number, angle: number): { x: number; y: number } {
@@ -43,6 +104,7 @@ function arcPath(cx: number, cy: number, r: number, start: number, end: number):
 
 export function DashboardDonutChart({ title, items, ariaLabel, onSelect }: DonutChartProps) {
   const total = items.reduce((s, x) => s + Math.max(0, x.value), 0);
+  const totalRevenue = items.reduce((s, x) => s + Math.max(0, x.revenue ?? 0), 0);
   const cx = 56;
   const cy = 56;
   const r = 40;
@@ -111,6 +173,9 @@ export function DashboardDonutChart({ title, items, ariaLabel, onSelect }: Donut
               </li>
             ))}
           </ul>
+          <p className="pm-exhibit-totals">
+            Total · {formatNumber(total)} projects · {formatUsd(totalRevenue)}
+          </p>
         </div>
       }
     </section>
@@ -467,6 +532,9 @@ export function DashboardRevenueRenewalTimeline({
               </div>
             </div>
           </div>
+          <p className="pm-exhibit-totals">
+            Total · {formatNumber(totalRenewalCount)} projects · {formatUsd(totalRevenue)}
+          </p>
 
           {selected ?
             <aside className="pm-timeline-side" aria-label="Timeline period summary">

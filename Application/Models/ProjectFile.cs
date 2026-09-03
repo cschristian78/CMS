@@ -23,7 +23,7 @@ public sealed class ProjectFile
     /// <summary>Data-as-of date for the uploaded dataset.</summary>
     public DateTime? DataAsOf { get; set; }
 
-    /// <summary>Process-Active flag: the file currently marked for processing (at most one per project).</summary>
+    /// <summary>Process-Active flag: file marked for processing (multiple may be Active on a project).</summary>
     public bool IsCurrent { get; set; }
 
     public int UploadedByUserID { get; set; }

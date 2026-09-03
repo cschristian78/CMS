@@ -14,6 +14,7 @@ public sealed class Project
 
     public int ClientID { get; set; }
     public string? ClientName { get; set; }
+    public string? ClientShortName { get; set; }
 
     public int BusinessClassID { get; set; }
     public string? BusinessClassName { get; set; }

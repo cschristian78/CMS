@@ -24,9 +24,17 @@ interface TimeEntryDto {
   notes?: string | null;
 }
 
+interface CatUserDto {
+  userID: number;
+  userFullName: string;
+  email?: string | null;
+}
+
 interface TimeWeekResponse {
   weekStartDate: string;
   weekEndDate: string;
+  userID?: number | null;
+  catUsers?: CatUserDto[];
   tasks: {
     calendarItemID: number;
     itemType?: string | null;
@@ -40,8 +48,8 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
 function startOfWeekMonday(d: Date): Date {
   const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = date.getDay(); // 0 Sun .. 6 Sat
-  const diff = (day + 6) % 7; // Mon=0
+  const day = date.getDay();
+  const diff = (day + 6) % 7;
   date.setDate(date.getDate() - diff);
   return date;
 }
@@ -72,7 +80,7 @@ function formatHours(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-type CellKey = string; // `${calendarItemID}|${yyyy-MM-dd}`
+type CellKey = string;
 
 function cellKey(calendarItemID: number, ymd: string): CellKey {
   return `${calendarItemID}|${ymd}`;
@@ -84,18 +92,19 @@ const ProjectTimeTrackerTab = forwardRef<
     projectId: number;
     isActive: boolean;
     flash: FlashFn;
-    /** Local calendar drafts used when API tasks are empty / not yet reloaded. */
     fallbackTasks: TimeTrackerTask[];
   }
 >(function ProjectTimeTrackerTab({ projectId, isActive, flash, fallbackTasks }, ref) {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [tasks, setTasks] = useState<TimeTrackerTask[]>([]);
   const [cells, setCells] = useState<Record<CellKey, { hours: string; entryMode: 'Exact' | 'Allocated' }>>({});
+  const [catUsers, setCatUsers] = useState<CatUserDto[]>([]);
+  const [activeUserId, setActiveUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [blockDayIndex, setBlockDayIndex] = useState(0); // 0=Mon
+  const [blockDayIndex, setBlockDayIndex] = useState(0);
   const [blockHours, setBlockHours] = useState('');
   const [blockTaskIds, setBlockTaskIds] = useState<number[]>([]);
 
@@ -111,14 +120,42 @@ const ProjectTimeTrackerTab = forwardRef<
     return fallbackTasks.filter((t) => t.calendarItemID > 0 && t.title.trim().length > 0);
   }, [tasks, fallbackTasks]);
 
+  const showUserTabs = catUsers.length > 1;
+
+  const activeUserLabel = useMemo(() => {
+    if (activeUserId === null) {
+      return '';
+    }
+    const match = catUsers.find((u) => u.userID === activeUserId);
+    return (match?.userFullName ?? '').trim() || `User ${activeUserId}`;
+  }, [activeUserId, catUsers]);
+
   const loadWeek = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const weekStartYmd = toYmd(weekStart);
+      const userQuery =
+        activeUserId !== null && activeUserId > 0
+          ? `&userId=${encodeURIComponent(String(activeUserId))}`
+          : '';
       const data = await apiGet<TimeWeekResponse>(
-        `/api/projects/${projectId}/time?weekStart=${encodeURIComponent(weekStartYmd)}`,
+        `/api/projects/${projectId}/time?weekStart=${encodeURIComponent(weekStartYmd)}${userQuery}`,
       );
+
+      const nextCatUsers = Array.isArray(data.catUsers) ? data.catUsers : [];
+      setCatUsers(nextCatUsers);
+
+      const resolvedUserId =
+        data.userID && data.userID > 0
+          ? data.userID
+          : nextCatUsers.length === 1
+            ? nextCatUsers[0].userID
+            : activeUserId;
+      if (resolvedUserId && resolvedUserId > 0) {
+        setActiveUserId(resolvedUserId);
+      }
+
       const nextTasks = (data.tasks ?? [])
         .filter((t) => t.calendarItemID > 0)
         .map((t) => ({
@@ -152,7 +189,7 @@ const ProjectTimeTrackerTab = forwardRef<
     } finally {
       setLoading(false);
     }
-  }, [projectId, weekStart]);
+  }, [projectId, weekStart, activeUserId]);
 
   useEffect(() => {
     if (!isActive || projectId <= 0) {
@@ -181,6 +218,11 @@ const ProjectTimeTrackerTab = forwardRef<
   const weekTotal = displayTasks.reduce((sum, t) => sum + rowTotal(t.calendarItemID), 0);
 
   const handleSave = async () => {
+    if (activeUserId === null || activeUserId <= 0) {
+      flash('error', 'Select a team member to save time for.');
+      return;
+    }
+
     setSaving(true);
     try {
       const entries: TimeEntryDto[] = [];
@@ -200,9 +242,6 @@ const ProjectTimeTrackerTab = forwardRef<
         }
       }
 
-      // Include explicit zeros for cleared cells that previously existed - save payload can be sparse;
-      // server clears omitted existing cells. Sending all non-empty is enough if we also send zeros
-      // for keys that were loaded then cleared: include any key currently in cells map.
       for (const [key, cell] of Object.entries(cells)) {
         const [idStr, ymd] = key.split('|');
         const calendarItemID = Number(idStr);
@@ -222,9 +261,14 @@ const ProjectTimeTrackerTab = forwardRef<
 
       const result = await apiPostJson<{ message: string; savedCount: number }>(`/api/projects/${projectId}/time`, {
         weekStartDate: toYmd(weekStart),
+        userID: activeUserId,
         entries,
       });
-      flash('success', result.message ?? `Saved ${result.savedCount ?? 0} time entry cell(s).`);
+      flash(
+        'success',
+        result.message ??
+          `Saved ${result.savedCount ?? 0} time entry cell(s) for ${activeUserLabel || 'selected user'}.`,
+      );
       await loadWeek();
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Could not save time entries.');
@@ -262,15 +306,12 @@ const ProjectTimeTrackerTab = forwardRef<
     }
 
     const each = Math.round((hours / blockTaskIds.length) * 100) / 100;
-    // Fix rounding remainder on the last selected task
     let assigned = 0;
     setCells((prev) => {
       const next = { ...prev };
       blockTaskIds.forEach((id, index) => {
         const value =
-          index === blockTaskIds.length - 1
-            ? Math.round((hours - assigned) * 100) / 100
-            : each;
+          index === blockTaskIds.length - 1 ? Math.round((hours - assigned) * 100) / 100 : each;
         assigned += index === blockTaskIds.length - 1 ? 0 : each;
         next[cellKey(id, day.ymd)] = {
           hours: formatHours(value),
@@ -285,187 +326,218 @@ const ProjectTimeTrackerTab = forwardRef<
     );
   };
 
+  const switchUser = (userId: number) => {
+    if (userId === activeUserId) {
+      return;
+    }
+    setCells({});
+    setActiveUserId(userId);
+  };
+
   if (!isActive) {
     return null;
   }
 
   return (
     <div className="admin-edit-card project-panel-tab-card">
-        <p className="field-help">
-          Track daily hours against calendar services / tasks, one week at a time (Monday-Sunday). Enter exact hours in
-          each cell, or use <strong>Allocate block</strong> to split a lump of time evenly across selected tasks for a
-          day. Save time here (does not require Save Project). Stored in <code>dbo.tProjectTimeEntry</code>.
-        </p>
+      <p className="field-help">
+        Track daily hours against calendar services / tasks, one week at a time (Monday–Sunday). When multiple user
+        group members are in the <strong>CAT</strong> department, use the person tabs below — each person&apos;s hours are
+        stored separately in <code>dbo.tProjectTimeEntry</code> by <code>UserID</code>.
+      </p>
 
-        <div className="page-header-actions project-services-select-actions project-time-week-nav">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setWeekStart((prev) => addDays(prev, -7))}
-            disabled={loading || saving}
-          >
-            Previous week
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setWeekStart(startOfWeekMonday(new Date()))}
-            disabled={loading || saving}
-          >
-            This week
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setWeekStart((prev) => addDays(prev, 7))}
-            disabled={loading || saving}
-          >
-            Next week
-          </button>
-          <span className="project-time-week-range" role="status">
-            {formatCalendarDateDisplay(toYmd(weekStart))} - {formatCalendarDateDisplay(toYmd(addDays(weekStart, 6)))}
-          </span>
-          <button type="button" className="primary-button" onClick={() => void handleSave()} disabled={loading || saving}>
-            {saving ? 'Saving...' : 'Save time'}
-          </button>
+      {showUserTabs ? (
+        <div className="project-time-user-tabs" role="tablist" aria-label="CAT department members">
+          {catUsers.map((user) => (
+            <button
+              key={user.userID}
+              type="button"
+              role="tab"
+              className={activeUserId === user.userID ? 'active' : ''}
+              aria-selected={activeUserId === user.userID}
+              onClick={() => switchUser(user.userID)}
+              disabled={loading || saving}
+            >
+              {(user.userFullName ?? '').trim() || `User ${user.userID}`}
+            </button>
+          ))}
         </div>
+      ) : catUsers.length === 1 ? (
+        <p className="field-help" role="status">
+          Tracking time for <strong>{catUsers[0].userFullName}</strong> (CAT department).
+        </p>
+      ) : null}
 
-        {loadError ? <div className="validation-summary">{loadError}</div> : null}
-        {loading ? <p className="field-help">Loading week...</p> : null}
+      <div className="page-header-actions project-services-select-actions project-time-week-nav">
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => setWeekStart((prev) => addDays(prev, -7))}
+          disabled={loading || saving}
+        >
+          Previous week
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => setWeekStart(startOfWeekMonday(new Date()))}
+          disabled={loading || saving}
+        >
+          This week
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => setWeekStart((prev) => addDays(prev, 7))}
+          disabled={loading || saving}
+        >
+          Next week
+        </button>
+        <span className="project-time-week-range" role="status">
+          {formatCalendarDateDisplay(toYmd(weekStart))} - {formatCalendarDateDisplay(toYmd(addDays(weekStart, 6)))}
+          {activeUserLabel ? ` · ${activeUserLabel}` : ''}
+        </span>
+        <button type="button" className="primary-button" onClick={() => void handleSave()} disabled={loading || saving}>
+          {saving ? 'Saving...' : 'Save time'}
+        </button>
+      </div>
 
-        {!loading && displayTasks.length === 0 ? (
-          <p className="field-help" role="status">
-            No calendar services / tasks are saved for this project yet. Add items on the <strong>Calendar</strong> tab
-            (or use Add to Project on Services), then Save Project before tracking time.
-          </p>
-        ) : null}
+      {loadError ? <div className="validation-summary">{loadError}</div> : null}
+      {loading ? <p className="field-help">Loading week...</p> : null}
 
-        {displayTasks.length > 0 ? (
-          <>
-            <div className="project-tab-table-wrap project-time-table-wrap">
-              <table className="dashboard-data-table dashboard-data-table--full home-client-project-table project-time-table">
-                <thead>
-                  <tr>
-                    <th>Service / task</th>
-                    {weekDays.map((d) => (
-                      <th key={d.ymd}>
-                        <div className="project-time-day-head">
-                          <span>{d.label}</span>
-                          <span className="project-time-day-date">{formatCalendarDateDisplay(d.ymd)}</span>
-                        </div>
-                      </th>
-                    ))}
-                    <th>Week</th>
+      {!loading && displayTasks.length === 0 ? (
+        <p className="field-help" role="status">
+          No calendar services / tasks are saved for this project yet. Add items on the <strong>Calendar</strong> tab
+          (or use Add to Project on Services), then Save Project before tracking time.
+        </p>
+      ) : null}
+
+      {displayTasks.length > 0 ? (
+        <>
+          <div className="project-tab-table-wrap project-time-table-wrap">
+            <table className="dashboard-data-table dashboard-data-table--full home-client-project-table project-time-table">
+              <thead>
+                <tr>
+                  <th>Service / task</th>
+                  {weekDays.map((d) => (
+                    <th key={d.ymd}>
+                      <div className="project-time-day-head">
+                        <span>{d.label}</span>
+                        <span className="project-time-day-date">{formatCalendarDateDisplay(d.ymd)}</span>
+                      </div>
+                    </th>
+                  ))}
+                  <th>Week</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayTasks.map((task) => (
+                  <tr key={task.calendarItemID}>
+                    <td>
+                      <div className="project-time-task-title">{task.title}</div>
+                      <div className="project-time-task-type">{task.itemType ?? 'Task'}</div>
+                    </td>
+                    {weekDays.map((d) => {
+                      const key = cellKey(task.calendarItemID, d.ymd);
+                      const cell = cells[key];
+                      return (
+                        <td key={d.ymd}>
+                          <input
+                            className={
+                              'project-time-hours-input' +
+                              (cell?.entryMode === 'Allocated' ? ' project-time-hours-input--allocated' : '')
+                            }
+                            inputMode="decimal"
+                            placeholder="0"
+                            value={cell?.hours ?? ''}
+                            onChange={(e) => setCellHours(task.calendarItemID, d.ymd, e.target.value)}
+                            aria-label={`${task.title} ${d.label}`}
+                            title={cell?.entryMode === 'Allocated' ? 'Allocated from block' : 'Exact time'}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="project-time-total">{formatHours(rowTotal(task.calendarItemID)) || '0'}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {displayTasks.map((task) => (
-                    <tr key={task.calendarItemID}>
-                      <td>
-                        <div className="project-time-task-title">{task.title}</div>
-                        <div className="project-time-task-type">{task.itemType ?? 'Task'}</div>
-                      </td>
-                      {weekDays.map((d) => {
-                        const key = cellKey(task.calendarItemID, d.ymd);
-                        const cell = cells[key];
-                        return (
-                          <td key={d.ymd}>
-                            <input
-                              className={
-                                'project-time-hours-input' +
-                                (cell?.entryMode === 'Allocated' ? ' project-time-hours-input--allocated' : '')
-                              }
-                              inputMode="decimal"
-                              placeholder="0"
-                              value={cell?.hours ?? ''}
-                              onChange={(e) => setCellHours(task.calendarItemID, d.ymd, e.target.value)}
-                              aria-label={`${task.title} ${d.label}`}
-                              title={cell?.entryMode === 'Allocated' ? 'Allocated from block' : 'Exact time'}
-                            />
-                          </td>
-                        );
-                      })}
-                      <td className="project-time-total">{formatHours(rowTotal(task.calendarItemID)) || '0'}</td>
-                    </tr>
+                ))}
+                <tr className="project-time-day-totals">
+                  <td>Day total</td>
+                  {weekDays.map((d) => (
+                    <td key={d.ymd} className="project-time-total">
+                      {formatHours(dayTotal(d.ymd)) || '0'}
+                    </td>
                   ))}
-                  <tr className="project-time-day-totals">
-                    <td>Day total</td>
-                    {weekDays.map((d) => (
-                      <td key={d.ymd} className="project-time-total">
-                        {formatHours(dayTotal(d.ymd)) || '0'}
-                      </td>
-                    ))}
-                    <td className="project-time-total">{formatHours(weekTotal) || '0'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                  <td className="project-time-total">{formatHours(weekTotal) || '0'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-            <div className="project-time-block-panel">
-              <h3 className="project-time-block-title">Allocate block of time</h3>
-              <p className="field-help">
-                When you tracked a total for the day but not exact splits, enter the block hours, choose the day and
-                tasks, then distribute evenly (marked as Allocated).
-              </p>
-              <div className="form-grid project-time-block-grid">
-                <label htmlFor="time-block-day">Day</label>
-                <select
-                  id="time-block-day"
-                  value={blockDayIndex}
-                  onChange={(e) => setBlockDayIndex(Number(e.target.value))}
-                >
-                  {weekDays.map((d, i) => (
-                    <option key={d.ymd} value={i}>
-                      {d.label} {formatCalendarDateDisplay(d.ymd)}
-                    </option>
-                  ))}
-                </select>
+          <div className="project-time-block-panel">
+            <h3 className="project-time-block-title">Allocate block of time</h3>
+            <p className="field-help">
+              When you tracked a total for the day but not exact splits, enter the block hours, choose the day and
+              tasks, then distribute evenly (marked as Allocated).
+            </p>
+            <div className="form-grid project-time-block-grid">
+              <label htmlFor="time-block-day">Day</label>
+              <select
+                id="time-block-day"
+                value={blockDayIndex}
+                onChange={(e) => setBlockDayIndex(Number(e.target.value))}
+              >
+                {weekDays.map((d, i) => (
+                  <option key={d.ymd} value={i}>
+                    {d.label} {formatCalendarDateDisplay(d.ymd)}
+                  </option>
+                ))}
+              </select>
 
-                <label htmlFor="time-block-hours">Hours</label>
-                <input
-                  id="time-block-hours"
-                  inputMode="decimal"
-                  value={blockHours}
-                  onChange={(e) => setBlockHours(e.target.value)}
-                  placeholder="e.g. 6.5"
-                />
+              <label htmlFor="time-block-hours">Hours</label>
+              <input
+                id="time-block-hours"
+                inputMode="decimal"
+                value={blockHours}
+                onChange={(e) => setBlockHours(e.target.value)}
+                placeholder="e.g. 6.5"
+              />
 
-                <span className="field-label">Tasks</span>
-                <div className="project-time-block-tasks">
-                  <div className="page-header-actions project-services-select-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => setBlockTaskIds(displayTasks.map((t) => t.calendarItemID))}
-                    >
-                      Select all
-                    </button>
-                    <button type="button" className="secondary-button" onClick={() => setBlockTaskIds([])}>
-                      Clear
-                    </button>
-                  </div>
-                  {displayTasks.map((task) => (
-                    <label key={task.calendarItemID} className="project-time-block-task">
-                      <input
-                        type="checkbox"
-                        checked={blockTaskIds.includes(task.calendarItemID)}
-                        onChange={() => toggleBlockTask(task.calendarItemID)}
-                      />
-                      <span>{task.title}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <span className="field-label" aria-hidden="true" />
-                <div>
-                  <button type="button" className="secondary-button" onClick={distributeBlock}>
-                    Distribute evenly
+              <span className="field-label">Tasks</span>
+              <div className="project-time-block-tasks">
+                <div className="page-header-actions project-services-select-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setBlockTaskIds(displayTasks.map((t) => t.calendarItemID))}
+                  >
+                    Select all
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setBlockTaskIds([])}>
+                    Clear
                   </button>
                 </div>
+                {displayTasks.map((task) => (
+                  <label key={task.calendarItemID} className="project-time-block-task">
+                    <input
+                      type="checkbox"
+                      checked={blockTaskIds.includes(task.calendarItemID)}
+                      onChange={() => toggleBlockTask(task.calendarItemID)}
+                    />
+                    <span>{task.title}</span>
+                  </label>
+                ))}
+              </div>
+
+              <span className="field-label" aria-hidden="true" />
+              <div>
+                <button type="button" className="secondary-button" onClick={distributeBlock}>
+                  Distribute evenly
+                </button>
               </div>
             </div>
-          </>
-        ) : null}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 });

@@ -12,6 +12,7 @@ import {
   DashboardScatterChart,
 } from '../components/PmDashboardCharts';
 import {
+  DASH_OTHER_LABEL,
   applyGlobalFilters,
   blankLabel,
   buildAgingRows,
@@ -35,6 +36,7 @@ import {
   splitPeople,
   summarizePortfolio,
   trendByMonth,
+  withOtherRemainder,
   type DashCell,
   type DashColIndex,
   type DashboardDataset,
@@ -52,6 +54,8 @@ import {
   revenueTierColor,
   seriesColor,
 } from '../dashboard/dashboardColors';
+import { exportExecutiveOverviewPdf } from '../dashboard/exportExecutiveOverviewPdf';
+import { formatCalendarDateDisplay } from '../utils/dateInput';
 import {
   clientProjectListSortIndicator,
   compareClientProjectListCellValues,
@@ -252,6 +256,26 @@ export default function DashboardPage() {
             <button className="secondary-button" type="button" onClick={() => void load()} disabled={loading}>
               {loading ? 'Loading...' : 'Refresh'}
             </button>
+            {tab === 'executive' && dataset && col && !loading ? (
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => {
+                  try {
+                    exportExecutiveOverviewPdf({
+                      rows: detailRows,
+                      col,
+                      filters,
+                      detailTitle,
+                    });
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Could not open PDF report.');
+                  }
+                }}
+              >
+                Export PDF
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -394,9 +418,14 @@ function ExecutiveTab({
   const byTier = sortTiers(groupMetrics(linkedRows, col, col.revenueTier, 'Unknown'));
   const byAccountExecutive = groupMetrics(linkedRows, col, col.accountExecutive, '(No account executive)')
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  const byAnalyticsLead = groupMetrics(linkedRows, col, col.analyticsLead, '(No analytics lead)')
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  const topClients = groupMetrics(linkedRows, col, col.clientName, '(No client)').slice(0, 25);
+  const byAnalyticsLead = withOtherRemainder(
+    groupMetrics(linkedRows, col, col.analyticsLead, '(No analytics lead)')
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    8,
+  );
+  const topClientsAll = groupMetrics(linkedRows, col, col.clientName, '(No client)');
+  // Dashboard: show all clients (report/export will still cap for layout)
+  const topClients = topClientsAll;
 
   useEffect(() => {
     setSelectedTimelineKey(null);
@@ -432,7 +461,12 @@ function ExecutiveTab({
         <DashboardDonutChart
           title="Revenue Tier Distribution"
           ariaLabel="Count of projects by RevenueTier"
-          items={byTier.map((m) => ({ label: m.label, value: m.count, fill: revenueTierColor(m.label) }))}
+          items={byTier.map((m) => ({
+            label: m.label,
+            value: m.count,
+            revenue: m.revenue,
+            fill: revenueTierColor(m.label),
+          }))}
           onSelect={(label) => onDrill(
             `Revenue tier ${label}`,
             linkedRows.filter((r) => blankLabel(cellText(r, col.revenueTier), 'Unknown') === label),
@@ -444,6 +478,7 @@ function ExecutiveTab({
           items={byAccountExecutive.map((m, i) => ({
             label: m.label,
             value: m.count,
+            revenue: m.revenue,
             fill: seriesColor(i, m.label),
           }))}
           onSelect={(label) => onDrill(
@@ -457,27 +492,41 @@ function ExecutiveTab({
           items={byAnalyticsLead.map((m, i) => ({
             label: m.label,
             value: m.count,
-            fill: seriesColor(i, m.label),
+            revenue: m.revenue,
+            fill: m.label === DASH_OTHER_LABEL ? '#8a96a3' : seriesColor(i, m.label),
           }))}
-          onSelect={(label) => onDrill(
-            `Analytics lead ${label}`,
-            linkedRows.filter((r) => blankLabel(cellText(r, col.analyticsLead), '(No analytics lead)') === label),
-          )}
+          onSelect={(label) => {
+            if (label === DASH_OTHER_LABEL) {
+              const shown = new Set(
+                byAnalyticsLead.filter((m) => m.label !== DASH_OTHER_LABEL).map((m) => m.label),
+              );
+              onDrill(
+                'Analytics lead Other',
+                linkedRows.filter((r) => !shown.has(blankLabel(cellText(r, col.analyticsLead), '(No analytics lead)'))),
+              );
+              return;
+            }
+            onDrill(
+              `Analytics lead ${label}`,
+              linkedRows.filter((r) => blankLabel(cellText(r, col.analyticsLead), '(No analytics lead)') === label),
+            );
+          }}
         />
       </div>
       <div className="pm-dash-span">
         <DashboardBarChart
           title="Top Clients by Revenue"
-          ariaLabel="Top 25 clients by sum of LatestRevenue"
+          ariaLabel="Top 10 clients by sum of LatestRevenue"
           orientation="vertical"
-          plotHeightPx={280}
-          className="pm-dash-clients-chart pm-dash-simple-bars"
+          plotHeightPx={220}
+          className="pm-dash-clients-chart pm-dash-simple-bars pm-dash-clients-slide"
           valueKey="Revenue ($000)"
           items={topClients.map((m) => ({
             label: `${m.label} (${m.count})`,
             value: m.revenue,
+            count: m.count,
             displayValue: formatUsdThousands(m.revenue),
-            fill: '#20d4e8',
+            fill: m.label === DASH_OTHER_LABEL ? '#8a96a3' : '#20d4e8',
           }))}
           onSelect={(item) => {
             const name = item.label.replace(/\s+\(\d+\)$/, '');
@@ -874,7 +923,9 @@ type DetailSortKey =
   | 'status'
   | 'tier'
   | 'revenue'
-  | 'hours';
+  | 'renewalDate'
+  | 'accountExecutive'
+  | 'analyticsLead';
 
 const DETAIL_SORT_COLUMNS: {
   key: DetailSortKey;
@@ -888,7 +939,9 @@ const DETAIL_SORT_COLUMNS: {
   { key: 'status', label: 'Status', kind: 'text' },
   { key: 'tier', label: 'Tier', kind: 'text' },
   { key: 'revenue', label: 'Latest Revenue', kind: 'number' },
-  { key: 'hours', label: 'Hours', kind: 'number' },
+  { key: 'renewalDate', label: 'Renewal Date', kind: 'text' },
+  { key: 'accountExecutive', label: 'Account Executive', kind: 'text' },
+  { key: 'analyticsLead', label: 'Analytics Lead', kind: 'text' },
 ];
 
 function detailSortValue(
@@ -911,8 +964,12 @@ function detailSortValue(
       return blankLabel(cellText(row, col.revenueTier), 'Unknown');
     case 'revenue':
       return cellNumber(row, col.latestRevenue);
-    case 'hours':
-      return cellNumber(row, col.totalHours);
+    case 'renewalDate':
+      return cellYmd(row, col.renewalDate);
+    case 'accountExecutive':
+      return blankLabel(cellText(row, col.accountExecutive), '');
+    case 'analyticsLead':
+      return blankLabel(cellText(row, col.analyticsLead), '');
     default:
       return '';
   }
@@ -927,11 +984,11 @@ function DetailGrid({
   inactive?: DashboardInactiveProject[];
   onClear?: () => void;
 }) {
-  const [sortKey, setSortKey] = useState<DetailSortKey | null>(null);
+  const [sortKey, setSortKey] = useState<DetailSortKey | null>('client');
   const [sortDirection, setSortDirection] = useState<ClientProjectListSortDirection>('asc');
 
   useEffect(() => {
-    setSortKey(null);
+    setSortKey('client');
     setSortDirection('asc');
   }, [title]);
 
@@ -955,6 +1012,11 @@ function DetailGrid({
     });
     return indexed.map((entry) => entry.row);
   }, [rows, col, sortKey, sortDirection]);
+
+  const shownRows = sortedRows.slice(0, 200);
+  const hiddenRows = sortedRows.slice(200);
+  const hiddenKpis = hiddenRows.length > 0 ? summarizePortfolio(hiddenRows, col) : null;
+  const allKpis = summarizePortfolio(sortedRows, col);
 
   const handleSort = (key: DetailSortKey) => {
     setSortKey((prev) => {
@@ -1017,14 +1079,19 @@ function DetailGrid({
                 <td>{p.projectName}</td>
                 <td></td>
                 <td><span className="pm-chip" style={{ background: projectStatusColor('Inactive') }}>Inactive</span></td>
-                <td></td><td></td><td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
                 <td><Link to={`/projects/${p.projectID}`}>Edit</Link></td>
               </tr>
             ))}
-            {sortedRows.slice(0, 200).map((row, i) => {
+            {shownRows.map((row, i) => {
               const pid = projectIdOf(row, col);
               const status = blankLabel(cellText(row, col.projectStatus), 'Active');
               const tier = blankLabel(cellText(row, col.revenueTier), 'Unknown');
+              const renewal = formatCalendarDateDisplay(cellYmd(row, col.renewalDate)) || '—';
               return (
                 <tr key={pid ?? i}>
                   <td>{cellText(row, col.clientName)}</td>
@@ -1034,15 +1101,42 @@ function DetailGrid({
                   <td><span className="pm-chip" style={{ background: projectStatusColor(status) }}>{status}</span></td>
                   <td><span className="pm-chip" style={{ background: revenueTierColor(tier) }}>{tier}</span></td>
                   <td>{formatUsd(cellNumber(row, col.latestRevenue))}</td>
-                  <td>{formatNumber(cellNumber(row, col.totalHours), 1)}</td>
+                  <td>{renewal}</td>
+                  <td>{blankLabel(cellText(row, col.accountExecutive), '—')}</td>
+                  <td>{blankLabel(cellText(row, col.analyticsLead), '—')}</td>
                   <td>{pid ? <Link to={`/projects/${pid}`}>Edit</Link> : null}</td>
                 </tr>
               );
             })}
           </tbody>
+          <tfoot>
+            {hiddenKpis ?
+              <tr className="pm-exhibit-other-row">
+                <td colSpan={6}>Other ({formatNumber(hiddenKpis.projects)} projects not shown)</td>
+                <td>{formatUsd(hiddenKpis.revenue)}</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+              </tr>
+            : null}
+            <tr className="pm-exhibit-total-row">
+              <td colSpan={6}>Total</td>
+              <td>{formatUsd(allKpis.revenue)}</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
-      {rows.length > 200 ? <p className="field-help">Showing first 200 of {rows.length} projects.</p> : null}
+      {hiddenRows.length > 0 ?
+        <p className="field-help">
+          Showing first 200 of {sortedRows.length} projects. Remaining {hiddenKpis?.projects ?? 0} projects
+          are grouped as Other.
+        </p>
+      : null}
     </section>
   );
 }

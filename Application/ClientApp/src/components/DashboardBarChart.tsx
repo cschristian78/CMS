@@ -1,4 +1,5 @@
 import { regionBarColor } from '../utils/regionBarColors';
+import { formatNumber, formatUsd } from '../dashboard/dashboardColors';
 
 export interface BarChartItem {
   label: string;
@@ -7,6 +8,7 @@ export interface BarChartItem {
   colorKey?: string | null;
   fill?: string;
   displayValue?: string;
+  count?: number;
 }
 
 interface DashboardBarChartProps {
@@ -18,6 +20,7 @@ interface DashboardBarChartProps {
   className?: string;
   /** Shown under the title (e.g. unit key for chart values). */
   valueKey?: string;
+  totals?: { count: number; revenue: number };
   onSelect?: (item: BarChartItem) => void;
 }
 
@@ -29,6 +32,7 @@ export default function DashboardBarChart({
   plotHeightPx = 160,
   className,
   valueKey,
+  totals,
   onSelect,
 }: DashboardBarChartProps) {
   const max = items.reduce((m, x) => {
@@ -82,9 +86,19 @@ export default function DashboardBarChart({
             })}
           </div>
         }
+        {totals ?
+          <p className="pm-exhibit-totals">
+            Total · {formatNumber(totals.count)} projects · {formatUsd(totals.revenue)}
+          </p>
+        : null}
       </section>
     );
   }
+
+  const computedTotals = totals ?? {
+    count: items.reduce((s, x) => s + (x.count ?? 0), 0),
+    revenue: items.reduce((s, x) => s + (Number.isFinite(x.value) ? x.value : 0), 0),
+  };
 
   return (
     <section className={cardClass} aria-label={ariaLabel}>
@@ -123,6 +137,11 @@ export default function DashboardBarChart({
           </div>
         </div>
       }
+      {computedTotals.count > 0 || computedTotals.revenue > 0 ?
+        <p className="pm-exhibit-totals">
+          Total · {formatNumber(computedTotals.count)} projects · {formatUsd(computedTotals.revenue)}
+        </p>
+      : null}
     </section>
   );
 }

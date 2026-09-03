@@ -5208,6 +5208,8 @@ a.link-button:hover,
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
     align-items: stretch;
+    /* let the row grow so the AE table can fill vertical space */
+    min-height: 26rem;
 }
 
 .pm-dash-row--donuts .dashboard-chart-card {
@@ -5215,6 +5217,111 @@ a.link-button:hover,
     flex-direction: column;
     height: 100%;
     min-height: 19rem;
+}
+
+/* ---- LeadTableExhibit ---- */
+.pm-lead-table-exhibit {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.pm-lead-table-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.pm-lead-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    /* Let the table grow and let tfoot anchor to the bottom */
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.pm-lead-table thead,
+.pm-lead-table tbody,
+.pm-lead-table tfoot {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.pm-lead-table tbody {
+    flex: 1;
+    overflow: hidden;
+}
+
+.pm-lead-table th,
+.pm-lead-table td {
+    padding: 0.3rem 0.4rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-lead-table th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+.pm-lead-table td.num,
+.pm-lead-table th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.pm-lead-table-btn {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-lead-table-btn:hover {
+    color: var(--accent);
+}
+
+.pm-lead-table-row--clickable td {
+    cursor: pointer;
+}
+
+.pm-lead-table-other td {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.pm-lead-table-total td {
+    font-weight: 700;
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(11, 61, 92, 0.18);
+    color: var(--text);
+}
+
+.pm-swatch--other {
+    background: #8a96a3 !important;
 }
 
 .pm-dash-row--donuts .pm-donut {
@@ -5400,6 +5507,53 @@ a.link-button:hover,
 
 .pm-dash-simple-bars .bar-column--button.is-selected .bar-column-fill {
     background: #f08700;
+}
+
+/* Top Clients exhibit: keep all bars on one slide-width card (no horizontal scroll). */
+.pm-dash-clients-slide {
+    --pm-bar-gap: 0.28rem;
+    --pm-bar-track-width: 1.55rem;
+    overflow: hidden;
+}
+
+.pm-dash-clients-slide .bar-chart.bar-chart--vertical {
+    width: 100%;
+    max-width: 100%;
+}
+
+.pm-dash-clients-slide .bar-chart--vertical .bar-chart-plot {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+    justify-content: space-between;
+    gap: var(--pm-bar-gap);
+    min-height: calc(var(--bar-plot-height, 160px) + 3.75rem);
+}
+
+.pm-dash-clients-slide .bar-chart--vertical .bar-column {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    grid-template-rows: 1.25rem var(--bar-plot-height, 160px) minmax(2.1rem, auto);
+    gap: 0.28rem;
+}
+
+.pm-dash-clients-slide .bar-chart--vertical .bar-column-value {
+    min-height: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.72rem;
+}
+
+.pm-dash-clients-slide .bar-chart--vertical .bar-column-track {
+    max-width: min(100%, 1.85rem);
+}
+
+.pm-dash-clients-slide .bar-chart--vertical .bar-column-label {
+    min-height: 2.1rem;
+    font-size: 0.62rem;
+    line-height: 1.1;
+    -webkit-line-clamp: 2;
 }
 
 /*
@@ -5970,6 +6124,26 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
     font-weight: 700;
 }
 
+.pm-exhibit-totals {
+    margin: 0.5rem 0 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 0.25rem 0;
+    border-top: 1px solid var(--border);
+}
+
+.pm-exhibit-other-row td,
+.pm-exhibit-total-row td {
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.04);
+    border-top: 1px solid var(--border);
+}
+
+.pm-exhibit-total-row td {
+    background: rgba(11, 61, 92, 0.12);
+    color: var(--text);
+}
+
 .pm-detail {
     margin-top: 0.5rem;
 }
@@ -5993,6 +6167,151 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 
 .pm-pareto-caption {
     margin-top: 0.35rem;
+}
+
+/* Analysis Profile tab (Moodys / Verisk BAR config) */
+.analysis-profile-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.analysis-profile-prefill-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.analysis-profile-general {
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem 1rem;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.analysis-profile-general legend {
+    font-size: 1.05rem;
+    font-weight: 600;
+    padding: 0 0.35rem;
+}
+
+.analysis-profile-general input[readonly] {
+    opacity: 0.95;
+    cursor: default;
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.analysis-profile-vendor-tabs {
+    display: flex;
+    gap: 0.35rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.35rem;
+}
+
+.analysis-profile-vendor-tabs button {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    padding: 0.4rem 0.85rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+}
+
+.analysis-profile-vendor-tabs button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.analysis-profile-form h3 {
+    margin: 0 0 0.35rem;
+}
+
+.analysis-profile-section {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin: 0 0 1rem;
+}
+
+.analysis-profile-section legend {
+    padding: 0 0.35rem;
+    font-weight: 600;
+}
+
+.analysis-profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 0.65rem 1rem;
+}
+
+.analysis-profile-field label {
+    display: block;
+    font-size: 0.78rem;
+    margin-bottom: 0.2rem;
+}
+
+.analysis-profile-field input,
+.analysis-profile-field select,
+.analysis-profile-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.analysis-profile-import-block {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border);
+}
+
+.analysis-profile-import-block h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+}
+
+.analysis-profile-peril-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.35rem 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.analysis-profile-check {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+}
+
+.project-time-user-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.35rem;
+}
+
+.project-time-user-tabs button {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    padding: 0.4rem 0.85rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+}
+
+.project-time-user-tabs button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
 }
 
 @media (max-width: 900px) {

@@ -27,7 +27,10 @@ public sealed class AzureProjectBlobStorage : IProjectBlobStorage
     public long MaxUploadBytes => _options.MaxUploadBytes > 0 ? _options.MaxUploadBytes : 2L * 1024 * 1024 * 1024;
 
     public async Task<(string BlobPath, string BlobUrl)> UploadAsync(
+        string clientShortName,
+        int renewalYear,
         int projectId,
+        int projectFileId,
         string originalFileName,
         string? contentType,
         Stream content,
@@ -39,14 +42,24 @@ public sealed class AzureProjectBlobStorage : IProjectBlobStorage
             throw new ArgumentOutOfRangeException(nameof(projectId));
         }
 
+        if (projectFileId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectFileId));
+        }
+
+        if (renewalYear < 1900 || renewalYear > 9999)
+        {
+            throw new ArgumentOutOfRangeException(nameof(renewalYear));
+        }
+
         if (contentLength > MaxUploadBytes)
         {
             throw new InvalidOperationException($"File exceeds maximum size ({MaxUploadBytes / (1024 * 1024)} MB).");
         }
 
+        var clientSegment = SanitizePathSegment(clientShortName, "UnknownClient");
         var safeName = SanitizeFileName(originalFileName);
-        var now = DateTime.UtcNow;
-        var blobPath = $"projects/{projectId}/{now:yyyy}/{now:MM}/{Guid.NewGuid():N}_{safeName}";
+        var blobPath = $"projects/{clientSegment}/{renewalYear}/{projectId}/{projectFileId}/{safeName}";
         var blob = _container.GetBlobClient(blobPath);
 
         var headers = new BlobHttpHeaders
@@ -109,6 +122,39 @@ public sealed class AzureProjectBlobStorage : IProjectBlobStorage
         }
 
         return value.TrimStart('/');
+    }
+
+    internal static string SanitizePathSegment(string? value, string fallback)
+    {
+        var name = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = fallback;
+        }
+
+        foreach (var c in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(c, '_');
+        }
+
+        name = name.Replace(' ', '_').Replace('/', '_').Replace('\\', '_');
+        while (name.Contains("__", StringComparison.Ordinal))
+        {
+            name = name.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        name = name.Trim('_');
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = fallback;
+        }
+
+        if (name.Length > 80)
+        {
+            name = name[..80].Trim('_');
+        }
+
+        return name;
     }
 
     private static string SanitizeFileName(string? originalFileName)

@@ -59,6 +59,11 @@ public interface IProjectRepository
         int projectId,
         DateTime weekStartDate,
         IReadOnlyList<ProjectTimeEntry> entries,
+        int targetUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ProjectTimeCatUser>> ListCatDepartmentUsersForProjectAsync(
+        int projectId,
         CancellationToken cancellationToken = default);
 
     // Project files (Azure Blob metadata)
@@ -74,6 +79,11 @@ public interface IProjectRepository
         CancellationToken cancellationToken = default);
     Task SetFileCurrentAsync(int projectFileId, bool isCurrent, CancellationToken cancellationToken = default);
     Task SoftDeleteFileAsync(int projectFileId, CancellationToken cancellationToken = default);
+    Task UpdateFileBlobLocationAsync(
+        int projectFileId,
+        string blobPath,
+        string blobUrl,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
     Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);

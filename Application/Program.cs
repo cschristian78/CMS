@@ -78,6 +78,8 @@ builder.Services.AddHttpClient();
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<ICalendarOwnerNotificationService, CalendarOwnerNotificationService>();
+builder.Services.AddSingleton<IProjectAnalysisProfileStore, FileProjectAnalysisProfileStore>();
+builder.Services.AddScoped<IProjectAnalysisProfileService, ProjectAnalysisProfileService>();
 
 var app = builder.Build();
 

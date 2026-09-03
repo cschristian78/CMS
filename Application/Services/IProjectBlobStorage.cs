@@ -4,9 +4,16 @@ public interface IProjectBlobStorage
 {
     long MaxUploadBytes { get; }
 
-    /// <summary>Uploads a stream and returns (blobPath, blobUrlWithoutSas).</summary>
+    /// <summary>
+    /// Uploads a stream to
+    /// <c>projects/{clientShortName}/{renewalYear}/{projectId}/{projectFileId}/{fileName}</c>
+    /// and returns (blobPath, blobUrlWithoutSas).
+    /// </summary>
     Task<(string BlobPath, string BlobUrl)> UploadAsync(
+        string clientShortName,
+        int renewalYear,
         int projectId,
+        int projectFileId,
         string originalFileName,
         string? contentType,
         Stream content,

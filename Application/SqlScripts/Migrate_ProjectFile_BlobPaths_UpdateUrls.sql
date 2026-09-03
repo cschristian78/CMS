@@ -1,0 +1,19 @@
+-- Update BlobPath / BlobUrl after Azure copy migration to
+-- projects/{ClientShortName}/{RenewalYear}/{ProjectID}/{ProjectFileID}/{FileName}
+SET NOCOUNT ON;
+
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/Bro/2026/2/1/erm_profile_as_of_2026-06-30.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/Bro/2026/2/1/erm_profile_as_of_2026-06-30.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 1;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/Nor/2026/33/2/C20_Policy_Reinsurance_Marias.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/Nor/2026/33/2/C20_Policy_Reinsurance_Marias.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 2;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/AUTIns/2027/90/3/Re_Authentic_Insurance__Main_Street_Commercial_Property_Program.msg', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/AUTIns/2027/90/3/Re_Authentic_Insurance__Main_Street_Commercial_Property_Program.msg', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 3;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/AUTIns/2027/90/4/All_Exposure_Limits_asof_07022026_(2).xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/AUTIns/2027/90/4/All_Exposure_Limits_asof_07022026_(2).xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 4;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/AUTIns/2027/90/5/Authentic_Commercial_Property_Submission_-_July_2026_(1)_(1).docx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/AUTIns/2027/90/5/Authentic_Commercial_Property_Submission_-_July_2026_(1)_(1).docx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 5;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/AUTIns/2027/90/6/cat-test.txt', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/AUTIns/2027/90/6/cat-test.txt', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 6;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/Tri/2026/40/7/1-2026-07_Triangle_Cat_Model_-_Building.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/Tri/2026/40/7/1-2026-07_Triangle_Cat_Model_-_Building.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 7;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/Tri/2026/40/8/2-2026-07_Trangle_Cat_Model_-_Auto.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/Tri/2026/40/8/2-2026-07_Trangle_Cat_Model_-_Auto.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 8;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/Tri/2026/40/9/3-2026-08_REVISED_Triangle_Cat_Model_-_TriCot.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/Tri/2026/40/9/3-2026-08_REVISED_Triangle_Cat_Model_-_TriCot.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 9;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/GSIC/2026/86/10/Inforce_7_31_26.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/GSIC/2026/86/10/Inforce_7_31_26.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 10;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/GSIC/2026/86/11/Duplicate_Locations_01_31_26_To_Verify.xlsx', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/GSIC/2026/86/11/Duplicate_Locations_01_31_26_To_Verify.xlsx', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 11;
+UPDATE dbo.tProjectFile SET BlobPath = N'projects/GSIC/2026/86/12/RE_Gulf_States_Inforce_13126.msg', BlobUrl = N'https://stacanalyticstdltest.blob.core.windows.net/cms/projects/GSIC/2026/86/12/RE_Gulf_States_Inforce_13126.msg', ModifiedDate = SYSUTCDATETIME() WHERE ProjectFileID = 12;
+
+SELECT ProjectFileID, BlobPath, BlobUrl FROM dbo.tProjectFile ORDER BY ProjectFileID;
+GO

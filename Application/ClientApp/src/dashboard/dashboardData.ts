@@ -377,6 +377,38 @@ export function applyGlobalFilters(
   });
 }
 
+export const DASH_OTHER_LABEL = 'Other';
+
+export function withOtherRemainder(items: NamedMetric[], visibleCount: number): NamedMetric[] {
+  if (visibleCount <= 0 || items.length <= visibleCount) {
+    return items;
+  }
+  const shown = items.slice(0, visibleCount);
+  const rest = items.slice(visibleCount);
+  const count = rest.reduce((s, x) => s + x.count, 0);
+  const revenue = rest.reduce((s, x) => s + x.revenue, 0);
+  const hours = rest.reduce((s, x) => s + x.hours, 0);
+  const extra = rest.reduce((s, x) => s + (x.extra ?? 0), 0);
+  return [
+    ...shown,
+    {
+      label: DASH_OTHER_LABEL,
+      count,
+      revenue,
+      hours,
+      extra,
+      avgRevenue: count > 0 ? revenue / count : 0,
+    },
+  ];
+}
+
+export function sumNamedMetrics(items: NamedMetric[]): { count: number; revenue: number } {
+  return items.reduce(
+    (acc, item) => ({ count: acc.count + item.count, revenue: acc.revenue + item.revenue }),
+    { count: 0, revenue: 0 },
+  );
+}
+
 export function groupMetrics(
   rows: DashCell[][],
   col: DashColIndex,

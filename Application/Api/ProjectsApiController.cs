@@ -12,17 +12,20 @@ public sealed class ProjectsApiController : ControllerBase
     private readonly IProjectService _projectService;
     private readonly IProjectBlobStorage _blobs;
     private readonly IProjectFileUploadSessionStore _uploadSessions;
+    private readonly IProjectAnalysisProfileService _analysisProfiles;
     private readonly ILogger<ProjectsApiController> _logger;
 
     public ProjectsApiController(
         IProjectService projectService,
         IProjectBlobStorage blobs,
         IProjectFileUploadSessionStore uploadSessions,
+        IProjectAnalysisProfileService analysisProfiles,
         ILogger<ProjectsApiController> logger)
     {
         _projectService = projectService;
         _blobs = blobs;
         _uploadSessions = uploadSessions;
+        _analysisProfiles = analysisProfiles;
         _logger = logger;
     }
 
@@ -245,6 +248,7 @@ public sealed class ProjectsApiController : ControllerBase
     public async Task<ActionResult<ProjectTimeWeekResponse>> GetTimeWeekAsync(
         int id,
         [FromQuery] DateTime? weekStart,
+        [FromQuery] int? userId,
         CancellationToken cancellationToken)
     {
         if (id <= 0)
@@ -254,7 +258,7 @@ public sealed class ProjectsApiController : ControllerBase
 
         try
         {
-            return Ok(await _projectService.GetTimeWeekAsync(id, weekStart ?? DateTime.Today, cancellationToken));
+            return Ok(await _projectService.GetTimeWeekAsync(id, weekStart ?? DateTime.Today, userId, cancellationToken));
         }
         catch (Exception ex)
         {
@@ -605,6 +609,69 @@ public sealed class ProjectsApiController : ControllerBase
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     }
+
+    [HttpGet("{id:int}/analysis-profile")]
+    public async Task<ActionResult<object>> GetAnalysisProfileAsync(int id, CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid project", Detail = "id must be positive." });
+        }
+
+        try
+        {
+            var (json, fromTemplate) = await _analysisProfiles.GetProfileJsonAsync(id, cancellationToken);
+            return Ok(new { json, fromTemplate });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Project not found", Detail = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Analysis profile load failed for ProjectID {ProjectID}.", id);
+            return Problem(
+                detail: ex.Message,
+                title: "Analysis profile load failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    [HttpPut("{id:int}/analysis-profile")]
+    [HttpPost("{id:int}/analysis-profile")]
+    public async Task<ActionResult<object>> SaveAnalysisProfileAsync(
+        int id,
+        [FromBody] ProjectAnalysisProfileSaveRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid project", Detail = "id must be positive." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Json))
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid body", Detail = "json is required." });
+        }
+
+        try
+        {
+            await _analysisProfiles.SaveProfileJsonAsync(id, request.Json, cancellationToken);
+            return Ok(new { message = "Analysis profile saved." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Save failed", Detail = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Analysis profile save failed for ProjectID {ProjectID}.", id);
+            return Problem(
+                detail: ex.Message,
+                title: "Analysis profile save failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
 }
 
 /// <summary>Body for <c>PUT/POST /api/projects/{id}/calendar</c>.</summary>
@@ -612,5 +679,11 @@ public sealed class ProjectCalendarSaveRequest
 {
     public List<ProjectCalendarItem>? Items { get; set; }
     public List<ProjectCalendarItem>? CalendarItems { get; set; }
+}
+
+/// <summary>Body for <c>PUT/POST /api/projects/{id}/analysis-profile</c>.</summary>
+public sealed class ProjectAnalysisProfileSaveRequest
+{
+    public string Json { get; set; } = string.Empty;
 }
 

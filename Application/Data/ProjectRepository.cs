@@ -21,6 +21,7 @@ public sealed class ProjectRepository : IProjectRepository
             IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
             c.ClientID,
             c.ClientName,
+            c.ClientShortName,
             cr.BusinessClassID,
             bc.BusinessClassName,
             bc.BusinessClassDescription,
@@ -582,15 +583,21 @@ public sealed class ProjectRepository : IProjectRepository
         int projectId,
         DateTime weekStartDate,
         IReadOnlyList<ProjectTimeEntry> entries,
+        int targetUserId,
         CancellationToken cancellationToken = default)
     {
+        if (targetUserId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetUserId));
+        }
+
         var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
         var monday = weekStartDate.Date;
         var sunday = monday.AddDays(6);
 
         // Clear cells not present / zero by upserting every submitted cell (0 hours soft-deletes).
         // Also clear existing week cells that were omitted from the payload.
-        var existing = await ListTimeEntriesForWeekAsync(projectId, monday, CmsDefaults.ActingUserId, cancellationToken);
+        var existing = await ListTimeEntriesForWeekAsync(projectId, monday, targetUserId, cancellationToken);
         var submittedKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var entry in entries)
@@ -623,7 +630,7 @@ public sealed class ProjectRepository : IProjectRepository
                     SqlParameterFactory.Decimal("@Hours", hours),
                     SqlParameterFactory.VarChar("@EntryMode", 20, mode),
                     SqlParameterFactory.NVarChar("@Notes", 500, entry.Notes),
-                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                    SqlParameterFactory.Int("@ActingUserID", targetUserId),
                     output
                 ],
                 "@NewTimeEntryID",
@@ -648,12 +655,42 @@ public sealed class ProjectRepository : IProjectRepository
                     SqlParameterFactory.Decimal("@Hours", 0m),
                     SqlParameterFactory.VarChar("@EntryMode", 20, "Exact"),
                     SqlParameterFactory.NVarChar("@Notes", 500, null),
-                    SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                    SqlParameterFactory.Int("@ActingUserID", targetUserId),
                     output
                 ],
                 "@NewTimeEntryID",
                 cancellationToken);
         }
+    }
+
+    public Task<IReadOnlyList<ProjectTimeCatUser>> ListCatDepartmentUsersForProjectAsync(
+        int projectId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT DISTINCT
+                u.UserID,
+                LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))) AS UserFullName,
+                u.Email
+              FROM dbo.tProject AS p
+              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
+              INNER JOIN dbo.tUserGroupRef AS ugr ON ugr.UserGroupID = pr.UserGroupID
+              INNER JOIN dbo.tUser AS u ON u.UserID = ugr.UserID AND u.IsActive = 1
+             WHERE p.ProjectID = @ProjectID
+               AND UPPER(LTRIM(RTRIM(u.Department))) = 'CAT'
+             ORDER BY UserFullName, u.UserID;
+            """;
+
+        return _db.QueryTextAsync(
+            sql,
+            static r => new ProjectTimeCatUser
+            {
+                UserID = r.GetInt32OrDefault("UserID"),
+                UserFullName = r.TryGetNullableString("UserFullName") ?? string.Empty,
+                Email = r.TryGetNullableString("Email"),
+            },
+            [SqlParameterFactory.Int("@ProjectID", projectId)],
+            cancellationToken);
     }
 
     public Task<IReadOnlyList<ProjectFile>> ListFilesAsync(
@@ -755,6 +792,46 @@ public sealed class ProjectRepository : IProjectRepository
             [
                 SqlParameterFactory.Int("@ProjectFileID", projectFileId),
                 SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+    }
+
+    public Task UpdateFileBlobLocationAsync(
+        int projectFileId,
+        string blobPath,
+        string blobUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectFileId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectFileId));
+        }
+
+        if (string.IsNullOrWhiteSpace(blobPath))
+        {
+            throw new ArgumentException("Blob path is required.", nameof(blobPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(blobUrl))
+        {
+            throw new ArgumentException("Blob URL is required.", nameof(blobUrl));
+        }
+
+        const string sql = """
+            UPDATE dbo.tProjectFile
+               SET BlobPath = @BlobPath,
+                   BlobUrl = @BlobUrl,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ProjectFileID = @ProjectFileID
+               AND IsActive = 1;
+            """;
+
+        return _db.ExecuteTextAsync(
+            sql,
+            [
+                SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.NVarChar("@BlobPath", 500, blobPath.Trim()),
+                SqlParameterFactory.NVarChar("@BlobUrl", 1000, blobUrl.Trim())
             ],
             cancellationToken);
     }
@@ -1160,6 +1237,7 @@ public sealed class ProjectRepository : IProjectRepository
         ProjectName = r.GetNullableString("ProjectName"),
         ClientID = r.GetInt32OrDefault("ClientID"),
         ClientName = r.TryGetNullableString("ClientName"),
+        ClientShortName = r.TryGetNullableString("ClientShortName"),
         BusinessClassID = r.TryGetNullableInt32("BusinessClassID") ?? 0,
         BusinessClassName = BusinessClass.FormatDisplayDescription(
             r.TryGetNullableString("BusinessClassName"),

@@ -26,6 +26,8 @@ public sealed class ProjectTimeEntry
 public sealed class ProjectTimeWeekRequest
 {
     public DateTime WeekStartDate { get; set; }
+    /// <summary>User whose hours are being saved (CAT team member or acting user).</summary>
+    public int? UserID { get; set; }
     public List<ProjectTimeEntry> Entries { get; set; } = [];
 }
 
@@ -34,6 +36,8 @@ public sealed class ProjectTimeWeekResponse
 {
     public DateTime WeekStartDate { get; set; }
     public DateTime WeekEndDate { get; set; }
+    public int? UserID { get; set; }
+    public IReadOnlyList<ProjectTimeCatUser> CatUsers { get; set; } = [];
     public IReadOnlyList<ProjectCalendarItem> Tasks { get; set; } = [];
     public IReadOnlyList<ProjectTimeEntry> Entries { get; set; } = [];
 }

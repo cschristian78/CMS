@@ -438,6 +438,7 @@ public sealed class ProjectService : IProjectService
     public async Task<ProjectTimeWeekResponse> GetTimeWeekAsync(
         int projectId,
         DateTime weekStartDate,
+        int? userId = null,
         CancellationToken cancellationToken = default)
     {
         if (projectId <= 0)
@@ -446,17 +447,22 @@ public sealed class ProjectService : IProjectService
         }
 
         var monday = StartOfWeekMonday(weekStartDate);
+        var catUsers = await _projects.ListCatDepartmentUsersForProjectAsync(projectId, cancellationToken);
+        var effectiveUserId = ResolveTimeTrackerUserId(userId, catUsers);
+
         var tasks = await _projects.ListCalendarItemsAsync(projectId, cancellationToken);
         var entries = await _projects.ListTimeEntriesForWeekAsync(
             projectId,
             monday,
-            CmsDefaults.ActingUserId,
+            effectiveUserId,
             cancellationToken);
 
         return new ProjectTimeWeekResponse
         {
             WeekStartDate = monday,
             WeekEndDate = monday.AddDays(6),
+            UserID = effectiveUserId,
+            CatUsers = catUsers,
             Tasks = tasks,
             Entries = entries
         };
@@ -480,12 +486,40 @@ public sealed class ProjectService : IProjectService
             throw new InvalidOperationException($"Project {projectId} was not found.");
         }
 
+        var catUsers = await _projects.ListCatDepartmentUsersForProjectAsync(projectId, cancellationToken);
+        var effectiveUserId = ResolveTimeTrackerUserId(request.UserID, catUsers);
+
         var monday = StartOfWeekMonday(request.WeekStartDate);
         request.Entries ??= [];
-        await _projects.SaveTimeEntriesForWeekAsync(projectId, monday, request.Entries, cancellationToken);
+        await _projects.SaveTimeEntriesForWeekAsync(projectId, monday, request.Entries, effectiveUserId, cancellationToken);
         var saved = request.Entries.Count(e => e.CalendarItemID > 0 && e.Hours > 0m);
-        _logger?.LogInformation("Saved {Count} time entry cell(s) for ProjectID {ProjectID} week {Week}.", saved, projectId, monday);
+        _logger?.LogInformation(
+            "Saved {Count} time entry cell(s) for ProjectID {ProjectID} user {UserID} week {Week}.",
+            saved,
+            projectId,
+            effectiveUserId,
+            monday);
         return saved;
+    }
+
+    private static int ResolveTimeTrackerUserId(int? requestedUserId, IReadOnlyList<ProjectTimeCatUser> catUsers)
+    {
+        if (requestedUserId is > 0)
+        {
+            if (catUsers.Count > 0 && !catUsers.Any(u => u.UserID == requestedUserId.Value))
+            {
+                throw new InvalidOperationException("The selected user is not a CAT-tagged member of this project's user group.");
+            }
+
+            return requestedUserId.Value;
+        }
+
+        if (catUsers.Count > 0)
+        {
+            return catUsers[0].UserID;
+        }
+
+        return CmsDefaults.ActingUserId;
     }
 
     public async Task<IReadOnlyList<ProjectFile>> ListFilesAsync(
@@ -533,6 +567,13 @@ public sealed class ProjectService : IProjectService
         }
 
         var uploaded = new List<ProjectFile>();
+        var clientShortName = !string.IsNullOrWhiteSpace(existing.ClientShortName)
+            ? existing.ClientShortName!
+            : (!string.IsNullOrWhiteSpace(existing.ClientName)
+                ? existing.ClientName!
+                : $"Client{existing.ClientID}");
+        var renewalYear = existing.RenewalDate?.Year ?? DateTime.UtcNow.Year;
+
         foreach (var file in files)
         {
             if (file.Length <= 0 || string.IsNullOrWhiteSpace(file.FileName))
@@ -546,34 +587,46 @@ public sealed class ProjectService : IProjectService
                     $"'{file.FileName}' exceeds the maximum size ({_blobs.MaxUploadBytes / (1024 * 1024)} MB).");
             }
 
-            var (blobPath, blobUrl) = await _blobs.UploadAsync(
-                projectId,
-                file.FileName,
-                file.ContentType,
-                file.Content,
-                file.Length,
-                cancellationToken);
+            var originalFileName = Path.GetFileName(file.FileName);
+            // Reserve ProjectFileID first so the blob path can include it.
+            var pendingPath = $"projects/_pending/{projectId}/{Guid.NewGuid():N}";
+            var pendingUrl = pendingPath;
+            var meta = new ProjectFile
+            {
+                ProjectID = projectId,
+                OriginalFileName = originalFileName,
+                ContentType = file.ContentType,
+                ByteLength = file.Length,
+                BlobPath = pendingPath,
+                BlobUrl = pendingUrl,
+                Category = category,
+                Description = description,
+                VersionLabel = versionLabel,
+                DataAsOf = dataAsOf,
+                IsCurrent = false,
+                UploadedByUserID = CmsDefaults.ActingUserId
+            };
 
+            var newId = await _projects.AddFileAsync(meta, cancellationToken);
+            meta.ProjectFileID = newId;
+
+            string? blobPath = null;
             try
             {
-                var meta = new ProjectFile
-                {
-                    ProjectID = projectId,
-                    OriginalFileName = Path.GetFileName(file.FileName),
-                    ContentType = file.ContentType,
-                    ByteLength = file.Length,
-                    BlobPath = blobPath,
-                    BlobUrl = blobUrl,
-                    Category = category,
-                    Description = description,
-                    VersionLabel = versionLabel,
-                    DataAsOf = dataAsOf,
-                    IsCurrent = false,
-                    UploadedByUserID = CmsDefaults.ActingUserId
-                };
+                (blobPath, var blobUrl) = await _blobs.UploadAsync(
+                    clientShortName,
+                    renewalYear,
+                    projectId,
+                    newId,
+                    originalFileName,
+                    file.ContentType,
+                    file.Content,
+                    file.Length,
+                    cancellationToken);
 
-                var newId = await _projects.AddFileAsync(meta, cancellationToken);
-                meta.ProjectFileID = newId;
+                await _projects.UpdateFileBlobLocationAsync(newId, blobPath, blobUrl, cancellationToken);
+                meta.BlobPath = blobPath;
+                meta.BlobUrl = blobUrl;
                 meta.UploadedByName = null;
                 meta.CreatedDate = DateTime.UtcNow;
                 meta.DownloadUrl = _blobs.BuildDownloadUrl(blobPath);
@@ -581,13 +634,32 @@ public sealed class ProjectService : IProjectService
             }
             catch
             {
+                if (!string.IsNullOrWhiteSpace(blobPath))
+                {
+                    try
+                    {
+                        await _blobs.DeleteAsync(blobPath, cancellationToken);
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        _logger?.LogWarning(
+                            cleanupEx,
+                            "Failed to clean up blob {BlobPath} after upload failure for ProjectFileID {FileId}.",
+                            blobPath,
+                            newId);
+                    }
+                }
+
                 try
                 {
-                    await _blobs.DeleteAsync(blobPath, cancellationToken);
+                    await _projects.SoftDeleteFileAsync(newId, cancellationToken);
                 }
                 catch (Exception cleanupEx)
                 {
-                    _logger?.LogWarning(cleanupEx, "Failed to clean up blob {BlobPath} after DB insert failure.", blobPath);
+                    _logger?.LogWarning(
+                        cleanupEx,
+                        "Failed to soft-delete ProjectFileID {FileId} after upload failure.",
+                        newId);
                 }
 
                 throw;

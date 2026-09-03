@@ -43,7 +43,11 @@ public interface IProjectService
 
     Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> SaveCalendarItemsAsync(int projectId, IReadOnlyList<ProjectCalendarItem> items, CancellationToken cancellationToken = default);
-    Task<ProjectTimeWeekResponse> GetTimeWeekAsync(int projectId, DateTime weekStartDate, CancellationToken cancellationToken = default);
+    Task<ProjectTimeWeekResponse> GetTimeWeekAsync(
+        int projectId,
+        DateTime weekStartDate,
+        int? userId = null,
+        CancellationToken cancellationToken = default);
     Task<int> SaveTimeWeekAsync(int projectId, ProjectTimeWeekRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(int ugid, CancellationToken cancellationToken = default);
 

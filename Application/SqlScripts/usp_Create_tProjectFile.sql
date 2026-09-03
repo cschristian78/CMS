@@ -3,7 +3,7 @@
 
   Idempotent: safe to re-run.
   IsActive     = soft-delete (row present vs removed)
-  IsCurrent    = "Active" for processing (at most one per ProjectRefID among live rows)
+  IsCurrent    = "Active" for processing (multiple files may be Active on a project)
   Description  = free-text notes
   VersionLabel = version control label (e.g. v1, 2026-08-12)
   DataAsOf     = data-as-of date for the uploaded dataset
@@ -139,40 +139,15 @@ BEGIN
 END
 GO
 
+/* Multiple Active (IsCurrent) files are allowed; drop the old exclusive indexes. */
 IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
-BEGIN
-    ;WITH ranked AS
-    (
-        SELECT
-            ProjectFileID,
-            ROW_NUMBER() OVER (
-                PARTITION BY ProjectRefID, Category
-                ORDER BY CASE WHEN IsCurrent = 1 THEN 0 ELSE 1 END, ProjectFileID DESC
-            ) AS rn
-          FROM dbo.tProjectFile
-         WHERE IsActive = 1
-           AND IsCurrent = 1
-    )
-    UPDATE f
-       SET IsCurrent = 0,
-           ModifiedDate = SYSUTCDATETIME()
-      FROM dbo.tProjectFile AS f
-      INNER JOIN ranked AS r ON r.ProjectFileID = f.ProjectFileID
-     WHERE r.rn > 1;
-END
-GO
-
-IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
-   AND NOT EXISTS (
+   AND EXISTS (
         SELECT 1
           FROM sys.indexes
          WHERE name = N'UX_tProjectFile_OneCurrentPerCategory'
            AND object_id = OBJECT_ID(N'dbo.tProjectFile'))
 BEGIN
-    /* At most one Active file per project ref + classification. */
-    CREATE UNIQUE INDEX UX_tProjectFile_OneCurrentPerCategory
-        ON dbo.tProjectFile (ProjectRefID, Category)
-        WHERE IsActive = 1 AND IsCurrent = 1;
+    DROP INDEX UX_tProjectFile_OneCurrentPerCategory ON dbo.tProjectFile;
 END
 GO
 
@@ -265,17 +240,6 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRAN;
-
-        IF @IsCurrent = 1
-        BEGIN
-            UPDATE dbo.tProjectFile
-               SET IsCurrent = 0,
-                   ModifiedDate = SYSUTCDATETIME()
-             WHERE ProjectRefID = @ProjectRefID
-               AND Category = @Category
-               AND IsActive = 1
-               AND IsCurrent = 1;
-        END
 
         INSERT INTO dbo.tProjectFile
         (
@@ -373,48 +337,29 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @ProjectRefID INT;
-    DECLARE @Category VARCHAR(40);
-
-    SELECT @ProjectRefID = ProjectRefID,
-           @Category = Category
-      FROM dbo.tProjectFile
-     WHERE ProjectFileID = @ProjectFileID
-       AND IsActive = 1;
-
-    IF @ProjectRefID IS NULL
+    IF NOT EXISTS (SELECT 1 FROM dbo.tProjectFile WHERE ProjectFileID = @ProjectFileID AND IsActive = 1)
         THROW 50001, 'Project file not found or inactive.', 1;
+
+    SET @IsCurrent = ISNULL(@IsCurrent, 0);
 
     BEGIN TRY
         BEGIN TRAN;
 
-        IF @IsCurrent = 1
-        BEGIN
-            UPDATE dbo.tProjectFile
-               SET IsCurrent = 0,
-                   ModifiedDate = SYSUTCDATETIME()
-             WHERE ProjectRefID = @ProjectRefID
-               AND Category = @Category
+        DECLARE @PreviousIsCurrent BIT =
+        (
+            SELECT IsCurrent
+              FROM dbo.tProjectFile
+             WHERE ProjectFileID = @ProjectFileID
                AND IsActive = 1
-               AND IsCurrent = 1
-               AND ProjectFileID <> @ProjectFileID;
+        );
 
-            UPDATE dbo.tProjectFile
-               SET IsCurrent = 1,
-                   ModifiedDate = SYSUTCDATETIME()
-             WHERE ProjectFileID = @ProjectFileID
-               AND IsActive = 1;
-        END
-        ELSE
-        BEGIN
-            UPDATE dbo.tProjectFile
-               SET IsCurrent = 0,
-                   ModifiedDate = SYSUTCDATETIME()
-             WHERE ProjectFileID = @ProjectFileID
-               AND IsActive = 1;
-        END
+        UPDATE dbo.tProjectFile
+           SET IsCurrent = @IsCurrent,
+               ModifiedDate = SYSUTCDATETIME()
+         WHERE ProjectFileID = @ProjectFileID
+           AND IsActive = 1;
 
-        DECLARE @OldIsCurrent NVARCHAR(10) = CASE WHEN @IsCurrent = 1 THEN N'0' ELSE N'1' END;
+        DECLARE @OldIsCurrent NVARCHAR(10) = CASE WHEN @PreviousIsCurrent = 1 THEN N'1' ELSE N'0' END;
         DECLARE @NewIsCurrent NVARCHAR(10) = CASE WHEN @IsCurrent = 1 THEN N'1' ELSE N'0' END;
 
         EXEC dbo.usp_ActivityLog_Insert
