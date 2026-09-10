@@ -1581,7 +1581,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
             onClick={() => setProjectContextMenu(null)}
           />
           <div
-            className="admin-context-menu"
+            className="home-project-context-menu"
             role="menu"
             aria-label={`Report options for ${projectContextMenu.label}`}
             style={{ top: projectContextMenu.y, left: projectContextMenu.x }}
@@ -1589,7 +1589,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
             <button
               type="button"
               role="menuitem"
-              className="admin-context-menu__item"
+              className="home-project-context-menu__item"
               disabled={projectReportBusy}
               onClick={() => void runHomeProjectReport(projectContextMenu.projectId, 'interactive')}
             >
@@ -1598,7 +1598,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
             <button
               type="button"
               role="menuitem"
-              className="admin-context-menu__item"
+              className="home-project-context-menu__item"
               disabled={projectReportBusy}
               onClick={() =>
                 void runHomeProjectReport(projectContextMenu.projectId, 'saveAndSendAttachment')
