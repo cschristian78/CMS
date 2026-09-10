@@ -683,6 +683,7 @@ function WorkloadTab({
 
   return (
     <>
+      <CatDepartmentHoursExhibit />
       <div className="filter-row dashboard-tabular-filters">
         <div className="dashboard-filter-field">
           <label htmlFor="dash-filter-ug">User Group</label>
@@ -779,6 +780,342 @@ function WorkloadTab({
         )}
       </section>
     </>
+  );
+}
+
+type CatStaffHoursRow = {
+  userID: number;
+  userFullName: string;
+  email?: string | null;
+  totalHours: number;
+  projectCount: number;
+  clientCount: number;
+};
+
+type CatHoursNamedMetric = {
+  label: string;
+  hours: number;
+  revenue: number;
+};
+
+type CatClientHoursMetric = {
+  clientID?: number | null;
+  clientName: string;
+  hours: number;
+  latestRevenue: number;
+  projectCount: number;
+};
+
+type CatAnalystWorkloadDetail = {
+  userID: number;
+  userFullName: string;
+  totalHours: number;
+  byRole: CatHoursNamedMetric[];
+  byClient: CatClientHoursMetric[];
+  byRevenue: CatHoursNamedMetric[];
+};
+
+function normalizeCatStaffRow(raw: Record<string, unknown>): CatStaffHoursRow | null {
+  const idRaw = raw.userID ?? raw.UserID;
+  const id = typeof idRaw === 'number' ? idRaw : Number(idRaw);
+  if (!Number.isFinite(id) || id <= 0) {
+    return null;
+  }
+  const hoursRaw = raw.totalHours ?? raw.TotalHours ?? 0;
+  const hours = typeof hoursRaw === 'number' ? hoursRaw : Number(hoursRaw);
+  return {
+    userID: Math.trunc(id),
+    userFullName: String(raw.userFullName ?? raw.UserFullName ?? '').trim() || `User ${id}`,
+    email: raw.email != null ? String(raw.email) : raw.Email != null ? String(raw.Email) : null,
+    totalHours: Number.isFinite(hours) ? hours : 0,
+    projectCount: Number(raw.projectCount ?? raw.ProjectCount ?? 0) || 0,
+    clientCount: Number(raw.clientCount ?? raw.ClientCount ?? 0) || 0,
+  };
+}
+
+function normalizeCatNamedMetric(raw: Record<string, unknown>): CatHoursNamedMetric {
+  const hoursRaw = raw.hours ?? raw.Hours ?? 0;
+  const revRaw = raw.revenue ?? raw.Revenue ?? 0;
+  return {
+    label: String(raw.label ?? raw.Label ?? '').trim() || '(Unassigned)',
+    hours: Number.isFinite(Number(hoursRaw)) ? Number(hoursRaw) : 0,
+    revenue: Number.isFinite(Number(revRaw)) ? Number(revRaw) : 0,
+  };
+}
+
+function normalizeCatClientMetric(raw: Record<string, unknown>): CatClientHoursMetric {
+  const cidRaw = raw.clientID ?? raw.ClientID;
+  const cid = cidRaw == null || cidRaw === '' ? null : Number(cidRaw);
+  const hoursRaw = raw.hours ?? raw.Hours ?? 0;
+  const revRaw = raw.latestRevenue ?? raw.LatestRevenue ?? 0;
+  return {
+    clientID: cid != null && Number.isFinite(cid) && cid > 0 ? Math.trunc(cid) : null,
+    clientName: String(raw.clientName ?? raw.ClientName ?? '').trim() || '(No client)',
+    hours: Number.isFinite(Number(hoursRaw)) ? Number(hoursRaw) : 0,
+    latestRevenue: Number.isFinite(Number(revRaw)) ? Number(revRaw) : 0,
+    projectCount: Number(raw.projectCount ?? raw.ProjectCount ?? 0) || 0,
+  };
+}
+
+function normalizeCatAnalystDetail(raw: unknown): CatAnalystWorkloadDetail | null {
+  if (raw === null || typeof raw !== 'object') {
+    return null;
+  }
+  const o = raw as Record<string, unknown>;
+  const idRaw = o.userID ?? o.UserID;
+  const id = typeof idRaw === 'number' ? idRaw : Number(idRaw);
+  if (!Number.isFinite(id) || id <= 0) {
+    return null;
+  }
+  const hoursRaw = o.totalHours ?? o.TotalHours ?? 0;
+  const byRole = Array.isArray(o.byRole) ? o.byRole : Array.isArray(o.ByRole) ? o.ByRole : [];
+  const byClient = Array.isArray(o.byClient) ? o.byClient : Array.isArray(o.ByClient) ? o.ByClient : [];
+  const byRevenue = Array.isArray(o.byRevenue) ? o.byRevenue : Array.isArray(o.ByRevenue) ? o.ByRevenue : [];
+  return {
+    userID: Math.trunc(id),
+    userFullName: String(o.userFullName ?? o.UserFullName ?? '').trim() || `User ${id}`,
+    totalHours: Number.isFinite(Number(hoursRaw)) ? Number(hoursRaw) : 0,
+    byRole: byRole
+      .filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object')
+      .map(normalizeCatNamedMetric),
+    byClient: byClient
+      .filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object')
+      .map(normalizeCatClientMetric),
+    byRevenue: byRevenue
+      .filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object')
+      .map(normalizeCatNamedMetric),
+  };
+}
+
+function CatDepartmentHoursExhibit() {
+  const [staff, setStaff] = useState<CatStaffHoursRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<CatAnalystWorkloadDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const raw = await apiGet<unknown>('/api/dashboard/workload/cat-staff');
+        if (cancelled) {
+          return;
+        }
+        const list = Array.isArray(raw) ? raw : [];
+        setStaff(
+          list
+            .filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object')
+            .map(normalizeCatStaffRow)
+            .filter((x): x is CatStaffHoursRow => x !== null),
+        );
+      } catch (e) {
+        if (!cancelled) {
+          setStaff([]);
+          setError(e instanceof Error ? e.message : 'Could not load CAT department hours.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedUserId == null) {
+      setDetail(null);
+      setDetailError(null);
+      setDetailLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    setDetailError(null);
+    void (async () => {
+      try {
+        const raw = await apiGet<unknown>(`/api/dashboard/workload/cat-staff/${selectedUserId}`);
+        if (cancelled) {
+          return;
+        }
+        const normalized = normalizeCatAnalystDetail(raw);
+        if (!normalized) {
+          setDetail(null);
+          setDetailError('Analyst detail was empty or invalid.');
+          return;
+        }
+        setDetail(normalized);
+      } catch (e) {
+        if (!cancelled) {
+          setDetail(null);
+          setDetailError(e instanceof Error ? e.message : 'Could not load analyst hours summary.');
+        }
+      } finally {
+        if (!cancelled) {
+          setDetailLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedUserId]);
+
+  const totalHours = staff.reduce((s, u) => s + u.totalHours, 0);
+  const selectedName =
+    detail?.userFullName
+    ?? staff.find((u) => u.userID === selectedUserId)?.userFullName
+    ?? '';
+
+  return (
+    <section className="dashboard-chart-card pm-cat-hours-exhibit" aria-label="CAT department hours by user">
+      <div className="pm-detail-head">
+        <h2 className="dashboard-chart-title">CAT Department Hours by Analyst</h2>
+        {selectedUserId != null ? (
+          <button type="button" className="secondary-button" onClick={() => setSelectedUserId(null)}>
+            Clear analyst
+          </button>
+        ) : null}
+      </div>
+      <p className="field-help">
+        Total hours from time entries for users with Department = CAT. Select an analyst to view hours by role,
+        client, and revenue tier.
+      </p>
+      {error ? <div className="alert alert-error">{error}</div> : null}
+      {loading ? <p className="field-help">Loading CAT hours...</p> : null}
+      {!loading && !error && staff.length === 0 ? (
+        <p className="field-help" role="status">No CAT department users found.</p>
+      ) : null}
+      {!loading && staff.length > 0 ? (
+        <>
+          <DashboardBarChart
+            title="Hours by analyst"
+            ariaLabel="Total hours by CAT department user"
+            orientation="horizontal"
+            className="pm-cat-hours-chart"
+            valueKey="Hours"
+            items={staff.map((u) => ({
+              label: u.userFullName,
+              value: u.totalHours,
+              count: u.projectCount,
+              displayValue: formatNumber(u.totalHours, 1),
+              fill: selectedUserId === u.userID ? '#f08700' : '#20d4e8',
+            }))}
+            onSelect={(item) => {
+              const found = staff.find((u) => u.userFullName === item.label);
+              if (!found) {
+                return;
+              }
+              setSelectedUserId((prev) => (prev === found.userID ? null : found.userID));
+            }}
+          />
+          <p className="pm-exhibit-totals">
+            Total · {formatNumber(staff.length)} analysts · {formatNumber(totalHours, 1)} hours
+          </p>
+        </>
+      ) : null}
+
+      {selectedUserId != null ? (
+        <div className="pm-cat-analyst-summary">
+          <h3 className="pm-cat-analyst-summary__title">
+            {selectedName || 'Selected analyst'} — hours summary
+          </h3>
+          {detailLoading ? <p className="field-help">Loading analyst summary...</p> : null}
+          {detailError ? <div className="alert alert-error">{detailError}</div> : null}
+          {detail && !detailLoading ? (
+            <>
+              <p className="pm-exhibit-totals">
+                Analyst total · {formatNumber(detail.totalHours, 1)} hours
+              </p>
+              <div className="pm-dash-grid pm-cat-analyst-grid">
+                <section className="dashboard-chart-card" aria-label="Hours by role">
+                  <h4 className="dashboard-chart-title">By Role</h4>
+                  <div className="dashboard-table-wrap">
+                    <table className="dashboard-data-table dashboard-data-table--full">
+                      <thead>
+                        <tr>
+                          <th>Role</th>
+                          <th className="num">Hours</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.byRole.length === 0 ? (
+                          <tr><td colSpan={2}>No hours recorded.</td></tr>
+                        ) : detail.byRole.map((row) => (
+                          <tr key={row.label}>
+                            <td>{row.label}</td>
+                            <td className="num">{formatNumber(row.hours, 1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+                <section className="dashboard-chart-card" aria-label="Hours by client">
+                  <h4 className="dashboard-chart-title">By Client</h4>
+                  <div className="dashboard-table-wrap">
+                    <table className="dashboard-data-table dashboard-data-table--full">
+                      <thead>
+                        <tr>
+                          <th>Client</th>
+                          <th className="num">Hours</th>
+                          <th className="num">Latest Revenue</th>
+                          <th className="num">Projects</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.byClient.length === 0 ? (
+                          <tr><td colSpan={4}>No hours recorded.</td></tr>
+                        ) : detail.byClient.map((row) => (
+                          <tr key={`${row.clientID ?? 'x'}-${row.clientName}`}>
+                            <td>{row.clientName}</td>
+                            <td className="num">{formatNumber(row.hours, 1)}</td>
+                            <td className="num">{formatUsd(row.latestRevenue)}</td>
+                            <td className="num">{formatNumber(row.projectCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+                <section className="dashboard-chart-card" aria-label="Hours by revenue tier">
+                  <h4 className="dashboard-chart-title">By Revenue Tier</h4>
+                  <div className="dashboard-table-wrap">
+                    <table className="dashboard-data-table dashboard-data-table--full">
+                      <thead>
+                        <tr>
+                          <th>Revenue Tier</th>
+                          <th className="num">Hours</th>
+                          <th className="num">Latest Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.byRevenue.length === 0 ? (
+                          <tr><td colSpan={3}>No hours recorded.</td></tr>
+                        ) : detail.byRevenue.map((row) => (
+                          <tr key={row.label}>
+                            <td>{row.label}</td>
+                            <td className="num">{formatNumber(row.hours, 1)}</td>
+                            <td className="num">{formatUsd(row.revenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

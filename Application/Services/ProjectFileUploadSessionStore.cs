@@ -16,6 +16,7 @@ public sealed class ProjectFileUploadSessionInfo
     public string? Description { get; init; }
     public string? VersionLabel { get; init; }
     public DateTime? DataAsOf { get; init; }
+    public bool IsCurrent { get; init; }
     public string DirectoryPath { get; init; } = string.Empty;
     public DateTime CreatedUtc { get; init; } = DateTime.UtcNow;
 }
@@ -33,7 +34,8 @@ public interface IProjectFileUploadSessionStore
         string category,
         string? description,
         string? versionLabel,
-        DateTime? dataAsOf);
+        DateTime? dataAsOf,
+        bool isCurrent = false);
 
     ProjectFileUploadSessionInfo? Get(string sessionId);
 
@@ -76,7 +78,8 @@ public sealed class ProjectFileUploadSessionStore : IProjectFileUploadSessionSto
         string category,
         string? description,
         string? versionLabel,
-        DateTime? dataAsOf)
+        DateTime? dataAsOf,
+        bool isCurrent = false)
     {
         CleanupExpired();
 
@@ -95,6 +98,7 @@ public sealed class ProjectFileUploadSessionStore : IProjectFileUploadSessionSto
             Description = description,
             VersionLabel = versionLabel,
             DataAsOf = dataAsOf,
+            IsCurrent = isCurrent,
             DirectoryPath = dir,
             CreatedUtc = DateTime.UtcNow
         };
@@ -237,6 +241,7 @@ public sealed class ProjectFileUploadSessionStartRequest
     public string? Description { get; set; }
     public string? VersionLabel { get; set; }
     public DateTime? DataAsOf { get; set; }
+    public bool IsCurrent { get; set; }
 }
 
 public sealed class ProjectFileUploadSessionStartResponse

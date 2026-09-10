@@ -16,15 +16,20 @@ export type HomeListFilters = {
   analyticsLeads: string[];
 };
 
-const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
+/** Default Main list view: all clients, Online projects only (other filters cleared). */
+export const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
   businessUnit: '',
   businessClass: '',
-  status: 'Active',
+  status: '',
   online: 'Online',
   client: '',
   projectType: '',
   analyticsLeads: [],
 };
+
+export function createDefaultHomeListFilters(): HomeListFilters {
+  return { ...DEFAULT_HOME_LIST_FILTERS, analyticsLeads: [] };
+}
 
 function asFilterString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
@@ -46,7 +51,7 @@ export function loadHomeListFilters(): HomeListFilters {
   try {
     const raw = sessionStorage.getItem(HOME_LIST_FILTERS_STORAGE_KEY);
     if (!raw) {
-      return { ...DEFAULT_HOME_LIST_FILTERS, analyticsLeads: [] };
+      return createDefaultHomeListFilters();
     }
     const parsed = JSON.parse(raw) as Partial<HomeListFilters>;
     return {
@@ -59,7 +64,7 @@ export function loadHomeListFilters(): HomeListFilters {
       analyticsLeads: asFilterStringArray(parsed.analyticsLeads),
     };
   } catch {
-    return { ...DEFAULT_HOME_LIST_FILTERS, analyticsLeads: [] };
+    return createDefaultHomeListFilters();
   }
 }
 

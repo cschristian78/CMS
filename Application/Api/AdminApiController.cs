@@ -429,6 +429,14 @@ public sealed class AdminApiController : ControllerBase
     public Task<ActionResult> SoftDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken)
         => RunAsync(async () => { await _adminService.SoftDeleteUserGroupAsync(ugid, cancellationToken); return Ok(new { message = "Group soft-deleted." }); });
 
+    [HttpPost("groups/{ugid:int}/delete")]
+    public Task<ActionResult> HardDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            await _adminService.HardDeleteUserGroupAsync(ugid, cancellationToken);
+            return Ok(new { message = "User group deleted." });
+        });
+
     [HttpPost("groups/{ugid:int}/restore")]
     public Task<ActionResult> RestoreUserGroupAsync(int ugid, CancellationToken cancellationToken)
         => RunAsync(async () => { await _adminService.RestoreUserGroupAsync(ugid, cancellationToken); return Ok(new { message = "Group restored." }); });
@@ -528,6 +536,22 @@ public sealed class AdminApiController : ControllerBase
         [FromQuery] int top = 100,
         CancellationToken cancellationToken = default)
         => Ok(await _adminService.GetActivityForEntityAsync(entityType, entityId, top, cancellationToken));
+
+    // ---- DATA AUDIT ----------------------------------------------------
+
+    [HttpGet("data-audit")]
+    public async Task<ActionResult<object>> GetDataAuditAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _adminService.GetDataAuditReportAsync(cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Admin API DataAudit failed.");
+            return Problem(detail: UserFacingError(ex), title: "Operation failed", statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
 
     private string UserFacingError(Exception ex) =>
         _environment.IsDevelopment()

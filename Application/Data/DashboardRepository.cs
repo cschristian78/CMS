@@ -559,6 +559,216 @@ public sealed class DashboardRepository : IDashboardRepository
         return _db.QueryTextAsync(sql, MapInactiveProject, null, cancellationToken);
     }
 
+    public Task<IReadOnlyList<CatStaffHoursRow>> GetCatStaffHoursAsync(
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT
+                u.UserID,
+                LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))) AS UserFullName,
+                u.Email,
+                CAST(ISNULL(SUM(te.Hours), 0) AS decimal(12,2)) AS TotalHours,
+                CAST(COUNT(DISTINCT pr.ProjectID) AS int) AS ProjectCount,
+                CAST(COUNT(DISTINCT cr.ClientID) AS int) AS ClientCount
+            FROM dbo.tUser AS u
+            LEFT JOIN dbo.tProjectTimeEntry AS te
+                   ON te.UserID = u.UserID
+                  AND te.IsActive = 1
+            LEFT JOIN dbo.tProjectRef AS pr
+                   ON pr.ProjectRefID = te.ProjectRefID
+                  AND pr.IsActive = 1
+            LEFT JOIN dbo.tClientRef AS cr
+                   ON cr.ClientRefID = pr.ClientRefID
+            WHERE u.IsActive = 1
+              AND UPPER(LTRIM(RTRIM(u.Department))) = N'CAT'
+            GROUP BY u.UserID, u.FirstName, u.LastName, u.Email
+            ORDER BY TotalHours DESC, UserFullName, u.UserID;
+            """;
+
+        return _db.QueryTextAsync(
+            sql,
+            static r => new CatStaffHoursRow
+            {
+                UserID = r.GetInt32OrDefault("UserID"),
+                UserFullName = r.TryGetNullableString("UserFullName") ?? string.Empty,
+                Email = r.TryGetNullableString("Email"),
+                TotalHours = r.GetNullableDecimal("TotalHours") ?? 0m,
+                ProjectCount = r.GetInt32OrDefault("ProjectCount"),
+                ClientCount = r.GetInt32OrDefault("ClientCount"),
+            },
+            null,
+            cancellationToken);
+    }
+
+    public async Task<CatAnalystWorkloadDetail?> GetCatAnalystWorkloadDetailAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId <= 0)
+        {
+            return null;
+        }
+
+        const string headerSql = """
+            SELECT TOP (1)
+                u.UserID,
+                LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))) AS UserFullName,
+                CAST(ISNULL((
+                    SELECT SUM(te.Hours)
+                      FROM dbo.tProjectTimeEntry AS te
+                     WHERE te.UserID = u.UserID
+                       AND te.IsActive = 1
+                ), 0) AS decimal(12,2)) AS TotalHours
+            FROM dbo.tUser AS u
+            WHERE u.UserID = @UserID
+              AND u.IsActive = 1
+              AND UPPER(LTRIM(RTRIM(u.Department))) = N'CAT';
+            """;
+
+        var headerRows = await _db.QueryTextAsync(
+            headerSql,
+            static r => new
+            {
+                UserID = r.GetInt32OrDefault("UserID"),
+                UserFullName = r.TryGetNullableString("UserFullName") ?? string.Empty,
+                TotalHours = r.GetNullableDecimal("TotalHours") ?? 0m,
+            },
+            [SqlParameterFactory.Int("@UserID", userId)],
+            cancellationToken);
+
+        var header = headerRows.FirstOrDefault();
+        if (header is null)
+        {
+            return null;
+        }
+
+        const string byRoleSql = """
+            SELECT
+                ISNULL(NULLIF(LTRIM(RTRIM(ur.UserRoleName)), N''), N'(Unassigned)') AS Label,
+                CAST(SUM(te.Hours) AS decimal(12,2)) AS Hours,
+                CAST(0 AS decimal(18,2)) AS Revenue
+            FROM dbo.tProjectTimeEntry AS te
+            INNER JOIN dbo.tProjectRef AS pr
+                    ON pr.ProjectRefID = te.ProjectRefID
+                   AND pr.IsActive = 1
+            LEFT JOIN dbo.tUserGroupRef AS ugr
+                   ON ugr.UserGroupID = pr.UserGroupID
+                  AND ugr.UserID = te.UserID
+            LEFT JOIN dbo.tUserRole AS ur
+                   ON ur.UserRoleID = ugr.UserRoleID
+            WHERE te.UserID = @UserID
+              AND te.IsActive = 1
+            GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(ur.UserRoleName)), N''), N'(Unassigned)')
+            ORDER BY Hours DESC, Label;
+            """;
+
+        const string byClientSql = """
+            WITH ProjectHours AS (
+                SELECT
+                    pr.ProjectID,
+                    CAST(SUM(te.Hours) AS decimal(12,2)) AS Hours
+                FROM dbo.tProjectTimeEntry AS te
+                INNER JOIN dbo.tProjectRef AS pr
+                        ON pr.ProjectRefID = te.ProjectRefID
+                       AND pr.IsActive = 1
+                WHERE te.UserID = @UserID
+                  AND te.IsActive = 1
+                GROUP BY pr.ProjectID
+            )
+            SELECT
+                c.ClientID,
+                ISNULL(NULLIF(LTRIM(RTRIM(c.ClientName)), N''), N'(No client)') AS ClientName,
+                CAST(SUM(ph.Hours) AS decimal(12,2)) AS Hours,
+                CAST(SUM(ISNULL(v.LatestRevenue, 0)) AS decimal(18,2)) AS LatestRevenue,
+                CAST(COUNT(*) AS int) AS ProjectCount
+            FROM ProjectHours AS ph
+            OUTER APPLY (
+                SELECT TOP (1) pr.ClientRefID
+                  FROM dbo.tProjectRef AS pr
+                 WHERE pr.ProjectID = ph.ProjectID
+                   AND pr.IsActive = 1
+                 ORDER BY pr.ProjectRefID
+            ) AS pref
+            LEFT JOIN dbo.tClientRef AS cr
+                   ON cr.ClientRefID = pref.ClientRefID
+            LEFT JOIN dbo.tClient AS c
+                   ON c.ClientID = cr.ClientID
+            LEFT JOIN dbo.vProject_Current AS v
+                   ON v.ProjectID = ph.ProjectID
+            GROUP BY c.ClientID, c.ClientName
+            ORDER BY Hours DESC, ClientName;
+            """;
+
+        const string byRevenueSql = """
+            WITH ProjectHours AS (
+                SELECT
+                    pr.ProjectID,
+                    CAST(SUM(te.Hours) AS decimal(12,2)) AS Hours
+                FROM dbo.tProjectTimeEntry AS te
+                INNER JOIN dbo.tProjectRef AS pr
+                        ON pr.ProjectRefID = te.ProjectRefID
+                       AND pr.IsActive = 1
+                WHERE te.UserID = @UserID
+                  AND te.IsActive = 1
+                GROUP BY pr.ProjectID
+            )
+            SELECT
+                ISNULL(NULLIF(LTRIM(RTRIM(v.RevenueTier)), N''), N'Unknown') AS Label,
+                CAST(SUM(ph.Hours) AS decimal(12,2)) AS Hours,
+                CAST(SUM(ISNULL(v.LatestRevenue, 0)) AS decimal(18,2)) AS Revenue
+            FROM ProjectHours AS ph
+            LEFT JOIN dbo.vProject_Current AS v
+                   ON v.ProjectID = ph.ProjectID
+            GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(v.RevenueTier)), N''), N'Unknown')
+            ORDER BY Hours DESC, Label;
+            """;
+
+        var byRole = await _db.QueryTextAsync(
+            byRoleSql,
+            static r => new CatHoursNamedMetric
+            {
+                Label = r.TryGetNullableString("Label") ?? "(Unassigned)",
+                Hours = r.GetNullableDecimal("Hours") ?? 0m,
+                Revenue = r.GetNullableDecimal("Revenue") ?? 0m,
+            },
+            [SqlParameterFactory.Int("@UserID", userId)],
+            cancellationToken);
+
+        var byClient = await _db.QueryTextAsync(
+            byClientSql,
+            static r => new CatClientHoursMetric
+            {
+                ClientID = r.TryGetNullableInt32("ClientID"),
+                ClientName = r.TryGetNullableString("ClientName") ?? "(No client)",
+                Hours = r.GetNullableDecimal("Hours") ?? 0m,
+                LatestRevenue = r.GetNullableDecimal("LatestRevenue") ?? 0m,
+                ProjectCount = r.GetInt32OrDefault("ProjectCount"),
+            },
+            [SqlParameterFactory.Int("@UserID", userId)],
+            cancellationToken);
+
+        var byRevenue = await _db.QueryTextAsync(
+            byRevenueSql,
+            static r => new CatHoursNamedMetric
+            {
+                Label = r.TryGetNullableString("Label") ?? "Unknown",
+                Hours = r.GetNullableDecimal("Hours") ?? 0m,
+                Revenue = r.GetNullableDecimal("Revenue") ?? 0m,
+            },
+            [SqlParameterFactory.Int("@UserID", userId)],
+            cancellationToken);
+
+        return new CatAnalystWorkloadDetail
+        {
+            UserID = header.UserID,
+            UserFullName = header.UserFullName,
+            TotalHours = header.TotalHours,
+            ByRole = byRole,
+            ByClient = byClient,
+            ByRevenue = byRevenue,
+        };
+    }
+
     private static DashboardInactiveProject MapInactiveProject(SqlDataReader r) =>
         new()
         {

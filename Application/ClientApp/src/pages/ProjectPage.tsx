@@ -1,4 +1,4 @@
-import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { DragEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -12,6 +12,7 @@ import type { FlashFn } from '../App';
 import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
 import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
 import ProjectAnalysisProfileTab from '../components/ProjectAnalysisProfileTab';
+import { runProjectReportWorkflow } from '../project/generateProjectReportWorkflow';
 import {
   PROJECT_TAB_LABELS,
   clientSliceEqual,
@@ -153,7 +154,11 @@ interface ProjectCalendarItemDraft {
 interface UserGroupMemberOption {
   userID: number;
   userFullName: string;
+  title?: string;
   email?: string;
+  phone?: string;
+  userRoleName?: string;
+  userRoleID?: number | null;
 }
 
 const CALENDAR_ITEM_TYPES: ProjectCalendarItemDraft['itemType'][] = [
@@ -276,6 +281,7 @@ type ProjectFileUploadMeta = {
   description: string;
   versionLabel: string;
   dataAsOf: string;
+  isCurrent: boolean;
 };
 
 type ProjectFileDraft = {
@@ -568,6 +574,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [baselineFileDrafts, setBaselineFileDrafts] = useState<Record<number, ProjectFileDraft>>({});
   const [baselineNotes, setBaselineNotes] = useState<ProjectNoteRow[]>([]);
   const [tabSaveBusy, setTabSaveBusy] = useState(false);
+  const [projectReportBusy, setProjectReportBusy] = useState(false);
   const [pendingSaveTabs, setPendingSaveTabs] = useState<ProjectTabId[] | null>(null);
 
   const [activeTab, setActiveTab] = useState<ProjectTab>('client');
@@ -588,6 +595,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     description: '',
     versionLabel: '1',
     dataAsOf: '',
+    isCurrent: false,
   });
   const [pendingProjectFiles, setPendingProjectFiles] = useState<File[]>([]);
   const [showAddDataForm, setShowAddDataForm] = useState(false);
@@ -2167,9 +2175,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     targetProjectId: number,
     files: File[],
     meta: ProjectFileUploadMeta = projectFileUploadMeta,
-  ) => {
+  ): Promise<ProjectFileRow[]> => {
     if (targetProjectId <= 0 || files.length === 0) {
-      return;
+      return [];
     }
 
     const uploadMeta: ProjectFileUploadMeta = {
@@ -2177,6 +2185,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       description: meta.description,
       versionLabel: meta.versionLabel,
       dataAsOf: meta.dataAsOf,
+      isCurrent: !!meta.isCurrent,
     };
 
     if (!uploadMeta.dataAsOf.trim()) {
@@ -2197,6 +2206,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         description: uploadMeta.description.trim() || null,
         versionLabel: normalizeProjectDataVersion(uploadMeta.versionLabel),
         dataAsOf: uploadMeta.dataAsOf.trim(),
+        isCurrent: uploadMeta.isCurrent,
       });
 
       const chunkSize = start.chunkSizeBytes > 0 ? start.chunkSizeBytes : 4 * 1024 * 1024;
@@ -2221,21 +2231,21 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       );
     }
 
-    if (lastRows) {
-      syncProjectFiles(lastRows);
-    } else {
-      syncProjectFiles(await apiGet<ProjectFileRow[]>(`/api/projects/${targetProjectId}/files`));
-    }
+    const rows =
+      lastRows ?? (await apiGet<ProjectFileRow[]>(`/api/projects/${targetProjectId}/files`));
+    syncProjectFiles(rows);
     setProjectFileUploadMeta((prev) => ({
       category: uploadMeta.category,
       description: '',
       versionLabel: '1',
       dataAsOf: '',
+      isCurrent: false,
     }));
     setPendingProjectFiles([]);
     if (projectFilesInputRef.current) {
       projectFilesInputRef.current.value = '';
     }
+    return rows;
   };
 
   const handleUploadProjectFiles = async () => {
@@ -2424,7 +2434,15 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   }, [userGroupOptionsForClient, model?.userGroupOptions, model?.ugid]);
 
   const adminGroupsReturnPath = isEdit && projectId !== undefined ? `/projects/${projectId}` : '/projects/new';
-  const adminGroupsHref = `/admin?tab=groups&returnTo=${encodeURIComponent(adminGroupsReturnPath)}`;
+  const adminGroupsHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('tab', 'groups');
+    params.set('returnTo', adminGroupsReturnPath);
+    if (model && model.ugid > 0) {
+      params.set('selectUserGroup', String(model.ugid));
+    }
+    return `/admin?${params.toString()}`;
+  }, [adminGroupsReturnPath, model?.ugid]);
 
   const activeProjectFilePrefill = useMemo(() => {
     const active =
@@ -2440,6 +2458,31 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       projectFileID: active.projectFileID,
     };
   }, [projectFiles]);
+
+  const generateProjectReport = useCallback(async () => {
+    if (!model || !isEdit || projectId == null || projectId <= 0) {
+      flash('error', 'Save the project before generating a report.');
+      return;
+    }
+
+    setProjectReportBusy(true);
+    try {
+      await runProjectReportWorkflow({
+        projectId,
+        mode: 'interactive',
+        flash,
+        appPublicBaseUrl,
+        onProjectFilesUpdated: (files) => {
+          syncProjectFiles(files);
+          setActiveTab('projectData');
+        },
+      });
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not generate the project report.');
+    } finally {
+      setProjectReportBusy(false);
+    }
+  }, [appPublicBaseUrl, flash, isEdit, model, projectId]);
 
   if (loadError) {
     return (
@@ -2466,6 +2509,28 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const title = isEdit ? 'Edit Project' : 'New Project';
 
   const projectTabClass = (tab: ProjectTab) => 'admin-tab-panel' + (activeTab === tab ? ' active' : '');
+
+  const renderTabTitle = (tabTitle: string, extraActions?: ReactNode) => (
+    <div className="project-tab-title-row">
+      <h2>{tabTitle}</h2>
+      <div className="project-tab-title-actions">
+        {extraActions}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={projectReportBusy || !isEdit || projectId == null}
+          onClick={() => void generateProjectReport()}
+          title={
+            !isEdit || projectId == null
+              ? 'Save the project first to generate a report'
+              : 'Generate a PDF project report'
+          }
+        >
+          {projectReportBusy ? 'Generating…' : 'Generate Report'}
+        </button>
+      </div>
+    </div>
+  );
 
   const renderTabActions = (tab: ProjectTabId) => {
     if (!isEdit) {
@@ -2854,6 +2919,21 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   disabled={projectFilesBusy}
                 />
               </div>
+              <div className="project-file-upload-meta-field">
+                <label htmlFor="projectFileUploadActive">Active</label>
+                <label className="project-file-active-inline" htmlFor="projectFileUploadActive">
+                  <input
+                    id="projectFileUploadActive"
+                    type="checkbox"
+                    checked={projectFileUploadMeta.isCurrent}
+                    disabled={projectFilesBusy}
+                    onChange={(e) =>
+                      setProjectFileUploadMeta((prev) => ({ ...prev, isCurrent: e.target.checked }))
+                    }
+                  />
+                  Mark as Active for processing
+                </label>
+              </div>
             </div>
 
             <div className="project-add-data-assigned" aria-label="Data already assigned to this project">
@@ -2957,7 +3037,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
           <div className="project-tab-panels">
           <div id="project-tab-client" className={projectTabClass('client')}>
-            <h2>Client Info</h2>
+            {renderTabTitle('Client Info')}
             <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               {isEdit
@@ -3075,7 +3155,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
 
           <div id="project-tab-project" className={projectTabClass('project')}>
-            <h2>Project Info</h2>
+            {renderTabTitle('Project Info')}
             <div className="admin-edit-card project-panel-tab-card">
             <div className="form-grid">
               <label htmlFor="projectNumber">Project Number</label>
@@ -3245,8 +3325,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
 
           <div id="project-tab-project-data" className={projectTabClass('projectData')}>
-            <div className="project-data-tab-header">
-              <h2>Project Data</h2>
+            {renderTabTitle(
+              'Project Data',
               <button
                 type="button"
                 className="primary-button"
@@ -3254,8 +3334,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 onClick={() => setShowAddDataForm(true)}
               >
                 Add Data
-              </button>
-            </div>
+              </button>,
+            )}
             <div className="admin-edit-card project-panel-tab-card">
               <p className="field-help">
                 Read-only list of project data files in Azure Blob storage. Double-click a row to edit classification,
@@ -3298,6 +3378,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                     <table className="project-data-file-table project-data-file-table--readonly">
                       <thead>
                         <tr>
+                          <th scope="col">DataSetID</th>
                           <th scope="col">Classification</th>
                           <th scope="col">Name</th>
                           <th scope="col">Version</th>
@@ -3324,6 +3405,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                               onClick={() => setSelectedProjectFileId(f.projectFileID)}
                               onDoubleClick={() => openProjectFileEdit(f.projectFileID)}
                             >
+                              <td>{f.projectFileID}</td>
                               <td>{formatProjectDataCategory(f.category)}</td>
                               <td className="project-data-file-name" title={f.originalFileName}>
                                 {f.originalFileName}
@@ -3370,7 +3452,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
 
           <div id="project-tab-services" className={projectTabClass('services')}>
-            <h2>Services</h2>
+            {renderTabTitle('Services')}
             <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               Filter by service function and category, tick services to include, then choose{' '}
@@ -3493,7 +3575,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
 
           <div id="project-tab-analysis-profile" className={projectTabClass('analysisProfile')}>
-            <h2>Analysis Profile</h2>
+            {renderTabTitle('Analysis Profile')}
             <div className="admin-edit-card project-panel-tab-card">
               {isEdit && projectId !== undefined && model ? (
                 <ProjectAnalysisProfileTab
@@ -3512,7 +3594,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           </div>
 
           <div id="project-tab-calendar" className={projectTabClass('calendar')}>
-              <h2>Analytics Calendar</h2>
+              {renderTabTitle('Analytics Calendar')}
               <div className="admin-edit-card project-panel-tab-card">
                 <p className="field-help">
                   Project services and other deliverables live here. Use <strong>Add to Project</strong> on the Services
@@ -3673,7 +3755,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
           {isEdit && projectId !== undefined ? (
             <div id="project-tab-time" className={projectTabClass('time')}>
-              <h2>Time tracker</h2>
+              {renderTabTitle('Time tracker')}
               <div className="admin-edit-card project-panel-tab-card">
               <ProjectTimeTrackerTab
                 ref={timeTrackerRef}
@@ -3696,7 +3778,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
           {isEdit ? (
             <div id="project-tab-revenue" className={projectTabClass('revenue')}>
-            <h2>Revenue history</h2>
+            {renderTabTitle('Revenue history')}
             <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               Active rows from <code>dbo.tProjectRevenue</code> for this project, newest effective date first
@@ -3748,7 +3830,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           ) : null}
 
           <div id="project-tab-notes" className={projectTabClass('notes')}>
-            <h2>Notes</h2>
+            {renderTabTitle('Notes')}
             <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
               Project notes are stored in <code>dbo.tProjectNote</code>. Add a note below, or delete existing rows from

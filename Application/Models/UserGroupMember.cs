@@ -13,7 +13,9 @@ public sealed class UserGroupMember
     public int UserID { get; set; }
     public string? Username { get; set; }
     public string? UserFullName { get; set; }
+    public string? Title { get; set; }
     public string? Email { get; set; }
+    public string? Phone { get; set; }
 
     public int? UserRoleID { get; set; }
     public string? UserRoleName { get; set; }

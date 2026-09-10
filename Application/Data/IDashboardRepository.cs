@@ -53,4 +53,13 @@ public interface IDashboardRepository
     /// <summary>Inactive <c>tProject</c> rows that <c>vProject_Current</c> omits.</summary>
     Task<IReadOnlyList<DashboardInactiveProject>> GetInactiveProjectsAsync(
         CancellationToken cancellationToken = default);
+
+    /// <summary>Total hours by active user in the CAT department.</summary>
+    Task<IReadOnlyList<CatStaffHoursRow>> GetCatStaffHoursAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Hours by role / client / revenue tier for one CAT analyst.</summary>
+    Task<CatAnalystWorkloadDetail?> GetCatAnalystWorkloadDetailAsync(
+        int userId,
+        CancellationToken cancellationToken = default);
 }

@@ -86,6 +86,53 @@ public sealed class DashboardApiController : ControllerBase
         }
     }
 
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [HttpGet("workload/cat-staff")]
+    public async Task<ActionResult<IReadOnlyList<CatStaffHoursRow>>> GetCatStaffHoursAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _dashboardService.GetCatStaffHoursAsync(cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Dashboard CAT staff hours failed.");
+            var root = ex.GetBaseException();
+            return Problem(
+                detail: $"Could not load CAT department hours. {root.GetType().Name}: {root.Message}",
+                title: "Operation failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [HttpGet("workload/cat-staff/{userId:int}")]
+    public async Task<ActionResult<CatAnalystWorkloadDetail>> GetCatAnalystWorkloadDetailAsync(
+        int userId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var detail = await _dashboardService.GetCatAnalystWorkloadDetailAsync(userId, cancellationToken);
+            if (detail is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(detail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Dashboard CAT analyst detail failed for UserID {UserId}.", userId);
+            var root = ex.GetBaseException();
+            return Problem(
+                detail: $"Could not load CAT analyst hours summary. {root.GetType().Name}: {root.Message}",
+                title: "Operation failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
     /// <summary>Online → true; All / empty / unknown → null (no IsOnline filter).</summary>
     private static bool? ParseOnlineStatus(string? onlineStatus)
     {
@@ -102,7 +149,7 @@ public sealed class DashboardApiController : ControllerBase
             return true;
         }
 
-        // All (and Offline-as-all for this dashboard) → no filter
+        // All (and offline-as-all for this dashboard) → no filter
         return null;
     }
 }

@@ -41,3 +41,19 @@ public sealed class ProjectTimeWeekResponse
     public IReadOnlyList<ProjectCalendarItem> Tasks { get; set; } = [];
     public IReadOnlyList<ProjectTimeEntry> Entries { get; set; } = [];
 }
+
+/// <summary>Project-level time rollups for reports (all weeks / all analysts).</summary>
+public sealed class ProjectTimeSummary
+{
+    public IReadOnlyList<ProjectTimeSummaryRow> ByAnalyst { get; set; } = [];
+    public IReadOnlyList<ProjectTimeSummaryRow> ByTask { get; set; } = [];
+    public decimal TotalHours { get; set; }
+}
+
+public sealed class ProjectTimeSummaryRow
+{
+    public int Id { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string? Detail { get; set; }
+    public decimal Hours { get; set; }
+}

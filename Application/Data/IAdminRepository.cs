@@ -49,6 +49,7 @@ public interface IAdminRepository
     Task<string> GetNextUserGroupNumberAsync(CancellationToken cancellationToken = default);
     Task<int> SaveUserGroupAsync(UserGroup group, CancellationToken cancellationToken = default);
     Task<int> SoftDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default);
+    Task HardDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default);
     Task<int> RestoreUserGroupAsync(int ugid, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UserGroupMember>> ListUserGroupMembersAsync(int ugid, CancellationToken cancellationToken = default);

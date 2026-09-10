@@ -468,6 +468,22 @@ public sealed class ProjectService : IProjectService
         };
     }
 
+    public async Task<ProjectTimeSummary> GetTimeSummaryAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        var existing = await _projects.GetAsync(projectId, cancellationToken);
+        if (existing is null)
+        {
+            throw new InvalidOperationException($"Project {projectId} was not found.");
+        }
+
+        return await _projects.GetTimeSummaryAsync(projectId, cancellationToken);
+    }
+
     public async Task<int> SaveTimeWeekAsync(
         int projectId,
         ProjectTimeWeekRequest request,
@@ -547,6 +563,7 @@ public sealed class ProjectService : IProjectService
         string? description = null,
         string? versionLabel = null,
         DateTime? dataAsOf = null,
+        bool isCurrent = false,
         CancellationToken cancellationToken = default)
     {
         if (projectId <= 0)
@@ -603,7 +620,7 @@ public sealed class ProjectService : IProjectService
                 Description = description,
                 VersionLabel = versionLabel,
                 DataAsOf = dataAsOf,
-                IsCurrent = false,
+                IsCurrent = isCurrent,
                 UploadedByUserID = CmsDefaults.ActingUserId
             };
 
@@ -779,16 +796,29 @@ public sealed class ProjectService : IProjectService
         var members = await _admin.ListUserGroupMembersAsync(ugid, cancellationToken);
         return members
             .GroupBy(m => m.UserID)
-            .Select(g => g.First())
-            .OrderBy(m => m.UserFullName ?? m.Username ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-            .Select(m => (object)new
+            .Select(g =>
             {
-                userID = m.UserID,
-                userFullName = string.IsNullOrWhiteSpace(m.UserFullName)
-                    ? (m.Username ?? $"User {m.UserID}")
-                    : m.UserFullName.Trim(),
-                email = (m.Email ?? string.Empty).Trim()
+                var m = g.First();
+                var roles = string.Join(
+                    ", ",
+                    g.Select(x => (x.UserRoleName ?? string.Empty).Trim())
+                        .Where(r => r.Length > 0)
+                        .Distinct(StringComparer.OrdinalIgnoreCase));
+                return new
+                {
+                    userID = m.UserID,
+                    userFullName = string.IsNullOrWhiteSpace(m.UserFullName)
+                        ? (m.Username ?? $"User {m.UserID}")
+                        : m.UserFullName.Trim(),
+                    title = (m.Title ?? string.Empty).Trim(),
+                    email = (m.Email ?? string.Empty).Trim(),
+                    phone = (m.Phone ?? string.Empty).Trim(),
+                    userRoleName = roles,
+                    userRoleID = m.UserRoleID
+                };
             })
+            .OrderBy(m => m.userFullName, StringComparer.OrdinalIgnoreCase)
+            .Cast<object>()
             .ToList();
     }
 

@@ -48,6 +48,7 @@ public interface IProjectService
         DateTime weekStartDate,
         int? userId = null,
         CancellationToken cancellationToken = default);
+    Task<ProjectTimeSummary> GetTimeSummaryAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> SaveTimeWeekAsync(int projectId, ProjectTimeWeekRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(int ugid, CancellationToken cancellationToken = default);
 
@@ -59,6 +60,7 @@ public interface IProjectService
         string? description = null,
         string? versionLabel = null,
         DateTime? dataAsOf = null,
+        bool isCurrent = false,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectFile>> UpdateFileAsync(
         int projectId,

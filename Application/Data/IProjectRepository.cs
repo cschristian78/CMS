@@ -55,6 +55,7 @@ public interface IProjectRepository
         DateTime weekStartDate,
         int? userId = null,
         CancellationToken cancellationToken = default);
+    Task<ProjectTimeSummary> GetTimeSummaryAsync(int projectId, CancellationToken cancellationToken = default);
     Task SaveTimeEntriesForWeekAsync(
         int projectId,
         DateTime weekStartDate,

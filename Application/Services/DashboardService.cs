@@ -97,6 +97,15 @@ public sealed class DashboardService : IDashboardService
         };
     }
 
+    public Task<IReadOnlyList<CatStaffHoursRow>> GetCatStaffHoursAsync(
+        CancellationToken cancellationToken = default) =>
+        _dashboard.GetCatStaffHoursAsync(cancellationToken);
+
+    public Task<CatAnalystWorkloadDetail?> GetCatAnalystWorkloadDetailAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        _dashboard.GetCatAnalystWorkloadDetailAsync(userId, cancellationToken);
+
     private static bool IsServiceColumn(string columnName, HashSet<string> roleNames)
     {
         var name = columnName.Trim();

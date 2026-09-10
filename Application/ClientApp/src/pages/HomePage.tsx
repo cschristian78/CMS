@@ -12,11 +12,14 @@ import type { ClientProjectListFilterOptions } from '../workflows/clientProjectL
 import {
   buildHomeClientProjectListUrl,
   buildHomeSummaryUrl,
+  createDefaultHomeListFilters,
   HOME_CLIENT_PROJECT_LIST_OPTIONS_URL,
   loadHomeListFilters,
   saveHomeListFilters,
+  type HomeListFilters,
 } from '../workflows/homeClientProjectListWorkflow';
 import { formatCalendarDateDisplay } from '../utils/dateInput';
+import { runProjectReportWorkflow, type ProjectReportRunMode } from '../project/generateProjectReportWorkflow';
 
 function normalizeColumnName(name: string): string {
   return name.replace(/[\s_\-.]/g, '').toLowerCase();
@@ -355,6 +358,13 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   /** Local online overrides so the green dot updates immediately even if the grid column is missing. */
   const [onlineOverrides, setOnlineOverrides] = useState<Record<number, boolean>>({});
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  const [projectContextMenu, setProjectContextMenu] = useState<{
+    projectId: number;
+    label: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [projectReportBusy, setProjectReportBusy] = useState(false);
   const [sortColumnIndex, setSortColumnIndex] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<ClientProjectListSortDirection>('asc');
 
@@ -364,7 +374,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const initialHomeFilters = useMemo(() => loadHomeListFilters(), []);
   const [filterBusinessUnit, setFilterBusinessUnit] = useState(initialHomeFilters.businessUnit);
   const [filterBusinessClass, setFilterBusinessClass] = useState(initialHomeFilters.businessClass);
-  // Default Status "Active" / Online "Online" unless a prior Main visit saved something else.
+  // Default: All clients + Online (unless a prior Main visit saved something else).
   const [filterStatus, setFilterStatus] = useState(initialHomeFilters.status);
   /** '' = all, 'Online', or 'Offline' - filters by dbo.tProject.IsOnline. */
   const [filterOnline, setFilterOnline] = useState(initialHomeFilters.online);
@@ -401,14 +411,14 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   }, []);
 
   const loadProjectList = useCallback(
-    async (refresh: boolean) => {
-      const bu = filterBusinessUnit;
-      const bc = filterBusinessClass;
-      const stat = filterStatus;
-      const online = filterOnline;
-      const cli = clientNameSearch;
-      const pt = filterProjectType;
-      const leads = filterAnalyticsLeads;
+    async (refresh: boolean, filterOverride?: HomeListFilters) => {
+      const bu = filterOverride?.businessUnit ?? filterBusinessUnit;
+      const bc = filterOverride?.businessClass ?? filterBusinessClass;
+      const stat = filterOverride?.status ?? filterStatus;
+      const online = filterOverride?.online ?? filterOnline;
+      const cli = filterOverride?.client ?? clientNameSearch;
+      const pt = filterOverride?.projectType ?? filterProjectType;
+      const leads = filterOverride?.analyticsLeads ?? filterAnalyticsLeads;
       const listUrl = buildHomeClientProjectListUrl(refresh, bu, bc, stat, cli, pt, online, leads);
       const summaryUrl = buildHomeSummaryUrl(bu, bc, stat, cli, pt, online, leads);
 
@@ -446,6 +456,19 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     },
     [filterBusinessUnit, filterBusinessClass, filterStatus, filterOnline, clientNameSearch, filterProjectType, filterAnalyticsLeads, loadFilterOptions],
   );
+
+  const clearAllFilters = useCallback(() => {
+    const defaults = createDefaultHomeListFilters();
+    setFilterBusinessUnit(defaults.businessUnit);
+    setFilterBusinessClass(defaults.businessClass);
+    setFilterStatus(defaults.status);
+    setFilterOnline(defaults.online);
+    setClientNameSearch(defaults.client);
+    setFilterProjectType(defaults.projectType);
+    setFilterAnalyticsLeads([]);
+    saveHomeListFilters(defaults);
+    void loadProjectList(false, defaults);
+  }, [loadProjectList]);
 
   useEffect(() => {
     void loadProjectList(true);
@@ -491,8 +514,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     listLoading,
   ]);
 
-  // Once the Status filter options come back from the API, snap our default
-  // "Active" value to the canonical casing the database uses (e.g. "ACTIVE",
+  // Once the Status filter options come back from the API, snap a selected
+  // status value to the canonical casing the database uses (e.g. "ACTIVE",
   // "Active", "active") so the <select> highlights the right <option>.
   useEffect(() => {
     if (!filterOptions?.statusNames || !filterStatus) {
@@ -772,6 +795,31 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       }
     },
     [flash, isOnlineColumnIndex, projectIdColumnIndex],
+  );
+
+  const runHomeProjectReport = useCallback(
+    async (projectId: number, mode: ProjectReportRunMode) => {
+      setProjectContextMenu(null);
+      if (projectId <= 0 || projectReportBusy) {
+        return;
+      }
+      setProjectReportBusy(true);
+      try {
+        await runProjectReportWorkflow({
+          projectId,
+          mode,
+          flash,
+        });
+      } catch (err) {
+        flash(
+          'error',
+          err instanceof ApiError ? err.message : 'Could not generate the project report.',
+        );
+      } finally {
+        setProjectReportBusy(false);
+      }
+    },
+    [flash, projectReportBusy],
   );
 
   const resetBulkWizard = () => {
@@ -1246,6 +1294,15 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 type="button"
                 className="secondary-button"
                 disabled={listLoading}
+                onClick={clearAllFilters}
+                title="Reset to All clients with Online status Online"
+              >
+                Clear all
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={listLoading}
                 onClick={() => void loadProjectList(true)}
               >
                 {listLoading ? 'Loading...' : 'Refresh table'}
@@ -1325,7 +1382,21 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                       className={selectedRowIndex === ri ? 'home-project-list-row--selected' : undefined}
                       onClick={() => setSelectedRowIndex(ri)}
                       onDoubleClick={(e) => handleRowDoubleClick(e, row)}
-                      title="Click to select; double-click to edit project with grid context"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setSelectedRowIndex(ri);
+                        if (rowProjectId == null) {
+                          flash('error', 'This row has no ProjectID, so a report cannot be generated.');
+                          return;
+                        }
+                        setProjectContextMenu({
+                          projectId: rowProjectId,
+                          label: buildProjectLabelFromRow(list.columns, row, rowProjectId),
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      }}
+                      title="Click to select; right-click for report options; double-click to edit project"
                     >
                       <td className="home-online-col">
                         <button
@@ -1500,6 +1571,44 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
       : null}
+
+      {projectContextMenu ? (
+        <>
+          <button
+            type="button"
+            className="admin-context-menu-backdrop"
+            aria-label="Close project menu"
+            onClick={() => setProjectContextMenu(null)}
+          />
+          <div
+            className="admin-context-menu"
+            role="menu"
+            aria-label={`Report options for ${projectContextMenu.label}`}
+            style={{ top: projectContextMenu.y, left: projectContextMenu.x }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="admin-context-menu__item"
+              disabled={projectReportBusy}
+              onClick={() => void runHomeProjectReport(projectContextMenu.projectId, 'interactive')}
+            >
+              {projectReportBusy ? 'Generating…' : 'Generate Report'}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="admin-context-menu__item"
+              disabled={projectReportBusy}
+              onClick={() =>
+                void runHomeProjectReport(projectContextMenu.projectId, 'saveAndSendAttachment')
+              }
+            >
+              {projectReportBusy ? 'Generating…' : 'Generate Report & Send'}
+            </button>
+          </div>
+        </>
+      ) : null}
     </>
   );
 }

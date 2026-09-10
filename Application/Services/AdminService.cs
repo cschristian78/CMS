@@ -22,19 +22,22 @@ public sealed class AdminService : IAdminService
     private readonly ISecureConnectionSettingsStore _settingsStore;
     private readonly IUserPhotoStorage _userPhotos;
     private readonly IDashboardRepository _dashboard;
+    private readonly IDataAuditRepository _dataAudit;
 
     public AdminService(
         IAdminRepository admin,
         IReferenceDataRepository referenceData,
         ISecureConnectionSettingsStore settingsStore,
         IUserPhotoStorage userPhotos,
-        IDashboardRepository dashboard)
+        IDashboardRepository dashboard,
+        IDataAuditRepository dataAudit)
     {
         _admin = admin;
         _referenceData = referenceData;
         _settingsStore = settingsStore;
         _userPhotos = userPhotos;
         _dashboard = dashboard;
+        _dataAudit = dataAudit;
     }
 
     /// <summary>Best-effort refresh of <c>dbo.vProject_Current</c> after any admin write
@@ -742,6 +745,12 @@ public sealed class AdminService : IAdminService
         await RefreshHomeListAsync(cancellationToken);
     }
 
+    public async Task HardDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default)
+    {
+        await _admin.HardDeleteUserGroupAsync(ugid, cancellationToken);
+        await RefreshHomeListAsync(cancellationToken);
+    }
+
     public async Task RestoreUserGroupAsync(int ugid, CancellationToken cancellationToken = default)
     {
         await _admin.RestoreUserGroupAsync(ugid, cancellationToken);
@@ -825,6 +834,9 @@ public sealed class AdminService : IAdminService
         await RefreshHomeListAsync(cancellationToken);
         return ugid;
     }
+
+    public Task<DataAuditReport> GetDataAuditReportAsync(CancellationToken cancellationToken = default)
+        => _dataAudit.GetReportAsync(cancellationToken);
 
     public Task<IReadOnlyList<ActivityLog>> GetActivityForEntityAsync(string entityType, int entityId, int top = 100, CancellationToken cancellationToken = default)
         => _admin.GetActivityForEntityAsync(entityType, entityId, top, cancellationToken);

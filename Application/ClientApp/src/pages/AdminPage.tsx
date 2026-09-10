@@ -684,7 +684,22 @@ type TabId =
   | 'clientTypes'
   | 'clients'
   | 'services'
-  | 'serviceCategories';
+  | 'serviceCategories'
+  | 'dataAudit';
+
+interface DataAuditCheck {
+  checkId: string;
+  title: string;
+  description: string;
+  count: number;
+  columns: string[];
+  rows: (string | null)[][];
+}
+
+interface DataAuditReport {
+  generatedAtUtc: string;
+  checks: DataAuditCheck[];
+}
 
 /** US states and DC - two-letter postal codes for the user address State field. */
 const US_STATE_CODES: readonly string[] = [
@@ -772,7 +787,11 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const tab = (searchParams.get('tab') || 'server') as TabId;
 
   const setTab = (t: TabId) => {
-    setSearchParams({ tab: t });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', t);
+      return next;
+    });
   };
 
   const [admin, setAdmin] = useState<AdminModel | null>(null);
@@ -798,6 +817,12 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     });
   }, []);
 
+  // Data Audit (state before load/effect that use it)
+  const [dataAudit, setDataAudit] = useState<DataAuditReport | null>(null);
+  const [dataAuditLoading, setDataAuditLoading] = useState(false);
+  const [dataAuditError, setDataAuditError] = useState<string | null>(null);
+  const [expandedAuditCheckId, setExpandedAuditCheckId] = useState<string | null>(null);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -808,6 +833,37 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       }
     })();
   }, [reload]);
+
+  const loadDataAudit = useCallback(async () => {
+    setDataAuditLoading(true);
+    setDataAuditError(null);
+    try {
+      const report = await apiGet<DataAuditReport>('/api/admin/data-audit');
+      setDataAudit(report);
+      setExpandedAuditCheckId((prev) => {
+        if (prev && report.checks.some((c) => c.checkId === prev && c.count > 0)) {
+          return prev;
+        }
+        const firstFinding = report.checks.find((c) => c.count > 0);
+        return firstFinding?.checkId ?? report.checks[0]?.checkId ?? null;
+      });
+    } catch (e) {
+      setDataAudit(null);
+      setDataAuditError(e instanceof ApiError ? e.message : 'Could not load data audit.');
+    } finally {
+      setDataAuditLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'dataAudit') {
+      return;
+    }
+    if (dataAudit != null || dataAuditLoading) {
+      return;
+    }
+    void loadDataAudit();
+  }, [tab, dataAudit, dataAuditLoading, loadDataAudit]);
 
   // Users tab
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
@@ -837,6 +893,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [buDeleteBlockedMessage, setBuDeleteBlockedMessage] = useState<string | null>(null);
   const [bcDeleteBlockedMessage, setBcDeleteBlockedMessage] = useState<string | null>(null);
   const [clientDeleteBlockedMessage, setClientDeleteBlockedMessage] = useState<string | null>(null);
+  const [ugDeleteBlockedMessage, setUgDeleteBlockedMessage] = useState<string | null>(null);
   const [clientContextMenu, setClientContextMenu] = useState<{
     clientId: number;
     clientName: string;
@@ -889,6 +946,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [newGroupRoleFilterQuery, setNewGroupRoleFilterQuery] = useState('');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [groupPanelBusy, setGroupPanelBusy] = useState(false);
+  const prefilledGroupFromQueryRef = useRef(false);
 
   // Project types
   const [selectedPtId, setSelectedPtId] = useState<number | ''>('');
@@ -2205,33 +2263,103 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     selectUserGroupByNumber(selectedUserGroupId, row);
   };
 
-  const selectUserGroupByNumber = (n: number, row?: UserGroupListRow) => {
-    setSelectedUserGroupId(n);
-    setIsCreatingGroup(false);
-    const hit =
-      row ??
-      (groupListUseSearchResults ? groupSearchResults : (admin?.userGroupSummaries ?? [])).find(
-        (g) => g.ugid === n,
-      );
-    if (hit) {
-      setGroupEditUgid(hit.ugid);
-      setGroupEditName(hit.ugName ?? '');
-      setGroupEditNumber(hit.userGroupNumber ?? '');
-    } else {
-      setGroupEditUgid(n);
-      setGroupEditNumber('');
+  const deleteUserGroup = async () => {
+    if (selectedUserGroupId === '') {
+      window.alert('Select a user group to delete.');
+      return;
     }
-    void (async () => {
-      setGroupPanelBusy(true);
-      try {
-        await fetchGroupMembers(n);
-      } catch (err) {
-        flash('error', err instanceof ApiError ? err.message : 'Could not load group members.');
-      } finally {
-        setGroupPanelBusy(false);
+    const targetId = selectedUserGroupId;
+    const row = displayedUserGroupRows.find((g) => g.ugid === targetId);
+    const name = (row?.ugName ?? '').trim() || `User Group ${targetId}`;
+    if (
+      !window.confirm(
+        `Permanently delete "${name}" from the database?\n\nThis removes the group and its member assignments. Users themselves are not deleted. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setGroupPanelBusy(true);
+    try {
+      await apiPostJson(`/api/admin/groups/${targetId}/delete`, {});
+      flash('success', 'User group deleted.');
+      setSelectedUserGroupId('');
+      setGroupEditUgid(0);
+      setGroupEditName('');
+      setGroupEditNumber('');
+      setLoadedGroupMembers([]);
+      setPendingGroupMembers([]);
+      setSelectedMemberRowKey('');
+      setIsCreatingGroup(false);
+      if (groupListUseSearchResults) {
+        setGroupSearchResults((prev) => prev.filter((g) => g.ugid !== targetId));
       }
-    })();
+      await reload();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Delete failed.';
+      if (/active projects/i.test(message) || /cannot be deleted/i.test(message)) {
+        setUgDeleteBlockedMessage(
+          message ||
+            'This user group cannot be deleted because it is associated with active projects. Please remove the project before deleting the user group.',
+        );
+        return;
+      }
+      flash('error', message);
+    } finally {
+      setGroupPanelBusy(false);
+    }
   };
+
+  const selectUserGroupByNumber = useCallback(
+    (n: number, row?: UserGroupListRow) => {
+      setSelectedUserGroupId(n);
+      setIsCreatingGroup(false);
+      const hit =
+        row ??
+        (groupListUseSearchResults ? groupSearchResults : (admin?.userGroupSummaries ?? [])).find(
+          (g) => g.ugid === n,
+        );
+      if (hit) {
+        setGroupEditUgid(hit.ugid);
+        setGroupEditName(hit.ugName ?? '');
+        setGroupEditNumber(hit.userGroupNumber ?? '');
+      } else {
+        setGroupEditUgid(n);
+        setGroupEditNumber('');
+      }
+      void (async () => {
+        setGroupPanelBusy(true);
+        try {
+          await fetchGroupMembers(n);
+        } catch (err) {
+          flash('error', err instanceof ApiError ? err.message : 'Could not load group members.');
+        } finally {
+          setGroupPanelBusy(false);
+        }
+      })();
+    },
+    [admin?.userGroupSummaries, flash, groupListUseSearchResults, groupSearchResults],
+  );
+
+  // Prefill UserGroup edit panel when arriving from Project Info (selectUserGroup query).
+  useEffect(() => {
+    if (prefilledGroupFromQueryRef.current) {
+      return;
+    }
+    if (tab !== 'groups' || !admin) {
+      return;
+    }
+    const raw = searchParams.get('selectUserGroup');
+    if (!raw) {
+      return;
+    }
+    const ugid = Number(raw);
+    if (!Number.isFinite(ugid) || ugid <= 0) {
+      return;
+    }
+    prefilledGroupFromQueryRef.current = true;
+    const row = (admin.userGroupSummaries ?? []).find((g) => g.ugid === ugid);
+    selectUserGroupByNumber(ugid, row);
+  }, [admin, searchParams, selectUserGroupByNumber, tab]);
 
   const addMemberToGroup = () => {
     if (!groupEditName.trim()) {
@@ -2902,6 +3030,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           {tabBtn('users', 'Users')}
           {tabBtn('roles', 'User Role')}
           {tabBtn('groups', 'UserGroup')}
+          {tabBtn('dataAudit', 'Data Audit')}
           {tabBtn('services', 'Services')}
           {tabBtn('serviceCategories', 'Service Category')}
         </div>
@@ -3528,6 +3657,14 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onClick={editGroupFromSelection}
                 >
                   Edit
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={groupPanelBusy || selectedUserGroupId === ''}
+                  onClick={() => void deleteUserGroup()}
+                >
+                  Delete
                 </button>
               </div>
             </div>
@@ -4441,6 +4578,97 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
 
+        <div id="admin-tab-data-audit" className={'admin-tab-panel' + (tab === 'dataAudit' ? ' active' : '')}>
+          <h2>Data Audit</h2>
+          <p className="field-help">
+            Client → Project → User Group → User linkage checks. Run the report to refresh counts and drill into
+            findings.
+          </p>
+          <div className="button-row wrap-buttons">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={dataAuditLoading}
+              onClick={() => void loadDataAudit()}
+            >
+              {dataAuditLoading ? 'Running…' : dataAudit ? 'Refresh report' : 'Run report'}
+            </button>
+          </div>
+          {dataAuditError ? (
+            <div className="alert alert-error" role="alert">
+              {dataAuditError}
+            </div>
+          ) : null}
+          {dataAudit ? (
+            <div className="admin-data-audit">
+              <p className="field-help" role="status">
+                Generated {new Date(dataAudit.generatedAtUtc).toLocaleString()} ·{' '}
+                {dataAudit.checks.reduce((sum, c) => sum + c.count, 0)} total finding
+                {dataAudit.checks.reduce((sum, c) => sum + c.count, 0) === 1 ? '' : 's'}
+              </p>
+              <div className="admin-data-audit-summary">
+                {dataAudit.checks.map((check) => (
+                  <button
+                    key={check.checkId}
+                    type="button"
+                    className={
+                      'admin-data-audit-card' +
+                      (check.count > 0 ? ' admin-data-audit-card--findings' : ' admin-data-audit-card--ok') +
+                      (expandedAuditCheckId === check.checkId ? ' selected' : '')
+                    }
+                    onClick={() => setExpandedAuditCheckId(check.checkId)}
+                    title={check.description}
+                  >
+                    <span className="admin-data-audit-card__count">{check.count}</span>
+                    <span className="admin-data-audit-card__title">{check.title}</span>
+                  </button>
+                ))}
+              </div>
+              {(() => {
+                const selected =
+                  dataAudit.checks.find((c) => c.checkId === expandedAuditCheckId) ?? dataAudit.checks[0];
+                if (!selected) {
+                  return null;
+                }
+                return (
+                  <div className="admin-data-audit-detail">
+                    <h3 className="admin-subheading">{selected.title}</h3>
+                    <p className="field-help">{selected.description}</p>
+                    {selected.count === 0 ? (
+                      <p className="field-help" role="status">
+                        No findings for this check.
+                      </p>
+                    ) : (
+                      <div className="admin-usergroup-table-wrap admin-data-audit-table-wrap">
+                        <table className="admin-usergroup-table admin-data-audit-table" aria-label={selected.title}>
+                          <thead>
+                            <tr>
+                              {selected.columns.map((col) => (
+                                <th key={col} scope="col">
+                                  {col}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selected.rows.map((row, ri) => (
+                              <tr key={`${selected.checkId}-${ri}`}>
+                                {row.map((cell, ci) => (
+                                  <td key={`${selected.checkId}-${ri}-${ci}`}>{cell?.trim() || '—'}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : null}
+        </div>
+
         <div id="admin-tab-clients" className={'admin-tab-panel' + (tab === 'clients' ? ' active' : '')}>
           <div className="page-header-top admin-users-toolbar">
             <h2>
@@ -4815,6 +5043,27 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             </p>
             <div className="button-row bulk-import-actions">
               <button type="button" className="primary-button" onClick={() => setClientDeleteBlockedMessage(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {ugDeleteBlockedMessage ? (
+        <div
+          className="bulk-import-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ug-delete-blocked-title"
+        >
+          <div className="bulk-import-panel card">
+            <h2 id="ug-delete-blocked-title">Cannot delete user group</h2>
+            <p className="field-help" role="alert">
+              {ugDeleteBlockedMessage}
+            </p>
+            <div className="button-row bulk-import-actions">
+              <button type="button" className="primary-button" onClick={() => setUgDeleteBlockedMessage(null)}>
                 OK
               </button>
             </div>

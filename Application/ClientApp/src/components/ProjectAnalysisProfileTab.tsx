@@ -59,21 +59,28 @@ function FieldRow({
   );
 }
 
-function BoolSelect({
-  value,
-  onChange,
-  id,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  id?: string;
-}) {
-  return (
-    <select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="True">True</option>
-      <option value="False">False</option>
-    </select>
+function isTrueFlag(value: string | null | undefined): boolean {
+  return String(value ?? '').trim().toLowerCase() === 'true';
+}
+
+/** Keep root flags and matching questions[] entries in sync (BAR JSON). */
+function setProcessFlag(
+  config: BarConfigDocument,
+  key: 'metadata' | 'fieldVerification' | 'dataTransformation',
+  questionName: string,
+  checked: boolean,
+): BarConfigDocument {
+  const value = checked ? 'True' : 'False';
+  const questions = config.questions.map((q) => ({ ...q }));
+  const existing = questions.find(
+    (q) => q.name === questionName || q.name.toLowerCase() === key.toLowerCase(),
   );
+  if (existing) {
+    existing.value = value;
+  } else {
+    questions.push({ name: questionName, value });
+  }
+  return { ...config, [key]: value, questions };
 }
 
 /** Keep root + questions + Project entries aligned for both Moodys and Verisk JSON. */
@@ -265,15 +272,6 @@ function MoodysForm({
           </FieldRow>
           <FieldRow label="email">
             <input value={config.email} onChange={(e) => updateRoot({ email: e.target.value })} />
-          </FieldRow>
-          <FieldRow label="metadata">
-            <BoolSelect value={config.metadata} onChange={(v) => updateRoot({ metadata: v })} />
-          </FieldRow>
-          <FieldRow label="fieldVerification">
-            <BoolSelect value={config.fieldVerification} onChange={(v) => updateRoot({ fieldVerification: v })} />
-          </FieldRow>
-          <FieldRow label="dataTransformation">
-            <BoolSelect value={config.dataTransformation} onChange={(v) => updateRoot({ dataTransformation: v })} />
           </FieldRow>
           <FieldRow label="DatabaseSuffix">
             <input
@@ -903,6 +901,38 @@ export default function ProjectAnalysisProfileTab({
           />
         </FieldRow>
       </div>
+      {config ? (
+        <div className="analysis-profile-process-flags" role="group" aria-label="Process options">
+          <label className="analysis-profile-check">
+            <input
+              type="checkbox"
+              checked={isTrueFlag(config.metadata)}
+              onChange={(e) => setConfig(setProcessFlag(config, 'metadata', 'Metadata', e.target.checked))}
+            />
+            MetaData
+          </label>
+          <label className="analysis-profile-check">
+            <input
+              type="checkbox"
+              checked={isTrueFlag(config.fieldVerification)}
+              onChange={(e) =>
+                setConfig(setProcessFlag(config, 'fieldVerification', 'FieldVerification', e.target.checked))
+              }
+            />
+            Field Verification
+          </label>
+          <label className="analysis-profile-check">
+            <input
+              type="checkbox"
+              checked={isTrueFlag(config.dataTransformation)}
+              onChange={(e) =>
+                setConfig(setProcessFlag(config, 'dataTransformation', 'DataTransformation', e.target.checked))
+              }
+            />
+            Transformation
+          </label>
+        </div>
+      ) : null}
     </fieldset>
   );
 

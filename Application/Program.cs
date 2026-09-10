@@ -63,6 +63,7 @@ builder.Services.AddScoped<IReferenceDataRepository, ReferenceDataRepository>();
 builder.Services.AddScoped<IClientRepository, ClientRepository>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IAdminRepository, AdminRepository>();
+builder.Services.AddScoped<IDataAuditRepository, DataAuditRepository>();
 builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IHomeRepository, HomeRepository>();
 
@@ -135,6 +136,25 @@ app.MapControllerRoute(
     pattern: "Home/Error",
     defaults: new { controller = "Home", action = "Error" });
 
-app.MapFallbackToFile("index.html");
+// SPA fallback must not swallow unknown /api routes (those should stay JSON 404s).
+app.MapFallback(async context =>
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        context.Response.ContentType = "application/problem+json";
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status404NotFound,
+            Title = "Not Found",
+            Detail = $"No API endpoint matches {context.Request.Path}."
+        });
+        return;
+    }
+
+    var indexPath = Path.Combine(app.Environment.WebRootPath, "index.html");
+    context.Response.ContentType = "text/html; charset=utf-8";
+    await context.Response.SendFileAsync(indexPath);
+});
 
 app.Run();

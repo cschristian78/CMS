@@ -270,6 +270,32 @@ public sealed class ProjectsApiController : ControllerBase
         }
     }
 
+    [HttpGet("{id:int}/time/summary")]
+    public async Task<ActionResult<ProjectTimeSummary>> GetTimeSummaryAsync(int id, CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid project", Detail = "id must be positive." });
+        }
+
+        try
+        {
+            return Ok(await _projectService.GetTimeSummaryAsync(id, cancellationToken));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "Project not found", Detail = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Time summary load failed for ProjectID {ProjectID}.", id);
+            return Problem(
+                detail: ex.Message,
+                title: "Time summary failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
     [HttpPut("{id:int}/time")]
     [HttpPost("{id:int}/time")]
     public async Task<ActionResult<object>> SaveTimeWeekAsync(
@@ -349,7 +375,8 @@ public sealed class ProjectsApiController : ControllerBase
         [FromForm] string? description,
         [FromForm] string? versionLabel,
         [FromForm] DateTime? dataAsOf,
-        CancellationToken cancellationToken)
+        [FromForm] bool isCurrent = false,
+        CancellationToken cancellationToken = default)
     {
         if (id <= 0)
         {
@@ -384,6 +411,7 @@ public sealed class ProjectsApiController : ControllerBase
                     description,
                     versionLabel,
                     dataAsOf,
+                    isCurrent,
                     cancellationToken);
                 return Ok(saved);
             }
@@ -444,7 +472,8 @@ public sealed class ProjectsApiController : ControllerBase
             string.IsNullOrWhiteSpace(request.Category) ? "SourceData" : request.Category.Trim(),
             request.Description,
             request.VersionLabel,
-            request.DataAsOf);
+            request.DataAsOf,
+            request.IsCurrent);
 
         return Ok(new ProjectFileUploadSessionStartResponse
         {
@@ -527,6 +556,7 @@ public sealed class ProjectsApiController : ControllerBase
                 session.Description,
                 session.VersionLabel,
                 session.DataAsOf,
+                session.IsCurrent,
                 cancellationToken);
             return Ok(saved);
         }

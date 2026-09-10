@@ -920,11 +920,27 @@ public sealed class AdminRepository : IAdminRepository
     public async Task<int> SoftDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default)
     {
         await _db.ExecuteAsync("dbo.usp_UserGroup_SoftDelete",
-        [
-            SqlParameterFactory.Int("@UserGroupID", ugid),
-            SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
-        ], cancellationToken);
+            [
+                SqlParameterFactory.Int("@UserGroupID", ugid),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
         return ugid;
+    }
+
+    public async Task HardDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _db.ExecuteAsync("dbo.usp_UserGroup_HardDelete",
+            [
+                SqlParameterFactory.Int("@UserGroupID", ugid),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number is 50001 or 50002)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
+        }
     }
 
     public async Task<int> RestoreUserGroupAsync(int ugid, CancellationToken cancellationToken = default)
@@ -944,7 +960,9 @@ public sealed class AdminRepository : IAdminRepository
                 u.FirstName,
                 u.LastName,
                 LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))) AS UserFullName,
+                u.Title,
                 u.Email,
+                u.Phone,
                 ugr.UserRoleID,
                 ur.UserRoleName,
                 ugr.JoinedDate
@@ -1384,7 +1402,9 @@ public sealed class AdminRepository : IAdminRepository
         UGName = r.TryGetNullableString("UGName"),
         UserID = r.GetInt32OrDefault("UserID"),
         UserFullName = r.TryGetNullableString("UserFullName") ?? r.TryGetNullableString("FullName"),
+        Title = r.TryGetNullableString("Title"),
         Email = r.TryGetNullableString("Email"),
+        Phone = r.TryGetNullableString("Phone"),
         UserRoleID = r.TryGetNullableInt32("UserRoleID"),
         UserRoleName = r.TryGetNullableString("UserRoleName"),
         JoinedDate = r.TryGetNullableDateTime("JoinedDate") ?? DateTime.MinValue

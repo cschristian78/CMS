@@ -63,6 +63,7 @@ public interface IAdminService
     Task<string> GetNextUserGroupNumberAsync(CancellationToken cancellationToken = default);
     Task<int> SaveUserGroupAsync(UserGroup group, CancellationToken cancellationToken = default);
     Task SoftDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default);
+    Task HardDeleteUserGroupAsync(int ugid, CancellationToken cancellationToken = default);
     Task RestoreUserGroupAsync(int ugid, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UserGroup>> ListUserGroupsAsync(string? searchTerm, bool includeDeleted, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UserGroupSummary>> SearchUserGroupsAsync(string? term, CancellationToken cancellationToken = default);
@@ -71,6 +72,9 @@ public interface IAdminService
     Task SaveUserGroupMemberAsync(UserGroupMember member, CancellationToken cancellationToken = default);
     Task RemoveUserGroupMemberAsync(int ugid, int userId, CancellationToken cancellationToken = default);
     Task<int> SaveUserGroupBatchAsync(SaveUserGroupBatchRequest batch, CancellationToken cancellationToken = default);
+
+    // ---- Data audit -----------------------------------------------------
+    Task<DataAuditReport> GetDataAuditReportAsync(CancellationToken cancellationToken = default);
 
     // ---- Activity log ---------------------------------------------------
     Task<IReadOnlyList<ActivityLog>> GetActivityForEntityAsync(string entityType, int entityId, int top = 100, CancellationToken cancellationToken = default);

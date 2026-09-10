@@ -579,6 +579,72 @@ public sealed class ProjectRepository : IProjectRepository
             ],
             cancellationToken);
 
+    public async Task<ProjectTimeSummary> GetTimeSummaryAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        const string byAnalystSql = """
+            SELECT
+                te.UserID AS Id,
+                ISNULL(NULLIF(LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))), N''), N'(Unknown analyst)') AS Label,
+                CAST(NULL AS nvarchar(100)) AS Detail,
+                CAST(SUM(te.Hours) AS decimal(18,2)) AS Hours
+              FROM dbo.tProjectTimeEntry AS te
+             INNER JOIN dbo.tProjectRef AS pr
+                ON pr.ProjectRefID = te.ProjectRefID
+               AND pr.IsActive = 1
+              LEFT JOIN dbo.tUser AS u ON u.UserID = te.UserID
+             WHERE pr.ProjectID = @ProjectID
+               AND te.IsActive = 1
+               AND te.Hours > 0
+             GROUP BY te.UserID, u.FirstName, u.LastName
+             ORDER BY Hours DESC, Label, te.UserID;
+            """;
+
+        const string byTaskSql = """
+            SELECT
+                te.CalendarItemID AS Id,
+                ISNULL(NULLIF(LTRIM(RTRIM(ci.Title)), N''), N'(Untitled task)') AS Label,
+                ISNULL(NULLIF(LTRIM(RTRIM(ci.ItemType)), N''), N'') AS Detail,
+                CAST(SUM(te.Hours) AS decimal(18,2)) AS Hours
+              FROM dbo.tProjectTimeEntry AS te
+             INNER JOIN dbo.tProjectRef AS pr
+                ON pr.ProjectRefID = te.ProjectRefID
+               AND pr.IsActive = 1
+              LEFT JOIN dbo.tProjectCalendarItem AS ci ON ci.CalendarItemID = te.CalendarItemID
+             WHERE pr.ProjectID = @ProjectID
+               AND te.IsActive = 1
+               AND te.Hours > 0
+             GROUP BY te.CalendarItemID, ci.Title, ci.ItemType
+             ORDER BY Hours DESC, Label, te.CalendarItemID;
+            """;
+
+        static ProjectTimeSummaryRow MapRow(SqlDataReader r) => new()
+        {
+            Id = r.GetInt32OrDefault("Id"),
+            Label = r.TryGetNullableString("Label") ?? string.Empty,
+            Detail = r.TryGetNullableString("Detail"),
+            Hours = r.GetNullableDecimal("Hours") ?? 0m
+        };
+
+        // SqlParameter instances cannot be reused across command collections.
+        var byAnalyst = await _db.QueryTextAsync(
+            byAnalystSql,
+            MapRow,
+            [SqlParameterFactory.Int("@ProjectID", projectId)],
+            cancellationToken);
+        var byTask = await _db.QueryTextAsync(
+            byTaskSql,
+            MapRow,
+            [SqlParameterFactory.Int("@ProjectID", projectId)],
+            cancellationToken);
+
+        return new ProjectTimeSummary
+        {
+            ByAnalyst = byAnalyst,
+            ByTask = byTask,
+            TotalHours = byAnalyst.Sum(r => r.Hours)
+        };
+    }
+
     public async Task SaveTimeEntriesForWeekAsync(
         int projectId,
         DateTime weekStartDate,

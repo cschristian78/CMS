@@ -59,7 +59,22 @@ export async function apiGet<T>(path: string): Promise<T> {
   if (!res.ok) {
     throw await ApiError.fromResponse(res);
   }
-  return res.json() as Promise<T>;
+  const raw = await res.text();
+  if (!raw) {
+    return undefined as T;
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!contentType.includes('json') || raw.trimStart().startsWith('<')) {
+    throw new ApiError(
+      `Expected JSON from ${path}, but received HTML. The API endpoint may be missing on this server — republish/restart the site.`,
+      res.status,
+    );
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new ApiError(`Could not parse JSON from ${path}.`, res.status);
+  }
 }
 
 export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
