@@ -246,12 +246,9 @@ main.page-shell.page-shell--hub-wide {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 2.5rem;
+    gap: 1.75rem;
     padding: 2rem 1rem 3rem;
-    background:
-        radial-gradient(ellipse 70% 55% at 50% 0%, rgba(240, 135, 0, 0.12) 0%, transparent 55%),
-        radial-gradient(ellipse 50% 40% at 15% 80%, rgba(32, 212, 232, 0.08) 0%, transparent 50%),
-        radial-gradient(ellipse 45% 35% at 85% 75%, rgba(29, 90, 165, 0.16) 0%, transparent 50%);
+    background: transparent;
 }
 
 .app-hub-brand {
@@ -259,6 +256,98 @@ main.page-shell.page-shell--hub-wide {
     max-width: none;
     width: 100%;
     padding-inline: 0.5rem;
+}
+
+.app-hub-eyebrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.85rem;
+    margin: 0 0 0.85rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.app-hub-eyebrow::before,
+.app-hub-eyebrow::after {
+    content: '';
+    width: min(4.5rem, 12vw);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(32, 212, 232, 0.55), transparent);
+}
+
+.app-hub-headline {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+}
+
+/* iVision hub Earth hero treatment */
+.app-hub-earth-wrap {
+    width: 100%;
+    max-width: 920px;
+    height: max(50vh, 190px);
+    overflow: hidden;
+    position: relative;
+    mask-image: radial-gradient(ellipse 90% 100% at 50% 0%, #000 38%, rgba(0, 0, 0, 0.55) 75%, transparent 100%);
+    -webkit-mask-image: radial-gradient(
+        ellipse 92% 100% at 50% 0%,
+        #000 38%,
+        rgba(0, 0, 0, 0.55) 72%,
+        transparent 100%
+    );
+}
+
+.app-hub-earth-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background:
+        radial-gradient(
+            ellipse 108% 92% at 50% 0%,
+            transparent 40%,
+            rgba(4, 7, 12, 0.45) 72%,
+            rgba(4, 7, 12, 0.95) 92%,
+            var(--background) 100%
+        ),
+        linear-gradient(to right, var(--background) 0%, transparent 14%, transparent 86%, var(--background) 100%),
+        linear-gradient(to bottom, transparent 58%, rgba(4, 7, 12, 0.5) 80%, var(--background) 100%);
+}
+
+.app-hub-earth {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    object-position: center top;
+    transform: translateX(-50%) scale(1.85);
+    transform-origin: 50% 0%;
+    display: block;
+    animation: appHubEarthSpin 110s linear infinite;
+    will-change: transform;
+}
+
+.app-hub-brand-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    pointer-events: none;
+    padding: 0 1rem;
 }
 
 .app-hub-brand-mark {
@@ -269,16 +358,55 @@ main.page-shell.page-shell--hub-wide {
     line-height: 1;
     color: var(--white);
     white-space: nowrap;
+    text-shadow:
+        0 2px 18px rgba(4, 7, 12, 0.85),
+        0 0 24px var(--accent-soft);
 }
 
 .app-hub-brand-rest {
     color: var(--text);
 }
 
+.app-hub-brand-sub {
+    font-size: 0.72rem;
+    color: var(--white);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.9;
+    text-shadow: 0 1px 12px rgba(4, 7, 12, 0.9);
+}
+
 .app-hub-lede {
     margin: 0.85rem 0 0;
     color: var(--muted);
     font-size: 1rem;
+}
+
+@keyframes appHubEarthSpin {
+    from {
+        transform: translateX(-50%) scale(1.85) rotate(0deg);
+    }
+
+    to {
+        transform: translateX(-50%) scale(1.85) rotate(360deg);
+    }
+}
+
+@media (max-width: 720px) {
+    .app-hub-earth-wrap {
+        height: min(28vh, 190px);
+    }
+
+    .app-hub-brand-mark {
+        white-space: normal;
+        text-align: center;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-hub-earth {
+        animation: none;
+    }
 }
 
 .app-hub-tiles {
