@@ -51,6 +51,10 @@ public interface IProjectService
     Task<ProjectTimeSummary> GetTimeSummaryAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> SaveTimeWeekAsync(int projectId, ProjectTimeWeekRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<object>> GetUserGroupMemberOptionsAsync(int ugid, CancellationToken cancellationToken = default);
+    /// <summary>Active CAT-department users who are members of the project's user group.</summary>
+    Task<IReadOnlyList<ProjectTimeCatUser>> ListCatDepartmentUsersForProjectAsync(
+        int projectId,
+        CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectFile>> ListFilesAsync(int projectId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectFile>> UploadFilesAsync(
@@ -68,6 +72,12 @@ public interface IProjectService
         ProjectFileUpdateRequest request,
         CancellationToken cancellationToken = default);
     Task SoftDeleteFileAsync(int projectId, int projectFileId, CancellationToken cancellationToken = default);
+
+    /// <summary>Opens the blob stream for a project file (caller/result dispose the stream).</summary>
+    Task<(ProjectFile File, Stream Content)> OpenFileContentAsync(
+        int projectId,
+        int projectFileId,
+        CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ActivityLog>> GetActivityAsync(int projectId, int top = 100, CancellationToken cancellationToken = default);
 }

@@ -3,13 +3,16 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppSidebar from './components/AppSidebar';
 import BackgroundLayer from './components/BackgroundLayer';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
-import DashboardPage from './pages/DashboardPage';
+import LandingPage from './pages/LandingPage';
 import HomePage from './pages/HomePage';
+import TmsHomePage from './pages/TmsHomePage';
+import TmsDashboardPage from './pages/TmsDashboardPage';
 import ClientPage from './pages/ClientPage';
 import ProjectPage from './pages/ProjectPage';
 import ProjectSummaryPage from './pages/ProjectSummaryPage';
 import AdminPage from './pages/AdminPage';
 import CatAiPage from './pages/CatAiPage';
+import DashboardPage from './pages/DashboardPage';
 
 export type FlashFn = (kind: 'success' | 'error', message: string) => void;
 
@@ -19,8 +22,13 @@ export default function App() {
   const clientWorkflow = location.pathname.startsWith('/clients');
   const projectWide = location.pathname.startsWith('/projects');
   const adminWide = location.pathname === '/admin';
-  const homeWide = location.pathname === '/';
-  const dashboardWide = location.pathname === '/dashboard';
+  const hubWide = location.pathname === '/';
+  const cmsWide = location.pathname === '/cms';
+  const tmsWide =
+    location.pathname === '/tms' ||
+    location.pathname.startsWith('/tms/');
+  const dashboardWide =
+    location.pathname === '/dashboard' || location.pathname === '/tms/dashboard';
 
   const flashFn: FlashFn = (kind, message) => {
     setFlash({ kind, text: message });
@@ -30,7 +38,9 @@ export default function App() {
     'page-shell' +
     (clientWorkflow ? ' page-shell--client-workflow' : '') +
     (adminWide ? ' page-shell--admin-wide' : '') +
-    (homeWide ? ' page-shell--home-wide' : '') +
+    (hubWide ? ' page-shell--hub-wide' : '') +
+    (cmsWide ? ' page-shell--home-wide' : '') +
+    (tmsWide ? ' page-shell--hub-wide' : '') +
     (dashboardWide ? ' page-shell--dashboard-wide' : '') +
     (projectWide ? ' page-shell--project-wide' : '');
 
@@ -50,7 +60,10 @@ export default function App() {
           {/* key=pathname remounts the boundary so navigating away clears a prior page error */}
           <RouteErrorBoundary key={location.pathname}>
             <Routes>
-              <Route path="/" element={<HomePage flash={flashFn} />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/cms" element={<HomePage flash={flashFn} />} />
+              <Route path="/tms" element={<TmsHomePage flash={flashFn} />} />
+              <Route path="/tms/dashboard" element={<TmsDashboardPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/clients/new" element={<ClientPage flash={flashFn} />} />
               <Route path="/clients/:id" element={<ClientPage flash={flashFn} />} />

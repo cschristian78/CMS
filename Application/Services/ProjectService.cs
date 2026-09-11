@@ -777,6 +777,37 @@ public sealed class ProjectService : IProjectService
         }
     }
 
+    public async Task<(ProjectFile File, Stream Content)> OpenFileContentAsync(
+        int projectId,
+        int projectFileId,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectId));
+        }
+
+        if (projectFileId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectFileId));
+        }
+
+        var file = await _projects.GetFileAsync(projectFileId, cancellationToken);
+        if (file is null || file.ProjectID != projectId || !file.IsActive)
+        {
+            throw new InvalidOperationException("Project file was not found.");
+        }
+
+        if (string.IsNullOrWhiteSpace(file.BlobPath))
+        {
+            throw new InvalidOperationException("Project file has no stored content.");
+        }
+
+        var stream = await _blobs.OpenReadAsync(file.BlobPath, cancellationToken);
+        file.DownloadUrl = _blobs.BuildDownloadUrl(file.BlobPath);
+        return (file, stream);
+    }
+
     private static DateTime StartOfWeekMonday(DateTime date)
     {
         var d = date.Date;
@@ -820,6 +851,18 @@ public sealed class ProjectService : IProjectService
             .OrderBy(m => m.userFullName, StringComparer.OrdinalIgnoreCase)
             .Cast<object>()
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<ProjectTimeCatUser>> ListCatDepartmentUsersForProjectAsync(
+        int projectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            return [];
+        }
+
+        return await _projects.ListCatDepartmentUsersForProjectAsync(projectId, cancellationToken);
     }
 
     public Task<IReadOnlyList<ActivityLog>> GetActivityAsync(int projectId, int top = 100, CancellationToken cancellationToken = default)

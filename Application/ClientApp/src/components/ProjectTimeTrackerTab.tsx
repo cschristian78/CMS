@@ -93,13 +93,20 @@ const ProjectTimeTrackerTab = forwardRef<
     isActive: boolean;
     flash: FlashFn;
     fallbackTasks: TimeTrackerTask[];
+    /** Prefer this CAT user when opening from TM (or other deep links). */
+    initialUserId?: number | null;
   }
->(function ProjectTimeTrackerTab({ projectId, isActive, flash, fallbackTasks }, ref) {
+>(function ProjectTimeTrackerTab(
+  { projectId, isActive, flash, fallbackTasks, initialUserId = null },
+  ref,
+) {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [tasks, setTasks] = useState<TimeTrackerTask[]>([]);
   const [cells, setCells] = useState<Record<CellKey, { hours: string; entryMode: 'Exact' | 'Allocated' }>>({});
   const [catUsers, setCatUsers] = useState<CatUserDto[]>([]);
-  const [activeUserId, setActiveUserId] = useState<number | null>(null);
+  const [activeUserId, setActiveUserId] = useState<number | null>(() =>
+    initialUserId != null && initialUserId > 0 ? initialUserId : null,
+  );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -151,7 +158,7 @@ const ProjectTimeTrackerTab = forwardRef<
           ? data.userID
           : nextCatUsers.length === 1
             ? nextCatUsers[0].userID
-            : activeUserId;
+            : activeUserId ?? (initialUserId != null && initialUserId > 0 ? initialUserId : null);
       if (resolvedUserId && resolvedUserId > 0) {
         setActiveUserId(resolvedUserId);
       }
@@ -189,7 +196,13 @@ const ProjectTimeTrackerTab = forwardRef<
     } finally {
       setLoading(false);
     }
-  }, [projectId, weekStart, activeUserId]);
+  }, [projectId, weekStart, activeUserId, initialUserId]);
+
+  useEffect(() => {
+    if (initialUserId != null && initialUserId > 0) {
+      setActiveUserId(initialUserId);
+    }
+  }, [projectId, initialUserId]);
 
   useEffect(() => {
     if (!isActive || projectId <= 0) {

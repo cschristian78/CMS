@@ -149,7 +149,7 @@ export default function ProjectSummaryPage() {
         <section className="card narrow-card">
           <h1>Project Summary</h1>
           <p>{loadError}</p>
-          <Link className="secondary-button" to="/">
+          <Link className="secondary-button" to="/cms">
             Home
           </Link>
         </section>
@@ -180,7 +180,7 @@ export default function ProjectSummaryPage() {
             >
               Edit
             </button>
-            <Link className="secondary-button" to="/">
+            <Link className="secondary-button" to="/cms">
               Home
             </Link>
           </div>

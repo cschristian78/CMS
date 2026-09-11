@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { resolveCatAppMode, setCatAppMode, type CatAppMode } from '../catAppMode';
 
 const iconProps = {
   width: 22,
@@ -59,27 +60,47 @@ interface NavItemDef {
   to: string;
   label: string;
   icon: JSX.Element;
+  /** When set, item is shown only in that workspace mode. */
+  modes?: CatAppMode[];
   isActive: (pathname: string) => boolean;
+  onNavigate?: () => void;
 }
 
 const navItems: NavItemDef[] = [
-  { to: '/', label: 'Home', icon: <HomeIcon />, isActive: (p) => p === '/' },
+  {
+    to: '/',
+    label: 'Home',
+    icon: <HomeIcon />,
+    isActive: (p) => p === '/',
+    onNavigate: () => setCatAppMode('hub'),
+  },
+  {
+    to: '/tms/dashboard',
+    label: 'Dashboard',
+    icon: <DashboardIcon />,
+    modes: ['tm'],
+    isActive: (p) => p === '/tms/dashboard' || p.startsWith('/tms/dashboard/'),
+    onNavigate: () => setCatAppMode('tm'),
+  },
   {
     to: '/projects/new',
     label: 'New Project',
     icon: <PlusIcon />,
+    modes: ['cm'],
     isActive: (p) => p === '/projects/new',
   },
   {
     to: '/dashboard',
     label: 'Dashboard',
     icon: <DashboardIcon />,
+    modes: ['cm'],
     isActive: (p) => p === '/dashboard' || p.startsWith('/dashboard/'),
   },
   {
     to: '/catai',
     label: 'CatAI',
     icon: <CatAiIcon />,
+    modes: ['cm'],
     isActive: (p) => p === '/catai' || p.startsWith('/catai/'),
   },
   {
@@ -92,28 +113,36 @@ const navItems: NavItemDef[] = [
 
 export default function AppSidebar() {
   const { pathname } = useLocation();
+  const mode = resolveCatAppMode(pathname);
+  const visibleItems = navItems.filter((item) => !item.modes || item.modes.includes(mode));
 
   return (
     <aside className="app-sidebar" aria-label="Main navigation">
       <div className="app-sidebar-brand">
-        <Link to="/" className="app-sidebar-brand-link" title="Client Management System">
+        <Link
+          to="/"
+          className="app-sidebar-brand-link"
+          title="Cat Management System"
+          onClick={() => setCatAppMode('hub')}
+        >
           <span className="app-sidebar-brand-mark" aria-hidden="true">
             <span className="logo-accent">C</span>
-            <span className="logo-rest">MS</span>
+            <span className="logo-rest">at</span>
           </span>
         </Link>
-        <span className="app-sidebar-brand-sub">Client Mgmt</span>
+        <span className="app-sidebar-brand-sub">Cat Mgmt</span>
       </div>
       <nav className="sidebar-nav">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const active = item.isActive(pathname);
           return (
             <Link
-              key={item.to}
+              key={`${item.to}:${item.label}`}
               to={item.to}
               className={'sidebar-nav-item' + (active ? ' active' : '')}
               title={item.label}
               aria-current={active ? 'page' : undefined}
+              onClick={item.onNavigate}
             >
               <span className="sidebar-nav-icon">{item.icon}</span>
               <span className="sidebar-nav-label">{item.label}</span>

@@ -405,7 +405,7 @@ export default function ClientPage({ flash }: { flash: FlashFn }) {
         <section className="card narrow-card">
           <h1>{isEdit ? 'Edit Client' : 'New Client'}</h1>
           <p>{loadError}</p>
-          <Link className="secondary-button" to="/">
+          <Link className="secondary-button" to="/cms">
             Home
           </Link>
         </section>
@@ -573,7 +573,7 @@ export default function ClientPage({ flash }: { flash: FlashFn }) {
               <button type="submit" className="primary-button">
                 Save Client
               </button>
-              <Link className="secondary-button" to="/">
+              <Link className="secondary-button" to="/cms">
                 Cancel
               </Link>
             </div>

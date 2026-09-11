@@ -22,6 +22,9 @@ public interface IProjectBlobStorage
 
     Task DeleteAsync(string blobPath, CancellationToken cancellationToken = default);
 
+    /// <summary>Opens a readable stream for a stored blob path or blob URL.</summary>
+    Task<Stream> OpenReadAsync(string blobPathOrUrl, CancellationToken cancellationToken = default);
+
     /// <summary>Builds a SAS-authenticated download URL for a stored blob path or blob URL.</summary>
     string BuildDownloadUrl(string blobPathOrUrl);
 }

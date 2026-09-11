@@ -138,3 +138,15 @@ export async function apiPostFormData<T>(path: string, formData: FormData): Prom
 
   return JSON.parse(raw) as T;
 }
+
+/** Fetch binary content (e.g. project file download for email attachment). */
+export async function apiGetBlob(path: string): Promise<Blob> {
+  const res = await fetch(path, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    throw await ApiError.fromResponse(res);
+  }
+  return await res.blob();
+}

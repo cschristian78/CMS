@@ -9,10 +9,15 @@ import {
 import { formatBusinessClassDisplay } from '../utils/businessClassDisplay';
 import { formatCalendarDateDisplay, toApiDateValue, toInputDateValue } from '../utils/dateInput';
 import type { FlashFn } from '../App';
-import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
+import { ApiError, apiDelete, apiGet, apiGetBlob, apiPostFormData, apiPostJson } from '../api';
 import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
 import ProjectAnalysisProfileTab from '../components/ProjectAnalysisProfileTab';
 import { runProjectReportWorkflow } from '../project/generateProjectReportWorkflow';
+import { loadProjectCatCcEmails } from '../project/loadProjectCatCcEmails';
+import {
+  buildOutlookHtmlFromLines,
+  openOutlookDraftWithAttachment,
+} from '../project/openOutlookDraftWithAttachment';
 import {
   PROJECT_TAB_LABELS,
   clientSliceEqual,
@@ -575,9 +580,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [baselineNotes, setBaselineNotes] = useState<ProjectNoteRow[]>([]);
   const [tabSaveBusy, setTabSaveBusy] = useState(false);
   const [projectReportBusy, setProjectReportBusy] = useState(false);
+  const [projectFileEmailBusyId, setProjectFileEmailBusyId] = useState<number | null>(null);
   const [pendingSaveTabs, setPendingSaveTabs] = useState<ProjectTabId[] | null>(null);
 
   const [activeTab, setActiveTab] = useState<ProjectTab>('client');
+  const timeDeepLinkUserId = useMemo(() => {
+    const raw = Number(searchParams.get('userId') ?? '');
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  }, [searchParams]);
   const [model, setModel] = useState<ProjectFormModel | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
@@ -2418,6 +2428,69 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
+  const handleEmailProjectFile = async (file: ProjectFileRow) => {
+    if (!isEdit || projectId === undefined || projectFileEmailBusyId !== null) {
+      return;
+    }
+
+    const fileName = (file.originalFileName || 'ProjectFile').trim() || 'ProjectFile';
+    const sizeMb = file.byteLength > 0 ? file.byteLength / (1024 * 1024) : 0;
+    if (sizeMb > 25) {
+      const proceed = window.confirm(
+        `This file is about ${sizeMb.toFixed(1)} MB. Attaching it to an Outlook draft may be slow or fail in the browser.\n\nContinue?`,
+      );
+      if (!proceed) {
+        return;
+      }
+    }
+
+    setProjectFileEmailBusyId(file.projectFileID);
+    try {
+      const [ccEmails, attachmentBlob] = await Promise.all([
+        loadProjectCatCcEmails(projectId),
+        apiGetBlob(`/api/projects/${projectId}/files/${file.projectFileID}/content`),
+      ]);
+
+      const downloadUrl = (file.downloadUrl || file.blobUrl || '').trim();
+      const base = (appPublicBaseUrl || window.location.origin).replace(/\/$/, '');
+      const projectPageUrl = `${base}/projects/${projectId}?tab=projectData`;
+      const bodyLines = [
+        'Please find the project data file attached.',
+        '',
+        downloadUrl ? `Download: [${fileName}](${downloadUrl})` : `File: ${fileName}`,
+        `Project data: [Open project data](${projectPageUrl})`,
+      ];
+      const bodyText = bodyLines
+        .map((line) => {
+          const m = line.match(/^(.+?):\s*\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+          return m ? `${m[1]}: ${m[2]}` : line;
+        })
+        .join('\r\n');
+
+      const emlBase = fileName.includes('.') ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName;
+
+      await openOutlookDraftWithAttachment({
+        subject: fileName,
+        bodyText,
+        bodyHtml: buildOutlookHtmlFromLines(bodyLines),
+        ccEmails,
+        fileName,
+        attachmentBlob,
+        attachmentFileName: fileName,
+        attachmentContentType: file.contentType ?? undefined,
+      });
+
+      window.alert(
+        `The Outlook email draft (${emlBase}.eml) has been created.\n\nOpen it from your Downloads folder to review and send.`,
+      );
+      flash('success', `Email draft (${emlBase}.eml) downloaded.`);
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not create email draft for this file.');
+    } finally {
+      setProjectFileEmailBusyId(null);
+    }
+  };
+
   // Must stay above early returns - Rules of Hooks.
   const groupOptions = useMemo(() => {
     const base =
@@ -2490,7 +2563,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         <section className="card narrow-card">
           <h1>{isEdit ? 'Edit Project' : 'New Project'}</h1>
           <p>{loadError}</p>
-          <Link className="secondary-button" to="/">
+          <Link className="secondary-button" to="/cms">
             Home
           </Link>
         </section>
@@ -3013,6 +3086,11 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       <section className="page-header client-workflow-header">
         <div className="page-header-top">
           <h1>{title}</h1>
+          <div className="page-header-actions">
+            <Link className="secondary-button" to="/cms">
+              Back to project list
+            </Link>
+          </div>
         </div>
         <p>
           Project header lives in <code>dbo.tProject</code>; revenue, notes, services, and calendar are sub-resources.
@@ -3385,6 +3463,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                           <th scope="col">Data As Of</th>
                           <th scope="col">Active</th>
                           <th scope="col">Download</th>
+                          <th scope="col">Email</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3392,6 +3471,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                           const url = f.downloadUrl || f.blobUrl || '';
                           const selected = selectedProjectFileId === f.projectFileID;
                           const isActive = !!f.isCurrent;
+                          const emailBusy = projectFileEmailBusyId === f.projectFileID;
                           return (
                             <tr
                               key={f.projectFileID}
@@ -3427,6 +3507,26 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                                   >
                                     Download file
                                   </a>
+                                ) : (
+                                  <span className="project-file-download-url project-file-download-url--empty">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {url && isEdit ? (
+                                  <button
+                                    type="button"
+                                    className="project-file-download-url"
+                                    disabled={projectFileEmailBusyId !== null}
+                                    title="Create Outlook draft (.eml) with this file attached"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleEmailProjectFile(f);
+                                    }}
+                                  >
+                                    {emailBusy ? 'Creating…' : 'Email file'}
+                                  </button>
                                 ) : (
                                   <span className="project-file-download-url project-file-download-url--empty">
                                     -
@@ -3762,6 +3862,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 projectId={projectId}
                 isActive={activeTab === 'time'}
                 flash={flash}
+                initialUserId={timeDeepLinkUserId}
                 fallbackTasks={calendarItems
                   .filter((row) => (row.calendarItemID ?? 0) > 0 && row.title.trim().length > 0)
                   .map((row) => ({
@@ -3953,7 +4054,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               Save all changes
             </button>
           )}
-          <Link className="secondary-button" to="/">
+          <Link className="secondary-button" to="/cms">
             {isEdit ? 'Close' : 'Cancel'}
           </Link>
           {isEdit ? (

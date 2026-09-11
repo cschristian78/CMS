@@ -9,7 +9,8 @@ import {
   suggestedProjectReportFileName,
   type ProjectReportInput,
 } from './exportProjectReportPdf';
-import { openOutlookDraftWithAttachment } from './openOutlookDraftWithAttachment';
+import { loadProjectCatCcEmails } from './loadProjectCatCcEmails';
+import { buildOutlookHtmlFromLines, openOutlookDraftWithAttachment } from './openOutlookDraftWithAttachment';
 
 export type ProjectReportRunMode = 'interactive' | 'saveAndSendAttachment';
 
@@ -383,21 +384,6 @@ async function loadProjectReportInput(projectId: number): Promise<{
   return { input, existingFiles };
 }
 
-async function loadCatCcEmails(): Promise<string[]> {
-  try {
-    type CatStaffRow = { email?: string | null; Email?: string | null };
-    const raw = await apiGet<CatStaffRow[] | { items?: CatStaffRow[] }>(
-      '/api/dashboard/workload/cat-staff',
-    );
-    const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
-    return [
-      ...new Set(rows.map((u) => String(u.email ?? u.Email ?? '').trim()).filter((e) => e.length > 0)),
-    ];
-  } catch {
-    return [];
-  }
-}
-
 async function promptAndSaveReportPdf(options: {
   projectId: number;
   defaultFileName: string;
@@ -487,40 +473,51 @@ export async function runProjectReportWorkflow(options: {
 
   if (mode === 'saveAndSendAttachment') {
     if (!saveResult.saved || !saveResult.pdfFile) {
-      flash('success', 'Report was not saved. Print dialog will still open.');
-      exportProjectReportPdf(input);
+      flash('success', 'Report was not saved, so no email draft was created.');
       return;
     }
 
-    const ccEmails = await loadCatCcEmails();
+    const ccEmails = await loadProjectCatCcEmails(projectId);
     const savedFile =
       saveResult.files.find((f) => sameFileName(f.originalFileName || '', saveResult.fileName)) ??
       saveResult.files[0];
     const downloadUrl = (savedFile?.downloadUrl || savedFile?.blobUrl || '').trim();
     const base = (appPublicBaseUrl || window.location.origin).replace(/\/$/, '');
     const projectPageUrl = `${base}/projects/${projectId}?tab=projectData`;
-    const body = [
+    const bodyLines = [
       'Please find the project report attached.',
       '',
-      `File: ${saveResult.fileName}`,
-      downloadUrl ? `Project data download: ${downloadUrl}` : null,
-      `Project: ${projectPageUrl}`,
-    ]
-      .filter((line): line is string => line != null)
+      downloadUrl ? `Download: [${saveResult.fileName}](${downloadUrl})` : `File: ${saveResult.fileName}`,
+      `Project data: [Open project data](${projectPageUrl})`,
+    ];
+    const bodyText = bodyLines
+      .map((line) => {
+        const m = line.match(/^(.+?):\s*\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+        return m ? `${m[1]}: ${m[2]}` : line;
+      })
       .join('\r\n');
+
+    const emlBase = saveResult.fileName.toLowerCase().endsWith('.pdf')
+      ? saveResult.fileName.slice(0, -4)
+      : saveResult.fileName;
 
     await openOutlookDraftWithAttachment({
       subject: saveResult.fileName,
-      bodyText: body,
+      bodyText,
+      bodyHtml: buildOutlookHtmlFromLines(bodyLines),
       ccEmails,
       fileName: saveResult.fileName,
-      pdfBlob,
+      attachmentBlob: pdfBlob,
+      attachmentFileName: saveResult.fileName,
+      attachmentContentType: 'application/pdf',
     });
 
-    exportProjectReportPdf(input);
+    window.alert(
+      `The Outlook email draft (${emlBase}.eml) has been created.\n\nOpen it from your Downloads folder to review and send.`,
+    );
     flash(
       'success',
-      `Report saved as "${saveResult.fileName}". Outlook draft (.eml) downloaded with the PDF attached — open it to send.`,
+      `Report saved as "${saveResult.fileName}". Email draft (${emlBase}.eml) downloaded.`,
     );
     return;
   }
@@ -528,11 +525,11 @@ export async function runProjectReportWorkflow(options: {
   // interactive (same as Project page Generate Report button)
   if (saveResult.saved) {
     const sendEmail = window.confirm(
-      'Open Outlook to email this project report?\n\nCAT department users will be added on CC. The message will include a download link to the file in project data.',
+      "Open Outlook to email this project report?\n\nCAT department members of this project's user group will be added on CC. The message will include a download link to the file in project data.",
     );
     if (sendEmail) {
       try {
-        const ccEmails = await loadCatCcEmails();
+        const ccEmails = await loadProjectCatCcEmails(projectId);
         const savedFile =
           saveResult.files.find((f) => sameFileName(f.originalFileName || '', saveResult.fileName)) ??
           saveResult.files[0];
@@ -544,19 +541,28 @@ export async function runProjectReportWorkflow(options: {
         const subjectBase =
           [clientName, projectName].filter(Boolean).join(' — ').trim() || 'Project report';
         const subject = `${subjectBase}: Project Report`;
-        const body = [
+        const bodyLines = [
           'A project report has been saved to project data storage.',
           '',
-          `File: ${saveResult.fileName}`,
-          downloadUrl ? `Download: ${downloadUrl}` : null,
-          `Project data: ${projectPageUrl}`,
+          downloadUrl ? `Download: [${saveResult.fileName}](${downloadUrl})` : `File: ${saveResult.fileName}`,
+          `Project data: [Open project data](${projectPageUrl})`,
           '',
           'Please review and follow up as needed.',
-        ]
-          .filter((line): line is string => line != null)
+        ];
+        const bodyText = bodyLines
+          .map((line) => {
+            const m = line.match(/^(.+?):\s*\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+            return m ? `${m[1]}: ${m[2]}` : line;
+          })
           .join('\r\n');
-        const ccQuery = ccEmails.length > 0 ? `cc=${encodeURIComponent(ccEmails.join(';'))}&` : '';
-        window.location.href = `mailto:?${ccQuery}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+        await openOutlookDraftWithAttachment({
+          subject,
+          bodyText,
+          bodyHtml: buildOutlookHtmlFromLines(bodyLines),
+          ccEmails,
+          fileName: saveResult.fileName,
+        });
       } catch (emailErr) {
         flash(
           'error',

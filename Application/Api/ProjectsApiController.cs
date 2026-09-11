@@ -341,6 +341,31 @@ public sealed class ProjectsApiController : ControllerBase
         return Ok(await _projectService.GetUserGroupMemberOptionsAsync(ugid, cancellationToken));
     }
 
+    /// <summary>CAT-department members of the project's assigned user group (for report CC, etc.).</summary>
+    [HttpGet("{id:int}/cat-users")]
+    public async Task<ActionResult<IReadOnlyList<ProjectTimeCatUser>>> ListCatUsersAsync(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid project", Detail = "id must be positive." });
+        }
+
+        try
+        {
+            return Ok(await _projectService.ListCatDepartmentUsersForProjectAsync(id, cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CAT user list failed for ProjectID {ProjectID}.", id);
+            return Problem(
+                detail: ex.Message,
+                title: "CAT user list failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
     [HttpGet("{id:int}/files")]
     public async Task<ActionResult<IReadOnlyList<ProjectFile>>> ListFilesAsync(
         int id,
@@ -361,6 +386,43 @@ public sealed class ProjectsApiController : ControllerBase
             return Problem(
                 detail: ex.Message,
                 title: "File list failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    [HttpGet("{id:int}/files/{fileId:int}/content")]
+    public async Task<IActionResult> DownloadFileContentAsync(
+        int id,
+        int fileId,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0 || fileId <= 0)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid request", Detail = "id and fileId must be positive." });
+        }
+
+        try
+        {
+            var (file, stream) = await _projectService.OpenFileContentAsync(id, fileId, cancellationToken);
+            var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+                ? "application/octet-stream"
+                : file.ContentType;
+            return File(stream, contentType, file.OriginalFileName);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "File not found", Detail = ex.Message });
+        }
+        catch (FileNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Title = "File not found", Detail = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Project file download failed for ProjectID {ProjectID}, FileID {FileID}.", id, fileId);
+            return Problem(
+                detail: ex.Message,
+                title: "File download failed",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     }

@@ -88,6 +88,23 @@ public sealed class AzureProjectBlobStorage : IProjectBlobStorage
         await blob.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken);
     }
 
+    public async Task<Stream> OpenReadAsync(string blobPathOrUrl, CancellationToken cancellationToken = default)
+    {
+        var path = NormalizeBlobPath(blobPathOrUrl);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("Blob path is empty.");
+        }
+
+        var blob = _container.GetBlobClient(path);
+        if (!await blob.ExistsAsync(cancellationToken))
+        {
+            throw new FileNotFoundException($"Blob not found: {path}");
+        }
+
+        return await blob.OpenReadAsync(cancellationToken: cancellationToken);
+    }
+
     public string BuildDownloadUrl(string blobPathOrUrl)
     {
         var path = NormalizeBlobPath(blobPathOrUrl);

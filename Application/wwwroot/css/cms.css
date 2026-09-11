@@ -230,6 +230,315 @@ main.page-shell.page-shell--home-wide {
     box-sizing: border-box;
 }
 
+/* App hub (CMS / TMS tiles) and TMS placeholder */
+main.page-shell.page-shell--hub-wide {
+    max-width: none;
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 2 * var(--page-shell-inline-pad));
+}
+
+.app-hub {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 2.5rem;
+    padding: 2rem 1rem 3rem;
+    background:
+        radial-gradient(ellipse 70% 55% at 50% 0%, rgba(240, 135, 0, 0.12) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 40% at 15% 80%, rgba(32, 212, 232, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse 45% 35% at 85% 75%, rgba(29, 90, 165, 0.16) 0%, transparent 50%);
+}
+
+.app-hub-brand {
+    text-align: center;
+    max-width: none;
+    width: 100%;
+    padding-inline: 0.5rem;
+}
+
+.app-hub-brand-mark {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.65rem, 4.8vw, 3.75rem);
+    letter-spacing: 0.06em;
+    line-height: 1;
+    color: var(--white);
+    white-space: nowrap;
+}
+
+.app-hub-brand-rest {
+    color: var(--text);
+}
+
+.app-hub-lede {
+    margin: 0.85rem 0 0;
+    color: var(--muted);
+    font-size: 1rem;
+}
+
+.app-hub-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 20rem));
+    gap: 1.5rem;
+    width: min(100%, 44rem);
+}
+
+.app-hub-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.55rem;
+    min-height: 14rem;
+    padding: 1.5rem 1.4rem 1.25rem;
+    text-decoration: none;
+    color: inherit;
+    background: rgba(13, 21, 34, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    box-shadow: var(--shadow-lg);
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.app-hub-tile:hover,
+.app-hub-tile:focus-visible {
+    transform: translateY(-4px);
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow-lg);
+    outline: none;
+}
+
+.app-hub-tile-code {
+    font-family: var(--font-display);
+    font-size: 2.4rem;
+    letter-spacing: 0.04em;
+    line-height: 1;
+}
+
+.app-hub-tile-title {
+    font-family: var(--font-display);
+    font-size: 1.55rem;
+    letter-spacing: 0.04em;
+    color: var(--white);
+}
+
+.app-hub-tile-desc {
+    flex: 1 1 auto;
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.app-hub-tile-cta {
+    margin-top: 0.35rem;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+}
+
+.app-hub .logo-accent,
+.app-hub-tile .logo-accent,
+.tms-home .logo-accent {
+    color: var(--accent);
+}
+
+.app-hub .logo-rest,
+.app-hub-tile .logo-rest,
+.tms-home .logo-rest {
+    color: var(--white);
+}
+
+.app-hub-tile:hover .app-hub-tile-cta,
+.app-hub-tile:focus-visible .app-hub-tile-cta {
+    color: var(--primary-hover);
+}
+
+.tms-home {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.tms-home--tracker {
+    justify-content: flex-start;
+    gap: 1rem;
+}
+
+.tms-home-hero {
+    max-width: 40rem;
+    margin: 0 auto;
+}
+
+.tms-home-eyebrow {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-display);
+    font-size: 2rem;
+    letter-spacing: 0.06em;
+    line-height: 1;
+}
+
+.tms-home-title-rest {
+    margin-left: 0.35rem;
+}
+
+.tms-home-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.tms-tracker-card {
+    padding: 1.25rem 1.35rem 1.5rem;
+}
+
+.tms-user-week-bar {
+    margin-bottom: 1.25rem;
+    align-items: center;
+}
+
+.tms-project-block,
+.tms-other-time-block {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+.tms-project-block-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.tms-project-block--collapsed .tms-project-block-header {
+    margin-bottom: 0;
+}
+
+.tms-project-collapse-actions {
+    margin: 0.35rem 0 0.25rem;
+    justify-content: flex-start;
+}
+
+.tms-project-status-section {
+    margin-top: 1rem;
+}
+
+.tms-project-status-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 1.25rem 0 0.35rem;
+    padding: 0.35rem 0;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    letter-spacing: 0.03em;
+    color: var(--white);
+    border-bottom: 1px solid var(--border);
+}
+
+.tms-project-status-heading .home-online-dot {
+    cursor: default;
+    flex-shrink: 0;
+}
+
+.tms-project-status-count {
+    margin-left: 0.15rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.tms-project-status-section .tms-project-block:first-of-type {
+    margin-top: 0.75rem;
+}
+
+.tms-project-collapse-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.55rem 0.85rem;
+    flex: 1 1 16rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0.15rem 0.25rem;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tms-project-collapse-toggle:hover .tms-project-block-title,
+.tms-project-collapse-toggle:focus-visible .tms-project-block-title {
+    color: var(--accent, #f08700);
+}
+
+.tms-project-collapse-toggle .home-online-dot {
+    cursor: default;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.tms-project-block-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    letter-spacing: 0.04em;
+    color: var(--white);
+}
+
+.tms-project-collapse-meta {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.tms-add-time-row {
+    margin: 0.75rem 0 1rem;
+}
+
+.tms-time-tabs {
+    margin: 1rem 0 0.75rem;
+}
+
+.tms-tracker-card .admin-tab-panel {
+    min-height: 0;
+}
+
+.tms-report-shell {
+    padding-bottom: 2rem;
+}
+
+.tms-report-filters {
+    margin-bottom: 1rem;
+}
+
+.tms-report-kpis .tms-kpi-yoy {
+    display: block;
+    margin-top: 0.35rem;
+    font-style: normal;
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: 400;
+}
+
+@media (max-width: 720px) {
+    .app-hub-tiles {
+        grid-template-columns: minmax(0, 1fr);
+        width: min(100%, 22rem);
+    }
+}
+
 /* Project create/edit: full content-column width beside the sidebar */
 main.page-shell.page-shell--project-wide {
     max-width: none;
@@ -4556,6 +4865,13 @@ a.link-button:hover,
     white-space: nowrap;
 }
 
+/* Email */
+.project-data-file-table th:nth-child(8),
+.project-data-file-table td:nth-child(8) {
+    width: 1%;
+    white-space: nowrap;
+}
+
 .project-data-file-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -4611,6 +4927,12 @@ a.link-button:hover,
     text-decoration: underline;
     text-underline-offset: 0.12em;
     cursor: pointer;
+    font: inherit;
+}
+
+.project-data-file-table button.project-file-download-url:disabled {
+    opacity: 0.65;
+    cursor: wait;
 }
 
 .project-data-file-table .project-file-download-url:hover,
