@@ -363,6 +363,18 @@ public sealed class AdminApiController : ControllerBase
     public Task<ActionResult> SetServiceCategoryActiveAsync(int serviceCategoryId, [FromQuery] bool isActive, CancellationToken cancellationToken)
         => RunAsync(async () => { await _adminService.SetServiceCategoryActiveAsync(serviceCategoryId, isActive, cancellationToken); return Ok(new { message = isActive ? "Activated." : "Deactivated." }); });
 
+    [HttpPost("service-groups/save")]
+    public Task<ActionResult> SaveServiceGroupAsync([FromBody] ServiceGroup group, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            var id = await _adminService.SaveServiceGroupAsync(group, cancellationToken);
+            return Ok(new
+            {
+                serviceGroupID = id,
+                message = group.ServiceGroupID > 0 ? "Service group updated." : "Service group created.",
+            });
+        });
+
     [HttpPost("tags/save")]
     public Task<ActionResult> SaveTagAsync([FromBody] Tag t, CancellationToken cancellationToken)
         => RunAsync(async () => { await _adminService.SaveTagAsync(t, cancellationToken); return Ok(new { message = "Tag saved." }); });

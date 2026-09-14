@@ -80,7 +80,7 @@ public sealed class AdminService : IAdminService
             ClientCategories = await _referenceData.GetClientCategoriesAsync(cancellationToken: cancellationToken),
             ClientTypes = await _referenceData.GetClientTypesAsync(cancellationToken: cancellationToken),
             ServiceCategories = await _referenceData.GetServiceCategoriesAsync(cancellationToken: cancellationToken),
-            ServiceGroups = await _referenceData.GetServiceGroupsAsync(activeOnly: true, cancellationToken: cancellationToken),
+            ServiceGroups = await _referenceData.GetServiceGroupsAsync(activeOnly: false, cancellationToken: cancellationToken),
             Tags = await _referenceData.GetTagsAsync(cancellationToken: cancellationToken),
             Statuses = await _referenceData.GetStatusesAsync(cancellationToken),
             Services = await _admin.GetServicesAsync(includeDeleted: false, cancellationToken),
@@ -664,6 +664,17 @@ public sealed class AdminService : IAdminService
     {
         await _admin.SetServiceCategoryActiveAsync(serviceCategoryId, isActive, cancellationToken);
         await RefreshHomeListAsync(cancellationToken);
+    }
+
+    public async Task<int> SaveServiceGroupAsync(ServiceGroup group, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        group.ServiceGroupNumber = (group.ServiceGroupNumber ?? string.Empty).Trim();
+        group.ServiceGroupName = (group.ServiceGroupName ?? string.Empty).Trim();
+        group.ServiceGroupDescription = group.ServiceGroupDescription?.Trim();
+        var id = await _admin.SaveServiceGroupAsync(group, cancellationToken);
+        await RefreshHomeListAsync(cancellationToken);
+        return id;
     }
 
     public Task SaveTagAsync(Tag tag, CancellationToken cancellationToken = default)

@@ -57,6 +57,7 @@ public interface IAdminService
     Task SetClientTypeActiveAsync(int clientTypeId, bool isActive, CancellationToken cancellationToken = default);
     Task SaveServiceCategoryAsync(ServiceCategory category, CancellationToken cancellationToken = default);
     Task SetServiceCategoryActiveAsync(int serviceCategoryId, bool isActive, CancellationToken cancellationToken = default);
+    Task<int> SaveServiceGroupAsync(ServiceGroup group, CancellationToken cancellationToken = default);
     Task SaveTagAsync(Tag tag, CancellationToken cancellationToken = default);
 
     // ---- User groups + membership ---------------------------------------

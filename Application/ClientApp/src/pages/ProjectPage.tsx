@@ -194,6 +194,38 @@ interface CatalogServiceRow {
   serviceCategoryID: number;
   categoryName?: string | null;
   serviceCategoryDescription?: string | null;
+  serviceGroupID?: number | null;
+  serviceGroupName?: string | null;
+}
+
+const ADMINISTRATIVE_SERVICE_GROUP_NAME = 'administrative';
+
+function isAdministrativeCatalogService(row: CatalogServiceRow): boolean {
+  return (row.serviceGroupName ?? '').trim().toLowerCase() === ADMINISTRATIVE_SERVICE_GROUP_NAME;
+}
+
+function administrativeServiceIdsFromCatalog(rows: CatalogServiceRow[]): number[] {
+  return rows.filter(isAdministrativeCatalogService).map((row) => row.serviceID);
+}
+
+function unionServiceIds(existing: number[], extra: number[]): number[] {
+  if (extra.length === 0) {
+    return existing;
+  }
+  const next = [...new Set([...existing, ...extra])];
+  if (next.length === existing.length && extra.every((id) => existing.includes(id))) {
+    return existing;
+  }
+  return next;
+}
+
+/** Default calendar ItemType when a catalog service is added via Add to Project. */
+function calendarItemTypeForService(row: CatalogServiceRow): ProjectCalendarItemDraft['itemType'] {
+  const name = (row.serviceName ?? '').trim().toLowerCase();
+  if (name === 'client calls & meetings' || name === 'client calls and meetings') {
+    return 'Meeting';
+  }
+  return 'Deliverable';
 }
 
 interface ProjectRevenueRow {
@@ -574,6 +606,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const isEdit = projectId !== undefined && !Number.isNaN(projectId);
   const projectNameInputRef = useRef<HTMLInputElement | null>(null);
   const timeTrackerRef = useRef<ProjectTimeTrackerHandle | null>(null);
+  const administrativeServicesAppliedRef = useRef(false);
   const [baselineModel, setBaselineModel] = useState<ProjectFormModel | null>(null);
   const [baselineCalendarItems, setBaselineCalendarItems] = useState<ProjectCalendarItemDraft[]>([]);
   const [baselineFileDrafts, setBaselineFileDrafts] = useState<Record<number, ProjectFileDraft>>({});
@@ -935,6 +968,41 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     })();
   }, []);
 
+  useEffect(() => {
+    administrativeServicesAppliedRef.current = false;
+  }, [projectId, isEdit]);
+
+  // Auto-select Administrative service-group services on create and edit.
+  useEffect(() => {
+    if (!model || catalog.length === 0 || administrativeServicesAppliedRef.current) {
+      return;
+    }
+    const adminIds = administrativeServiceIdsFromCatalog(catalog);
+    administrativeServicesAppliedRef.current = true;
+    if (adminIds.length === 0) {
+      return;
+    }
+
+    setModel((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const selectedServiceIds = unionServiceIds(prev.selectedServiceIds ?? [], adminIds);
+      return selectedServiceIds === prev.selectedServiceIds
+        ? prev
+        : { ...prev, selectedServiceIds };
+    });
+    setBaselineModel((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const selectedServiceIds = unionServiceIds(prev.selectedServiceIds ?? [], adminIds);
+      return selectedServiceIds === prev.selectedServiceIds
+        ? prev
+        : { ...prev, selectedServiceIds };
+    });
+  }, [model, catalog]);
+
   // Keep the User Group dropdown on the full active list (optionally sorted by client usage).
   const refreshUserGroupOptions = useCallback(async (clientId: number) => {
     try {
@@ -1223,11 +1291,21 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   };
 
   const handleAddServicesToProject = () => {
-    if (!model || model.selectedServiceIds.length === 0) {
+    if (!model) {
       return;
     }
 
-    const selectedRows = catalog.filter((row) => model.selectedServiceIds.includes(row.serviceID));
+    const adminIds = administrativeServiceIdsFromCatalog(catalog);
+    const selectedServiceIds = unionServiceIds(model.selectedServiceIds ?? [], adminIds);
+    if (selectedServiceIds.length === 0) {
+      return;
+    }
+
+    if (selectedServiceIds !== model.selectedServiceIds) {
+      setModel({ ...model, selectedServiceIds });
+    }
+
+    const selectedRows = catalog.filter((row) => selectedServiceIds.includes(row.serviceID));
     if (selectedRows.length === 0) {
       return;
     }
@@ -1249,16 +1327,19 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         existingTitles.add(key);
         next.push({
           ...newCalendarDraft(next.length),
-          itemType: 'Deliverable',
+          itemType: calendarItemTypeForService(service),
           title,
         });
       }
       return next;
     });
 
+    const adminIncluded = adminIds.some((id) => selectedServiceIds.includes(id));
     flash(
       'success',
-      `${selectedRows.length} service${selectedRows.length === 1 ? '' : 's'} added to the Calendar. Save the project to persist.`,
+      `${selectedRows.length} service${selectedRows.length === 1 ? '' : 's'} added to the Calendar${
+        adminIncluded ? ' (Administrative services included)' : ''
+      }. Save the project to persist.`,
     );
     setActiveTab('calendar');
   };
@@ -3557,8 +3638,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             <p className="field-help">
               Filter by service function and category, tick services to include, then choose{' '}
               <strong>Add to Project</strong> to link them and create matching calendar rows for scheduling (
-              <code>dbo.tProjectService</code> / calendar). Use <strong>Select all</strong> for every service, or the
-              header checkbox to toggle all services shown in the list.
+              <code>dbo.tProjectService</code> / calendar). Services in the <strong>Administrative</strong> service
+              group are selected automatically on new and existing projects, and are included when you add services to
+              the project. Use <strong>Select all</strong> for every service, or the header checkbox to toggle all
+              services shown in the list.
             </p>
             <div className="form-grid">
               <label htmlFor="proj-svc-function-filter">Service Function</label>

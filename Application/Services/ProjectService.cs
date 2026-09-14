@@ -370,6 +370,8 @@ public sealed class ProjectService : IProjectService
                 ServiceCategoryDescription = s.ServiceCategoryDescription,
                 FunctionID = s.FunctionID,
                 ServiceCategoryID = s.ServiceCategoryID,
+                ServiceGroupID = s.ServiceGroupID,
+                ServiceGroupName = s.ServiceGroupName,
                 Tags = s.Tags.Select(t => t.TagName).ToList(),
                 StatusID = s.StatusID,
                 StatusCode = s.StatusCode

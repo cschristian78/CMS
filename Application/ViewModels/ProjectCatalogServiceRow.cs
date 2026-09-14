@@ -12,6 +12,8 @@ public sealed class ProjectCatalogServiceRow
     public string? ServiceCategoryDescription { get; set; }
     public int FunctionID { get; set; }
     public int ServiceCategoryID { get; set; }
+    public int? ServiceGroupID { get; set; }
+    public string? ServiceGroupName { get; set; }
     public IReadOnlyList<string> Tags { get; set; } = [];
     public int StatusID { get; set; }
     public string? StatusCode { get; set; }

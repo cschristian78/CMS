@@ -518,6 +518,101 @@ public sealed class AdminRepository : IAdminRepository
         return Convert.ToInt32(output.Value);
     }
 
+    public async Task<int> SaveServiceGroupAsync(ServiceGroup group, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+
+        var number = (group.ServiceGroupNumber ?? string.Empty).Trim();
+        var name = (group.ServiceGroupName ?? string.Empty).Trim();
+        var description = (group.ServiceGroupDescription ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("Service group name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(number))
+        {
+            number = await GetNextServiceGroupNumberAsync(cancellationToken);
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            description = name;
+        }
+
+        if (group.ServiceGroupID > 0)
+        {
+            await _db.ExecuteAsync("dbo.usp_ServiceGroup_Update",
+            [
+                SqlParameterFactory.Int("@ServiceGroupID", group.ServiceGroupID),
+                SqlParameterFactory.VarChar("@ServiceGroupNumber", 50, number),
+                SqlParameterFactory.VarChar("@ServiceGroupName", 100, name),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
+
+            await _db.ExecuteTextAsync(
+                """
+                UPDATE dbo.tServiceGroup
+                   SET ServiceGroupDescription = @ServiceGroupDescription,
+                       IsActive = @IsActive
+                 WHERE ServiceGroupID = @ServiceGroupID;
+                """,
+                [
+                    SqlParameterFactory.Int("@ServiceGroupID", group.ServiceGroupID),
+                    SqlParameterFactory.VarChar("@ServiceGroupDescription", 255, description),
+                    SqlParameterFactory.Bit("@IsActive", group.IsActive),
+                ],
+                cancellationToken);
+
+            return group.ServiceGroupID;
+        }
+
+        // Create via text so Description (NOT NULL on tServiceGroup) is always set.
+        var inserted = await _db.QueryTextAsync(
+            """
+            INSERT INTO dbo.tServiceGroup
+                (ServiceGroupNumber, ServiceGroupName, ServiceGroupDescription, IsActive)
+            OUTPUT INSERTED.ServiceGroupID AS ServiceGroupID
+            VALUES
+                (@ServiceGroupNumber, @ServiceGroupName, @ServiceGroupDescription, @IsActive);
+            """,
+            static r => r.GetInt32OrDefault("ServiceGroupID"),
+            [
+                SqlParameterFactory.VarChar("@ServiceGroupNumber", 50, number),
+                SqlParameterFactory.VarChar("@ServiceGroupName", 100, name),
+                SqlParameterFactory.VarChar("@ServiceGroupDescription", 255, description),
+                SqlParameterFactory.Bit("@IsActive", group.IsActive),
+            ],
+            cancellationToken);
+
+        var newId = inserted.FirstOrDefault();
+        if (newId <= 0)
+        {
+            throw new InvalidOperationException("Service group create did not return a new id.");
+        }
+
+        await LogActivityAsync(
+            "ServiceGroup",
+            newId,
+            "Insert",
+            cancellationToken: cancellationToken);
+
+        return newId;
+    }
+
+    private async Task<string> GetNextServiceGroupNumberAsync(CancellationToken cancellationToken)
+    {
+        var rows = await _db.QueryTextAsync(
+            """
+            SELECT ISNULL(MAX(TRY_CONVERT(INT, NULLIF(LTRIM(RTRIM(ServiceGroupNumber)), N''))), 0) + 1 AS NextNumber
+              FROM dbo.tServiceGroup;
+            """,
+            static r => r.GetInt32OrDefault("NextNumber"),
+            cancellationToken: cancellationToken);
+        var next = rows.FirstOrDefault();
+        return next > 0 ? next.ToString() : "1";
+    }
+
     public async Task<int> SetServiceCategoryActiveAsync(int serviceCategoryId, bool isActive, CancellationToken cancellationToken = default)
     {
         if (!isActive)

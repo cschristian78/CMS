@@ -2142,6 +2142,20 @@ textarea {
     min-height: auto;
 }
 
+.admin-services-subtabs {
+    margin: 0.75rem 0 1rem;
+}
+
+.admin-card--services .admin-services-subpanel {
+    display: none;
+    min-height: 0;
+    margin-top: 0.25rem;
+}
+
+.admin-card--services .admin-services-subpanel.active {
+    display: block;
+}
+
 .admin-layout {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -2445,11 +2459,38 @@ textarea {
     font-weight: 600;
 }
 
+.admin-data-audit-groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 1.25rem;
+    margin: 0.75rem 0 1rem;
+    align-items: start;
+}
+
+.admin-data-audit-group__title {
+    margin: 0 0 0.55rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgb(29, 90, 165);
+}
+
+.admin-data-audit-group .admin-data-audit-summary {
+    margin: 0;
+    grid-template-columns: 1fr;
+}
+
 .admin-data-audit-summary {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     gap: 0.65rem;
     margin: 0.75rem 0 1rem;
+}
+
+@media (max-width: 900px) {
+    .admin-data-audit-groups {
+        grid-template-columns: 1fr;
+    }
 }
 
 .admin-data-audit-card {
@@ -2498,6 +2539,45 @@ textarea {
 
 .admin-data-audit-detail {
     margin-top: 0.5rem;
+}
+
+.admin-data-audit-row--jump {
+    cursor: pointer;
+}
+
+.admin-data-audit-row--jump:hover {
+    background: rgba(29, 90, 165, 0.08);
+}
+
+.admin-audit-jump-banner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+    margin: 0 0 0.85rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid rgba(240, 135, 0, 0.55);
+    background: rgba(240, 135, 0, 0.12);
+    color: var(--text);
+}
+
+.admin-audit-jump-banner p {
+    margin: 0.35rem 0 0;
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+
+.admin-audit-target--active {
+    margin: 0 0 0.85rem;
+    padding: 0.75rem 0.85rem;
+    border: 2px solid rgba(240, 135, 0, 0.85);
+    border-radius: 0.35rem;
+    background: rgba(240, 135, 0, 0.08);
+    box-shadow: 0 0 0 3px rgba(240, 135, 0, 0.18);
+}
+
+.admin-usergroup-new-panel--from-audit {
+    scroll-margin-top: 1rem;
 }
 
 /* Business Class table - shows every column from dbo.tBusinessClass */

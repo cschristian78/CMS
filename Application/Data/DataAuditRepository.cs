@@ -44,50 +44,6 @@ public sealed class DataAuditRepository : IDataAuditRepository
                 cancellationToken),
 
             await BuildCheckAsync(
-                "user-groups-missing-project",
-                "User groups with no project",
-                "User groups not referenced by any project ref (active or inactive).",
-                """
-                SELECT
-                    CAST(ug.UserGroupID AS nvarchar(20)),
-                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupNumber)), N''), N'-'),
-                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupName)), N''), N'-'),
-                    CASE WHEN ug.IsActive = 1 THEN N'Active' ELSE N'Inactive' END
-                  FROM dbo.tUserGroup AS ug
-                 WHERE NOT EXISTS (
-                           SELECT 1
-                             FROM dbo.tProjectRef AS pr
-                            WHERE pr.UserGroupID = ug.UserGroupID
-                       )
-                 ORDER BY ug.UserGroupName, ug.UserGroupID;
-                """,
-                ["UGID", "Group #", "Group", "Status"],
-                cancellationToken),
-
-            await BuildCheckAsync(
-                "user-groups-missing-client",
-                "User groups with no client",
-                "User groups with no client linkage through any project (project → client ref → client).",
-                """
-                SELECT
-                    CAST(ug.UserGroupID AS nvarchar(20)),
-                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupNumber)), N''), N'-'),
-                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupName)), N''), N'-'),
-                    CASE WHEN ug.IsActive = 1 THEN N'Active' ELSE N'Inactive' END
-                  FROM dbo.tUserGroup AS ug
-                 WHERE NOT EXISTS (
-                           SELECT 1
-                             FROM dbo.tProjectRef AS pr
-                            INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
-                            INNER JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
-                            WHERE pr.UserGroupID = ug.UserGroupID
-                       )
-                 ORDER BY ug.UserGroupName, ug.UserGroupID;
-                """,
-                ["UGID", "Group #", "Group", "Status"],
-                cancellationToken),
-
-            await BuildCheckAsync(
                 "projects-empty-user-group",
                 "Projects whose user group has no members",
                 "Active projects assigned to a user group that has no rows in tUserGroupRef.",
@@ -147,6 +103,50 @@ public sealed class DataAuditRepository : IDataAuditRepository
                  ORDER BY c.ClientName, p.ProjectName, p.ProjectID;
                 """,
                 ["ProjectID", "Project #", "Project", "Client", "UGID", "Issue", "Group"],
+                cancellationToken),
+
+            await BuildCheckAsync(
+                "user-groups-missing-project",
+                "User groups with no project",
+                "User groups not referenced by any project ref (active or inactive).",
+                """
+                SELECT
+                    CAST(ug.UserGroupID AS nvarchar(20)),
+                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupNumber)), N''), N'-'),
+                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupName)), N''), N'-'),
+                    CASE WHEN ug.IsActive = 1 THEN N'Active' ELSE N'Inactive' END
+                  FROM dbo.tUserGroup AS ug
+                 WHERE NOT EXISTS (
+                           SELECT 1
+                             FROM dbo.tProjectRef AS pr
+                            WHERE pr.UserGroupID = ug.UserGroupID
+                       )
+                 ORDER BY ug.UserGroupName, ug.UserGroupID;
+                """,
+                ["UGID", "Group #", "Group", "Status"],
+                cancellationToken),
+
+            await BuildCheckAsync(
+                "user-groups-missing-client",
+                "User groups with no client",
+                "User groups with no client linkage through any project (project → client ref → client).",
+                """
+                SELECT
+                    CAST(ug.UserGroupID AS nvarchar(20)),
+                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupNumber)), N''), N'-'),
+                    ISNULL(NULLIF(LTRIM(RTRIM(ug.UserGroupName)), N''), N'-'),
+                    CASE WHEN ug.IsActive = 1 THEN N'Active' ELSE N'Inactive' END
+                  FROM dbo.tUserGroup AS ug
+                 WHERE NOT EXISTS (
+                           SELECT 1
+                             FROM dbo.tProjectRef AS pr
+                            INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
+                            INNER JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
+                            WHERE pr.UserGroupID = ug.UserGroupID
+                       )
+                 ORDER BY ug.UserGroupName, ug.UserGroupID;
+                """,
+                ["UGID", "Group #", "Group", "Status"],
                 cancellationToken),
 
             await BuildCheckAsync(

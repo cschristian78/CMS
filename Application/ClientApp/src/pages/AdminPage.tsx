@@ -208,6 +208,7 @@ interface AdminServiceGroup {
   serviceGroupID: number;
   serviceGroupNumber?: string;
   serviceGroupName?: string;
+  serviceGroupDescription?: string | null;
   isActive?: boolean;
 }
 
@@ -684,8 +685,10 @@ type TabId =
   | 'clientTypes'
   | 'clients'
   | 'services'
-  | 'serviceCategories'
   | 'dataAudit';
+
+/** Nested tabs inside the Admin Services section. */
+type ServicesSubTab = 'groups' | 'categories' | 'services';
 
 interface DataAuditCheck {
   checkId: string;
@@ -699,6 +702,97 @@ interface DataAuditCheck {
 interface DataAuditReport {
   generatedAtUtc: string;
   checks: DataAuditCheck[];
+}
+
+type DataAuditCheckGroup = {
+  key: string;
+  label: string;
+  checks: DataAuditCheck[];
+};
+
+function dataAuditCheckGroupKey(check: DataAuditCheck): string {
+  const id = (check.checkId ?? '').toLowerCase();
+  const title = (check.title ?? '').trim().toLowerCase();
+  if (id.startsWith('projects-') || title.startsWith('projects ')) {
+    return 'projects';
+  }
+  if (id.startsWith('user-groups-') || title.startsWith('user groups ')) {
+    return 'user-groups';
+  }
+  return 'other';
+}
+
+const DATA_AUDIT_GROUP_ORDER: { key: string; label: string }[] = [
+  { key: 'projects', label: 'Projects' },
+  { key: 'user-groups', label: 'User groups' },
+  { key: 'other', label: 'Other' },
+];
+
+function groupDataAuditChecks(checks: DataAuditCheck[]): DataAuditCheckGroup[] {
+  const buckets = new Map<string, DataAuditCheck[]>();
+  for (const check of checks) {
+    const key = dataAuditCheckGroupKey(check);
+    const list = buckets.get(key);
+    if (list) {
+      list.push(check);
+    } else {
+      buckets.set(key, [check]);
+    }
+  }
+  return DATA_AUDIT_GROUP_ORDER.filter((g) => (buckets.get(g.key)?.length ?? 0) > 0).map((g) => ({
+    key: g.key,
+    label: g.label,
+    checks: buckets.get(g.key) ?? [],
+  }));
+}
+
+type AuditGroupHighlight = 'members' | 'project-link' | 'client-link';
+
+function auditRowUgid(check: DataAuditCheck, row: (string | null)[]): number | null {
+  const idx = check.columns.findIndex((c) => c.trim().toLowerCase() === 'ugid');
+  if (idx < 0) {
+    return null;
+  }
+  const n = Number(String(row[idx] ?? '').trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function auditHighlightForCheck(
+  checkId: string,
+): { highlight: AuditGroupHighlight; message: string } | null {
+  switch (checkId) {
+    case 'user-groups-missing-analytics-lead':
+      return {
+        highlight: 'members',
+        message:
+          'This user group has no Analytics Lead. Add a member with the Analytics Lead role, then save.',
+      };
+    case 'projects-empty-user-group':
+      return {
+        highlight: 'members',
+        message: 'This user group has no members. Add at least one user/role, then save.',
+      };
+    case 'user-groups-missing-project':
+      return {
+        highlight: 'project-link',
+        message:
+          'This user group is not linked to any project. Assign it on a project (Project → User group) to clear this finding.',
+      };
+    case 'user-groups-missing-client':
+      return {
+        highlight: 'client-link',
+        message:
+          'This user group has no client path through a project. Link it to a project that has a client to clear this finding.',
+      };
+    case 'projects-inactive-or-missing-user-group':
+      return {
+        highlight: 'project-link',
+        message:
+          'A project points at this user group, but the group is inactive or incomplete. Review group details and membership, then re-check project assignment.',
+      };
+    default:
+      return null;
+  }
 }
 
 /** US states and DC - two-letter postal codes for the user address State field. */
@@ -784,7 +878,8 @@ function safeInternalReturnPath(raw: string | null): string | null {
 export default function AdminPage({ flash }: { flash: FlashFn }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = (searchParams.get('tab') || 'server') as TabId;
+  const rawTab = searchParams.get('tab') || 'server';
+  const tab: TabId = rawTab === 'serviceCategories' ? 'services' : (rawTab as TabId);
 
   const setTab = (t: TabId) => {
     setSearchParams((prev) => {
@@ -793,6 +888,25 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       return next;
     });
   };
+
+  const [servicesSubTab, setServicesSubTab] = useState<ServicesSubTab>(() =>
+    rawTab === 'serviceCategories' ? 'categories' : 'groups',
+  );
+
+  useEffect(() => {
+    if (rawTab !== 'serviceCategories') {
+      return;
+    }
+    setServicesSubTab('categories');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', 'services');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [rawTab, setSearchParams]);
 
   const [admin, setAdmin] = useState<AdminModel | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -822,6 +936,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [dataAuditLoading, setDataAuditLoading] = useState(false);
   const [dataAuditError, setDataAuditError] = useState<string | null>(null);
   const [expandedAuditCheckId, setExpandedAuditCheckId] = useState<string | null>(null);
+  const [auditGroupHighlight, setAuditGroupHighlight] = useState<AuditGroupHighlight | null>(null);
+  const [auditGroupHighlightMessage, setAuditGroupHighlightMessage] = useState<string | null>(null);
+  const groupEditPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -926,6 +1043,15 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     serviceCategoryDescription: '',
     isActive: true,
   });
+  const [selectedServiceGroupId, setSelectedServiceGroupId] = useState<number | ''>('');
+  const [sgForm, setSgForm] = useState({
+    serviceGroupID: 0,
+    serviceGroupNumber: '',
+    serviceGroupName: '',
+    serviceGroupDescription: '',
+    isActive: true,
+  });
+  const [sgFormBusy, setSgFormBusy] = useState(false);
 
   // Groups (UserGroup tab)
   const [groupSearchInput, setGroupSearchInput] = useState('');
@@ -1684,6 +1810,115 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   };
 
+  const nextServiceGroupNumber = () => {
+    const nums = (admin?.serviceGroups ?? [])
+      .map((g) => Number(String(g.serviceGroupNumber ?? '').trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return String((nums.length ? Math.max(...nums) : 0) + 1);
+  };
+
+  const clearSgForm = () =>
+    setSgForm({
+      serviceGroupID: 0,
+      serviceGroupNumber: '',
+      serviceGroupName: '',
+      serviceGroupDescription: '',
+      isActive: true,
+    });
+
+  const startNewServiceGroup = () => {
+    setSelectedServiceGroupId('');
+    setSgForm({
+      serviceGroupID: 0,
+      serviceGroupNumber: nextServiceGroupNumber(),
+      serviceGroupName: '',
+      serviceGroupDescription: '',
+      isActive: true,
+    });
+  };
+
+  const editSgFromSelection = () => {
+    if (selectedServiceGroupId === '' || !admin) {
+      window.alert('Select a service group first.');
+      return;
+    }
+    const g = (admin.serviceGroups ?? []).find((x) => x.serviceGroupID === selectedServiceGroupId);
+    if (!g) {
+      return;
+    }
+    setSgForm({
+      serviceGroupID: g.serviceGroupID,
+      serviceGroupNumber: g.serviceGroupNumber ?? '',
+      serviceGroupName: g.serviceGroupName ?? '',
+      serviceGroupDescription: g.serviceGroupDescription ?? '',
+      isActive: g.isActive !== false,
+    });
+  };
+
+  const saveSg = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!sgForm.serviceGroupName.trim()) {
+      window.alert('Enter a service group name before saving.');
+      return;
+    }
+    setSgFormBusy(true);
+    try {
+      const result = await apiPostJson<{ serviceGroupID?: number; message?: string }>(
+        '/api/admin/service-groups/save',
+        {
+          serviceGroupID: sgForm.serviceGroupID,
+          serviceGroupNumber: sgForm.serviceGroupNumber.trim(),
+          serviceGroupName: sgForm.serviceGroupName.trim(),
+          serviceGroupDescription: sgForm.serviceGroupDescription.trim() || null,
+          isActive: sgForm.isActive,
+        },
+      );
+      flash('success', result.message ?? 'Service group saved.');
+      const savedId = result.serviceGroupID ?? sgForm.serviceGroupID;
+      clearSgForm();
+      setSelectedServiceGroupId(savedId > 0 ? savedId : '');
+      await reload();
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Save failed.');
+    } finally {
+      setSgFormBusy(false);
+    }
+  };
+
+  const deleteSg = async (e: FormEvent) => {
+    e.preventDefault();
+    if (selectedServiceGroupId === '' || !admin) {
+      window.alert('Select a service group to remove.');
+      return;
+    }
+    const g = (admin.serviceGroups ?? []).find((x) => x.serviceGroupID === selectedServiceGroupId);
+    if (!g) {
+      flash('error', 'Selected service group not found.');
+      return;
+    }
+    if (!window.confirm('Remove or deactivate the selected service group?')) {
+      return;
+    }
+    setSgFormBusy(true);
+    try {
+      await apiPostJson('/api/admin/service-groups/save', {
+        serviceGroupID: g.serviceGroupID,
+        serviceGroupNumber: g.serviceGroupNumber ?? '',
+        serviceGroupName: g.serviceGroupName ?? '',
+        serviceGroupDescription: g.serviceGroupDescription ?? null,
+        isActive: false,
+      });
+      flash('success', 'Service group deactivated.');
+      clearSgForm();
+      setSelectedServiceGroupId('');
+      await reload();
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Remove failed.');
+    } finally {
+      setSgFormBusy(false);
+    }
+  };
+
   const userPickerLabel = (u: AdminUser) => {
     const base = (u.username?.trim() || u.email?.trim() || u.displayName || `User ${u.userID}`).trim();
     const t = u.title?.trim();
@@ -2340,6 +2575,35 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     [admin?.userGroupSummaries, flash, groupListUseSearchResults, groupSearchResults],
   );
 
+  const openUserGroupFromDataAudit = useCallback(
+    (check: DataAuditCheck, row: (string | null)[]) => {
+      const ugid = auditRowUgid(check, row);
+      if (ugid == null) {
+        return;
+      }
+      const hint = auditHighlightForCheck(check.checkId);
+      const summary = (admin?.userGroupSummaries ?? []).find((g) => g.ugid === ugid);
+      setTab('groups');
+      selectUserGroupByNumber(ugid, summary);
+      setAuditGroupHighlight(hint?.highlight ?? 'members');
+      setAuditGroupHighlightMessage(hint?.message ?? check.description);
+      if (hint?.highlight === 'members' && admin?.userRoles?.length) {
+        const analyticsLead = admin.userRoles.find((r) =>
+          /analytics\s*lead/i.test(`${r.userRoleName ?? ''} ${r.roleDescription ?? ''}`),
+        );
+        if (analyticsLead) {
+          setAddMemberRoleId(analyticsLead.userRoleID);
+          setNewGroupRoleFilterDraft(rolePickerLabel(analyticsLead));
+          setNewGroupRoleFilterQuery(rolePickerLabel(analyticsLead));
+        }
+      }
+      window.setTimeout(() => {
+        groupEditPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 80);
+    },
+    [admin?.userGroupSummaries, admin?.userRoles, selectUserGroupByNumber],
+  );
+
   // Prefill UserGroup edit panel when arriving from Project Info (selectUserGroup query).
   useEffect(() => {
     if (prefilledGroupFromQueryRef.current) {
@@ -2911,6 +3175,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       setServiceBulkSkippedEmpty(result.skippedEmptyRows);
       setServiceBulkWizardOpen(true);
       setTab('services');
+      setServicesSubTab('services');
       if (result.rows.length === 0) {
         flash(
           'error',
@@ -3032,7 +3297,6 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           {tabBtn('groups', 'UserGroup')}
           {tabBtn('dataAudit', 'Data Audit')}
           {tabBtn('services', 'Services')}
-          {tabBtn('serviceCategories', 'Service Category')}
         </div>
 
         <div id="admin-tab-server" className={'admin-tab-panel' + (tab === 'server' ? ' active' : '')}>
@@ -3669,7 +3933,32 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </div>
 
-            <div id="lstbxNewUserGroup" className="admin-edit-card project-panel-tab-card admin-usergroup-new-panel">
+            <div
+              id="lstbxNewUserGroup"
+              ref={groupEditPanelRef}
+              className={
+                'admin-edit-card project-panel-tab-card admin-usergroup-new-panel' +
+                (auditGroupHighlight ? ' admin-usergroup-new-panel--from-audit' : '')
+              }
+            >
+              {auditGroupHighlightMessage ? (
+                <div className="admin-audit-jump-banner" role="status">
+                  <div>
+                    <strong>From Data Audit</strong>
+                    <p>{auditGroupHighlightMessage}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setAuditGroupHighlight(null);
+                      setAuditGroupHighlightMessage(null);
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : null}
               <p className="field-help">
                 {isCreatingGroup
                   ? 'New group: enter a name, pick users and roles, then save. Group number defaults to the next available (max + 1).'
@@ -3678,34 +3967,49 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     : 'Select a group and choose Edit, or choose Add to create a new group.'}
               </p>
               <form onSubmit={(e) => void saveGroupBatch(e)}>
-                <h3 className="admin-subheading">Group details</h3>
-                <div className="form-grid compact-grid">
-                  <label htmlFor="ug-group-name">User group name</label>
-                  <input
-                    id="ug-group-name"
-                    maxLength={50}
-                    placeholder="Required"
-                    value={groupEditName}
-                    onChange={(e) => setGroupEditName(e.target.value)}
-                    disabled={groupPanelBusy}
-                  />
-                  <label htmlFor="ug-group-num">Group number</label>
-                  <input
-                    id="ug-group-num"
-                    maxLength={50}
-                    placeholder={isCreatingGroup ? 'Next number' : 'Required'}
-                    value={groupEditNumber}
-                    onChange={(e) => setGroupEditNumber(e.target.value)}
-                    disabled={groupPanelBusy}
-                    readOnly={isCreatingGroup}
-                    title={
-                      isCreatingGroup
-                        ? 'Auto-assigned as max existing group number + 1'
-                        : undefined
-                    }
-                  />
+                <div
+                  className={
+                    'admin-audit-target' +
+                    (auditGroupHighlight === 'project-link' || auditGroupHighlight === 'client-link'
+                      ? ' admin-audit-target--active'
+                      : '')
+                  }
+                >
+                  <h3 className="admin-subheading">Group details</h3>
+                  <div className="form-grid compact-grid">
+                    <label htmlFor="ug-group-name">User group name</label>
+                    <input
+                      id="ug-group-name"
+                      maxLength={50}
+                      placeholder="Required"
+                      value={groupEditName}
+                      onChange={(e) => setGroupEditName(e.target.value)}
+                      disabled={groupPanelBusy}
+                    />
+                    <label htmlFor="ug-group-num">Group number</label>
+                    <input
+                      id="ug-group-num"
+                      maxLength={50}
+                      placeholder={isCreatingGroup ? 'Next number' : 'Required'}
+                      value={groupEditNumber}
+                      onChange={(e) => setGroupEditNumber(e.target.value)}
+                      disabled={groupPanelBusy}
+                      readOnly={isCreatingGroup}
+                      title={
+                        isCreatingGroup
+                          ? 'Auto-assigned as max existing group number + 1'
+                          : undefined
+                      }
+                    />
+                  </div>
                 </div>
 
+                <div
+                  className={
+                    'admin-audit-target' +
+                    (auditGroupHighlight === 'members' ? ' admin-audit-target--active' : '')
+                  }
+                >
                 <h3 className="admin-subheading">Add member</h3>
                 <div className="admin-usergroup-member-block">
                   <label htmlFor="ug-filter-user">Find user (name or city)</label>
@@ -3836,6 +4140,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   >
                     Remove selected member
                   </button>
+                </div>
                 </div>
 
                 <div className="button-row wrap-buttons">
@@ -4173,8 +4478,227 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
         </div>
 
         <div id="admin-tab-services" className={'admin-tab-panel' + (tab === 'services' ? ' active' : '')}>
+          <h2>Services</h2>
+          <p className="field-help">
+            Manage service groups, service categories, and catalog services from one place.
+          </p>
+          <div className="admin-tabs admin-services-subtabs" role="tablist" aria-label="Services sections">
+            <button
+              type="button"
+              role="tab"
+              id="admin-services-tab-groups"
+              aria-selected={servicesSubTab === 'groups'}
+              aria-controls="admin-services-panel-groups"
+              className={servicesSubTab === 'groups' ? 'active' : ''}
+              onClick={() => setServicesSubTab('groups')}
+            >
+              Service Groups
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="admin-services-tab-categories"
+              aria-selected={servicesSubTab === 'categories'}
+              aria-controls="admin-services-panel-categories"
+              className={servicesSubTab === 'categories' ? 'active' : ''}
+              onClick={() => setServicesSubTab('categories')}
+            >
+              Service Category
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="admin-services-tab-catalog"
+              aria-selected={servicesSubTab === 'services'}
+              aria-controls="admin-services-panel-catalog"
+              className={servicesSubTab === 'services' ? 'active' : ''}
+              onClick={() => setServicesSubTab('services')}
+            >
+              Services
+            </button>
+          </div>
+
+          <div
+            id="admin-services-panel-groups"
+            role="tabpanel"
+            aria-labelledby="admin-services-tab-groups"
+            hidden={servicesSubTab !== 'groups'}
+            className={'admin-tab-panel admin-services-subpanel' + (servicesSubTab === 'groups' ? ' active' : '')}
+          >
+            <h3 className="admin-subheading">Service Groups</h3>
+            <p className="field-help">
+              Service groups from <code>dbo.tServiceGroup</code>. Groups organize catalog services on{' '}
+              <code>tServiceRef</code> rows.
+            </p>
+            <div className="admin-layout">
+              <div>
+                <select
+                  className="cms-listbox"
+                  size={25}
+                  value={selectedServiceGroupId === '' ? '' : String(selectedServiceGroupId)}
+                  onChange={(e) => setSelectedServiceGroupId(e.target.value ? Number(e.target.value) : '')}
+                  onDoubleClick={editSgFromSelection}
+                  aria-label="Service groups"
+                >
+                  {[...(admin.serviceGroups ?? [])]
+                    .sort((a, b) =>
+                      (a.serviceGroupName ?? '').localeCompare(b.serviceGroupName ?? '', undefined, {
+                        sensitivity: 'base',
+                      }),
+                    )
+                    .map((g) => (
+                      <option key={g.serviceGroupID} value={g.serviceGroupID}>
+                        {g.isActive === false
+                          ? `${(g.serviceGroupName ?? '').trim() || g.serviceGroupID} (inactive)`
+                          : (g.serviceGroupName ?? '').trim() || String(g.serviceGroupID)}
+                      </option>
+                    ))}
+                </select>
+                <div className="button-row wrap-buttons">
+                  <button type="button" className="secondary-button" onClick={startNewServiceGroup}>
+                    Add
+                  </button>
+                  <button type="button" className="secondary-button" onClick={editSgFromSelection}>
+                    Edit
+                  </button>
+                  <button type="button" className="danger-button" onClick={(e) => void deleteSg(e)}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveSg(e)}>
+                <div className="form-grid compact-grid">
+                  <label htmlFor="sg-number">Group Number</label>
+                  <input
+                    id="sg-number"
+                    maxLength={50}
+                    value={sgForm.serviceGroupNumber}
+                    onChange={(e) => setSgForm({ ...sgForm, serviceGroupNumber: e.target.value })}
+                    placeholder="Auto if blank"
+                  />
+                  <label htmlFor="sg-name">Group Name</label>
+                  <input
+                    id="sg-name"
+                    maxLength={100}
+                    value={sgForm.serviceGroupName}
+                    onChange={(e) => setSgForm({ ...sgForm, serviceGroupName: e.target.value })}
+                    required
+                  />
+                  <label htmlFor="sg-desc">Description</label>
+                  <input
+                    id="sg-desc"
+                    maxLength={255}
+                    value={sgForm.serviceGroupDescription}
+                    onChange={(e) => setSgForm({ ...sgForm, serviceGroupDescription: e.target.value })}
+                  />
+                  <label htmlFor="sg-active">Is Active</label>
+                  <select
+                    id="sg-active"
+                    value={sgForm.isActive ? 'true' : 'false'}
+                    onChange={(e) => setSgForm({ ...sgForm, isActive: e.target.value === 'true' })}
+                    aria-label="Is Active"
+                  >
+                    <option value="true">True</option>
+                    <option value="false">False</option>
+                  </select>
+                </div>
+                <div className="button-row">
+                  <button type="submit" className="primary-button" disabled={sgFormBusy}>
+                    {sgFormBusy ? 'Saving…' : 'Save'}
+                  </button>
+                  <button type="button" className="secondary-button" onClick={clearSgForm} disabled={sgFormBusy}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div
+            id="admin-services-panel-categories"
+            role="tabpanel"
+            aria-labelledby="admin-services-tab-categories"
+            hidden={servicesSubTab !== 'categories'}
+            className={
+              'admin-tab-panel admin-services-subpanel' +
+              (servicesSubTab === 'categories' ? ' active' : '')
+            }
+          >
+          <h3 className="admin-subheading">Service Category</h3>
+          <div className="admin-layout">
+            <div>
+              <select
+                className="cms-listbox"
+                size={25}
+                value={selectedServiceCategoryId === '' ? '' : String(selectedServiceCategoryId)}
+                onChange={(e) => setSelectedServiceCategoryId(e.target.value ? Number(e.target.value) : '')}
+                onDoubleClick={editScFromSelection}
+              >
+                {(admin.serviceCategories ?? []).map((c) => (
+                  <option key={c.serviceCategoryID} value={c.serviceCategoryID}>
+                    {c.categoryName ?? ''}
+                  </option>
+                ))}
+              </select>
+              <div className="button-row wrap-buttons">
+                <button type="button" className="secondary-button" onClick={clearScForm}>
+                  Add
+                </button>
+                <button type="button" className="secondary-button" onClick={editScFromSelection}>
+                  Edit
+                </button>
+                <button type="button" className="danger-button" onClick={(e) => void deleteSc(e)}>
+                  Remove
+                </button>
+              </div>
+            </div>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveSc(e)}>
+              <div className="form-grid compact-grid">
+                <label>Category Name</label>
+                <input
+                  maxLength={100}
+                  value={scForm.categoryName}
+                  onChange={(e) => setScForm({ ...scForm, categoryName: e.target.value })}
+                />
+                <label>Service Category Description</label>
+                <input
+                  maxLength={100}
+                  value={scForm.serviceCategoryDescription}
+                  onChange={(e) => setScForm({ ...scForm, serviceCategoryDescription: e.target.value })}
+                />
+                <label>Is Active</label>
+                <select
+                  value={scForm.isActive ? 'true' : 'false'}
+                  onChange={(e) => setScForm({ ...scForm, isActive: e.target.value === 'true' })}
+                  aria-label="Is Active"
+                >
+                  <option value="true">True</option>
+                  <option value="false">False</option>
+                </select>
+              </div>
+              <div className="button-row">
+                <button type="submit" className="primary-button">
+                  Save
+                </button>
+                <button type="button" className="secondary-button" onClick={clearScForm}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+          </div>
+
+          <div
+            id="admin-services-panel-catalog"
+            role="tabpanel"
+            aria-labelledby="admin-services-tab-catalog"
+            hidden={servicesSubTab !== 'services'}
+            className={
+              'admin-tab-panel admin-services-subpanel' + (servicesSubTab === 'services' ? ' active' : '')
+            }
+          >
           <div className="page-header-top admin-users-toolbar">
-            <h2>Services</h2>
+            <h3 className="admin-subheading">Services catalog</h3>
             <div className="page-header-actions">
               <input
                 id="admin-service-bulk-csv"
@@ -4508,73 +5032,6 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </form>
           </div>
-        </div>
-
-        <div
-          id="admin-tab-service-categories"
-          className={'admin-tab-panel' + (tab === 'serviceCategories' ? ' active' : '')}
-        >
-          <h2>Service Category</h2>
-          <div className="admin-layout">
-            <div>
-              <select
-                className="cms-listbox"
-                size={25}
-                value={selectedServiceCategoryId === '' ? '' : String(selectedServiceCategoryId)}
-                onChange={(e) => setSelectedServiceCategoryId(e.target.value ? Number(e.target.value) : '')}
-                onDoubleClick={editScFromSelection}
-              >
-                {(admin.serviceCategories ?? []).map((c) => (
-                  <option key={c.serviceCategoryID} value={c.serviceCategoryID}>
-                    {c.categoryName ?? ''}
-                  </option>
-                ))}
-              </select>
-              <div className="button-row wrap-buttons">
-                <button type="button" className="secondary-button" onClick={clearScForm}>
-                  Add
-                </button>
-                <button type="button" className="secondary-button" onClick={editScFromSelection}>
-                  Edit
-                </button>
-                <button type="button" className="danger-button" onClick={(e) => void deleteSc(e)}>
-                  Remove
-                </button>
-              </div>
-            </div>
-            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void saveSc(e)}>
-              <div className="form-grid compact-grid">
-                <label>Category Name</label>
-                <input
-                  maxLength={100}
-                  value={scForm.categoryName}
-                  onChange={(e) => setScForm({ ...scForm, categoryName: e.target.value })}
-                />
-                <label>Service Category Description</label>
-                <input
-                  maxLength={100}
-                  value={scForm.serviceCategoryDescription}
-                  onChange={(e) => setScForm({ ...scForm, serviceCategoryDescription: e.target.value })}
-                />
-                <label>Is Active</label>
-                <select
-                  value={scForm.isActive ? 'true' : 'false'}
-                  onChange={(e) => setScForm({ ...scForm, isActive: e.target.value === 'true' })}
-                  aria-label="Is Active"
-                >
-                  <option value="true">True</option>
-                  <option value="false">False</option>
-                </select>
-              </div>
-              <div className="button-row">
-                <button type="submit" className="primary-button">
-                  Save
-                </button>
-                <button type="button" className="secondary-button" onClick={clearScForm}>
-                  Cancel
-                </button>
-              </div>
-            </form>
           </div>
         </div>
 
@@ -4606,22 +5063,29 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 {dataAudit.checks.reduce((sum, c) => sum + c.count, 0)} total finding
                 {dataAudit.checks.reduce((sum, c) => sum + c.count, 0) === 1 ? '' : 's'}
               </p>
-              <div className="admin-data-audit-summary">
-                {dataAudit.checks.map((check) => (
-                  <button
-                    key={check.checkId}
-                    type="button"
-                    className={
-                      'admin-data-audit-card' +
-                      (check.count > 0 ? ' admin-data-audit-card--findings' : ' admin-data-audit-card--ok') +
-                      (expandedAuditCheckId === check.checkId ? ' selected' : '')
-                    }
-                    onClick={() => setExpandedAuditCheckId(check.checkId)}
-                    title={check.description}
-                  >
-                    <span className="admin-data-audit-card__count">{check.count}</span>
-                    <span className="admin-data-audit-card__title">{check.title}</span>
-                  </button>
+              <div className="admin-data-audit-groups">
+                {groupDataAuditChecks(dataAudit.checks).map((group) => (
+                  <section key={group.key} className="admin-data-audit-group" aria-label={group.label}>
+                    <h3 className="admin-data-audit-group__title">{group.label}</h3>
+                    <div className="admin-data-audit-summary">
+                      {group.checks.map((check) => (
+                        <button
+                          key={check.checkId}
+                          type="button"
+                          className={
+                            'admin-data-audit-card' +
+                            (check.count > 0 ? ' admin-data-audit-card--findings' : ' admin-data-audit-card--ok') +
+                            (expandedAuditCheckId === check.checkId ? ' selected' : '')
+                          }
+                          onClick={() => setExpandedAuditCheckId(check.checkId)}
+                          title={check.description}
+                        >
+                          <span className="admin-data-audit-card__count">{check.count}</span>
+                          <span className="admin-data-audit-card__title">{check.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
               {(() => {
@@ -4639,28 +5103,53 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                         No findings for this check.
                       </p>
                     ) : (
-                      <div className="admin-usergroup-table-wrap admin-data-audit-table-wrap">
-                        <table className="admin-usergroup-table admin-data-audit-table" aria-label={selected.title}>
-                          <thead>
-                            <tr>
-                              {selected.columns.map((col) => (
-                                <th key={col} scope="col">
-                                  {col}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selected.rows.map((row, ri) => (
-                              <tr key={`${selected.checkId}-${ri}`}>
-                                {row.map((cell, ci) => (
-                                  <td key={`${selected.checkId}-${ri}-${ci}`}>{cell?.trim() || '—'}</td>
+                      <>
+                        <p className="field-help">
+                          Double-click a row with a user group (UGID) to open that group on the UserGroup tab.
+                        </p>
+                        <div className="admin-usergroup-table-wrap admin-data-audit-table-wrap">
+                          <table
+                            className="admin-usergroup-table admin-data-audit-table"
+                            aria-label={selected.title}
+                          >
+                            <thead>
+                              <tr>
+                                {selected.columns.map((col) => (
+                                  <th key={col} scope="col">
+                                    {col}
+                                  </th>
                                 ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {selected.rows.map((row, ri) => {
+                                const ugid = auditRowUgid(selected, row);
+                                const canOpenGroup = ugid != null;
+                                return (
+                                  <tr
+                                    key={`${selected.checkId}-${ri}`}
+                                    className={canOpenGroup ? 'admin-data-audit-row--jump' : undefined}
+                                    title={
+                                      canOpenGroup
+                                        ? `Double-click to open user group ${ugid} on the UserGroup tab`
+                                        : undefined
+                                    }
+                                    onDoubleClick={() => {
+                                      if (canOpenGroup) {
+                                        openUserGroupFromDataAudit(selected, row);
+                                      }
+                                    }}
+                                  >
+                                    {row.map((cell, ci) => (
+                                      <td key={`${selected.checkId}-${ri}-${ci}`}>{cell?.trim() || '—'}</td>
+                                    ))}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     )}
                   </div>
                 );
