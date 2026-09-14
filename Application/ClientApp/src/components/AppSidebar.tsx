@@ -39,14 +39,6 @@ function DashboardIcon() {
   );
 }
 
-function CatAiIcon() {
-  return (
-    <svg {...iconProps} aria-hidden="true">
-      <path d="M12 3 9.5 8.5 3 9l5 4.5L6.5 21 12 17l5.5 4-1.5-7.5L21 9l-6.5-.5L12 3Z" />
-    </svg>
-  );
-}
-
 function AdminIcon() {
   return (
     <svg {...iconProps} aria-hidden="true">
@@ -95,13 +87,6 @@ const navItems: NavItemDef[] = [
     icon: <DashboardIcon />,
     modes: ['cm'],
     isActive: (p) => p === '/dashboard' || p.startsWith('/dashboard/'),
-  },
-  {
-    to: '/catai',
-    label: 'CatAI',
-    icon: <CatAiIcon />,
-    modes: ['cm'],
-    isActive: (p) => p === '/catai' || p.startsWith('/catai/'),
   },
   {
     to: '/admin',

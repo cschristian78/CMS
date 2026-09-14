@@ -39,14 +39,12 @@ export function resolveCatAppMode(pathname: string): CatAppMode {
     pathname.startsWith('/clients') ||
     pathname.startsWith('/projects') ||
     pathname === '/dashboard' ||
-    pathname.startsWith('/dashboard/') ||
-    pathname === '/catai' ||
-    pathname.startsWith('/catai/')
+    pathname.startsWith('/dashboard/')
   ) {
     setCatAppMode('cm');
     return 'cm';
   }
 
-  // Admin (and any other path): keep the last selected workspace.
+  // CatAI, Admin, and any other path: keep the last selected workspace.
   return getCatAppMode();
 }

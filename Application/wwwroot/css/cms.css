@@ -411,9 +411,9 @@ main.page-shell.page-shell--hub-wide {
 
 .app-hub-tiles {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 20rem));
+    grid-template-columns: repeat(3, minmax(0, 18rem));
     gap: 1.5rem;
-    width: min(100%, 44rem);
+    width: min(100%, 60rem);
 }
 
 .app-hub-tile {
@@ -658,6 +658,13 @@ main.page-shell.page-shell--hub-wide {
     font-size: 0.75rem;
     color: var(--muted);
     font-weight: 400;
+}
+
+@media (max-width: 960px) {
+    .app-hub-tiles {
+        grid-template-columns: repeat(2, minmax(0, 18rem));
+        width: min(100%, 40rem);
+    }
 }
 
 @media (max-width: 720px) {
