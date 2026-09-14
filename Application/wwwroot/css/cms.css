@@ -263,7 +263,7 @@ main.page-shell.page-shell--hub-wide {
     align-items: center;
     justify-content: center;
     gap: 0.85rem;
-    margin: 0 0 0.85rem;
+    margin: 0 0 1rem;
     font-size: 0.72rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -276,6 +276,14 @@ main.page-shell.page-shell--hub-wide {
     width: min(4.5rem, 12vw);
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(32, 212, 232, 0.55), transparent);
+}
+
+.app-hub-apps {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: min(100%, 60rem);
 }
 
 .app-hub-headline {
@@ -353,7 +361,7 @@ main.page-shell.page-shell--hub-wide {
 .app-hub-brand-mark {
     margin: 0;
     font-family: var(--font-display);
-    font-size: clamp(1.65rem, 4.8vw, 3.75rem);
+    font-size: clamp(2.35rem, 7vw, 5.25rem);
     letter-spacing: 0.06em;
     line-height: 1;
     color: var(--white);
@@ -367,13 +375,25 @@ main.page-shell.page-shell--hub-wide {
     color: var(--text);
 }
 
-.app-hub-brand-sub {
-    font-size: 0.72rem;
+.app-hub-help {
+    margin: 1.35rem 0 0;
+    text-align: center;
+}
+
+.app-hub-help a {
+    color: var(--accent);
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.app-hub-help a:hover,
+.app-hub-help a:focus-visible {
     color: var(--white);
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    opacity: 0.9;
-    text-shadow: 0 1px 12px rgba(4, 7, 12, 0.9);
+    border-bottom-color: var(--accent-dim);
+    outline: none;
 }
 
 .app-hub-lede {

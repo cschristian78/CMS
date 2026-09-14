@@ -1096,11 +1096,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     if (!tab) {
       return;
     }
-    if (!isEdit && (tab === 'time' || tab === 'revenue' || tab === 'notes')) {
-      return;
-    }
     setActiveTab(tab);
-  }, [isEdit, searchParams.get('tab')]);
+  }, [searchParams.get('tab')]);
 
   useEffect(() => {
     if (!model || model.clientID <= 0) {
@@ -2034,7 +2031,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           /* keep local calendar state if reload fails */
         }
       } else {
-        navigate(`/projects/${savedId}`, { replace: true });
+        const tabQs = activeTab && activeTab !== 'client' ? `?tab=${encodeURIComponent(activeTab)}` : '';
+        navigate(`/projects/${savedId}${tabQs}`, { replace: true });
         await load();
       }
     } catch (err) {
@@ -3184,10 +3182,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           {projectTabBtn('project', 'Project Info')}
           {projectTabBtn('projectData', 'Project Data')}
           {projectTabBtn('services', 'Services')}
-          {isEdit ? projectTabBtn('analysisProfile', 'Analysis Profile') : null}
+          {projectTabBtn('analysisProfile', 'Analysis Profile')}
           {projectTabBtn('calendar', 'Calendar')}
-          {isEdit ? projectTabBtn('time', 'Time tracker') : null}
-          {isEdit ? projectTabBtn('revenue', 'Revenue history') : null}
+          {projectTabBtn('time', 'Time tracker')}
+          {projectTabBtn('revenue', 'Revenue history')}
           {projectTabBtn('notes', 'Notes')}
         </div>
 
@@ -3771,7 +3769,10 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   flash={flash}
                 />
               ) : (
-                <p className="field-help">Save the project first to configure Moodys and Verisk analysis profiles.</p>
+                <p className="field-help">
+                  Complete Client Info and Project Info, then click <strong>Save Project</strong>. After the project is
+                  created you can configure Moodys and Verisk analysis profiles on this tab.
+                </p>
               )}
             </div>
           </div>
@@ -3936,82 +3937,118 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </div>
             </div>
 
-          {isEdit && projectId !== undefined ? (
-            <div id="project-tab-time" className={projectTabClass('time')}>
-              {renderTabTitle('Time tracker')}
-              <div className="admin-edit-card project-panel-tab-card">
-              <ProjectTimeTrackerTab
-                ref={timeTrackerRef}
-                projectId={projectId}
-                isActive={activeTab === 'time'}
-                flash={flash}
-                initialUserId={timeDeepLinkUserId}
-                fallbackTasks={calendarItems
-                  .filter((row) => (row.calendarItemID ?? 0) > 0 && row.title.trim().length > 0)
-                  .map((row) => ({
-                    calendarItemID: row.calendarItemID as number,
-                    itemType: row.itemType,
-                    title: row.title.trim(),
-                    sortOrder: row.sortOrder ?? 0,
-                  }))}
-              />
-              {renderTabActions('time')}
-              </div>
-            </div>
-          ) : null}
-
-          {isEdit ? (
-            <div id="project-tab-revenue" className={projectTabClass('revenue')}>
-            {renderTabTitle('Revenue history')}
+          <div id="project-tab-time" className={projectTabClass('time')}>
+            {renderTabTitle('Time tracker')}
             <div className="admin-edit-card project-panel-tab-card">
-            <p className="field-help">
-              Active rows from <code>dbo.tProjectRevenue</code> for this project, newest effective date first
-              (same order as the home grid Latest Revenue). Delete marks a row inactive.
-            </p>
-            <div className="project-tab-table-wrap">
-              <table className="dashboard-data-table dashboard-data-table--full home-client-project-table catalog-table">
-              <thead>
-                <tr>
-                  <th>Effective Date</th>
-                  <th>Revenue</th>
-                  <th>Reason</th>
-                  <th>Recorded By</th>
-                  <th>Created</th>
-                  <th>&nbsp;</th>
-                </tr>
-              </thead>
-              <tbody>
-                {revenueHistory.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>No revenue entries yet.</td>
-                  </tr>
-                ) : (
-                  revenueHistory.map((r) => (
-                    <tr key={r.revenueID}>
-                      <td>{formatCalendarDateDisplay(r.effectiveDate)}</td>
-                      <td>{formatMoney(r.revenue)}</td>
-                      <td>{r.changeReason ?? ''}</td>
-                      <td>{r.recordedByName ?? ''}</td>
-                      <td>{formatCalendarDateDisplay(r.createdDate)}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="danger-button"
-                          onClick={() => void handleDeleteRevenue(r.revenueID)}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            </div>
-            {renderTabActions('revenue')}
+              {isEdit && projectId !== undefined ? (
+                <>
+                  <ProjectTimeTrackerTab
+                    ref={timeTrackerRef}
+                    projectId={projectId}
+                    isActive={activeTab === 'time'}
+                    flash={flash}
+                    initialUserId={timeDeepLinkUserId}
+                    fallbackTasks={calendarItems
+                      .filter((row) => (row.calendarItemID ?? 0) > 0 && row.title.trim().length > 0)
+                      .map((row) => ({
+                        calendarItemID: row.calendarItemID as number,
+                        itemType: row.itemType,
+                        title: row.title.trim(),
+                        sortOrder: row.sortOrder ?? 0,
+                      }))}
+                  />
+                  {renderTabActions('time')}
+                </>
+              ) : (
+                <p className="field-help">
+                  Time tracking needs a saved project and calendar services. Add services on the Services / Calendar
+                  tabs, then click <strong>Save Project</strong>. After create, this tab loads the weekly time
+                  tracker.
+                </p>
+              )}
             </div>
           </div>
-          ) : null}
+
+          <div id="project-tab-revenue" className={projectTabClass('revenue')}>
+            {renderTabTitle('Revenue history')}
+            <div className="admin-edit-card project-panel-tab-card">
+              {isEdit ? (
+                <>
+                  <p className="field-help">
+                    Active rows from <code>dbo.tProjectRevenue</code> for this project, newest effective date first
+                    (same order as the home grid Latest Revenue). Delete marks a row inactive.
+                  </p>
+                  <div className="project-tab-table-wrap">
+                    <table className="dashboard-data-table dashboard-data-table--full home-client-project-table catalog-table">
+                      <thead>
+                        <tr>
+                          <th>Effective Date</th>
+                          <th>Revenue</th>
+                          <th>Reason</th>
+                          <th>Recorded By</th>
+                          <th>Created</th>
+                          <th>&nbsp;</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {revenueHistory.length === 0 ? (
+                          <tr>
+                            <td colSpan={6}>No revenue entries yet.</td>
+                          </tr>
+                        ) : (
+                          revenueHistory.map((r) => (
+                            <tr key={r.revenueID}>
+                              <td>{formatCalendarDateDisplay(r.effectiveDate)}</td>
+                              <td>{formatMoney(r.revenue)}</td>
+                              <td>{r.changeReason ?? ''}</td>
+                              <td>{r.recordedByName ?? ''}</td>
+                              <td>{formatCalendarDateDisplay(r.createdDate)}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="danger-button"
+                                  onClick={() => void handleDeleteRevenue(r.revenueID)}
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {renderTabActions('revenue')}
+                </>
+              ) : (
+                <>
+                  <p className="field-help">
+                    Enter initial revenue on the <strong>Project Info</strong> tab. After you click{' '}
+                    <strong>Save Project</strong>, history rows appear here (newest first) and you can manage them.
+                  </p>
+                  <div className="project-tab-table-wrap">
+                    <table className="dashboard-data-table dashboard-data-table--full home-client-project-table catalog-table">
+                      <thead>
+                        <tr>
+                          <th>Effective Date</th>
+                          <th>Revenue</th>
+                          <th>Reason</th>
+                          <th>Recorded By</th>
+                          <th>Created</th>
+                          <th>&nbsp;</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colSpan={6}>No revenue entries yet — save the project to start history.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
           <div id="project-tab-notes" className={projectTabClass('notes')}>
             {renderTabTitle('Notes')}
