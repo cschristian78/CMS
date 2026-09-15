@@ -10,14 +10,18 @@ public sealed class DataAuditRepository : IDataAuditRepository
     private const int AnalyticsLeadRoleId = 5;
 
     private readonly IDbExecutor _db;
+    private readonly IAuthRepository _auth;
 
-    public DataAuditRepository(IDbExecutor db)
+    public DataAuditRepository(IDbExecutor db, IAuthRepository auth)
     {
         _db = db;
+        _auth = auth;
     }
 
     public async Task<DataAuditReport> GetReportAsync(CancellationToken cancellationToken = default)
     {
+        await _auth.EnsureLoginPwSchemaAsync(cancellationToken);
+
         var checks = new List<DataAuditCheck>
         {
             await BuildCheckAsync(
@@ -176,12 +180,69 @@ public sealed class DataAuditRepository : IDataAuditRepository
                 ["UGID", "Group #", "Group", "Members"],
                 cancellationToken,
                 [SqlParameterFactory.Int("@AnalyticsLeadRoleId", AnalyticsLeadRoleId)]),
+
+            await BuildLoginActivityCheckAsync(cancellationToken),
         };
 
         return new DataAuditReport
         {
             GeneratedAtUtc = DateTimeOffset.UtcNow,
             Checks = checks
+        };
+    }
+
+    private async Task<DataAuditCheck> BuildLoginActivityCheckAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                CAST(u.UserID AS nvarchar(20)),
+                LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))),
+                ISNULL(NULLIF(LTRIM(RTRIM(u.Email)), N''), N'-'),
+                CAST(ISNULL(u.LoginCount, 0) AS nvarchar(20)),
+                CASE
+                    WHEN u.LastLoginUtc IS NULL THEN N'-'
+                    ELSE CONVERT(nvarchar(30), u.LastLoginUtc, 120)
+                END
+              FROM dbo.tUser AS u
+             WHERE u.IsActive = 1
+               AND UPPER(LTRIM(RTRIM(u.Department))) = N'CAT'
+               AND NULLIF(LTRIM(RTRIM(u.Email)), N'') IS NOT NULL
+             ORDER BY ISNULL(u.LoginCount, 0) DESC, u.LastName, u.FirstName, u.UserID;
+            """;
+
+        var columns = new[] { "UserID", "Name", "Email", "Login Count", "Last Login (UTC)" };
+        var rows = await _db.QueryTextAsync(
+            sql,
+            r =>
+            {
+                var cells = new string?[columns.Length];
+                for (var i = 0; i < columns.Length; i++)
+                {
+                    cells[i] = r.IsDBNull(i) ? null : Convert.ToString(r.GetValue(i));
+                }
+
+                return (IReadOnlyList<string?>)cells;
+            },
+            cancellationToken: cancellationToken);
+
+        var totalLogins = 0;
+        foreach (var row in rows)
+        {
+            if (int.TryParse((row.Count > 3 ? row[3] : null) ?? "0", out var n) && n > 0)
+            {
+                totalLogins += n;
+            }
+        }
+
+        return new DataAuditCheck
+        {
+            CheckId = "user-logins-activity",
+            Title = "User login counts",
+            Description =
+                "CAT department sign-ins. Login Count increments on each successful launch; Last Login is UTC.",
+            Count = totalLogins,
+            Columns = columns,
+            Rows = rows,
         };
     }
 

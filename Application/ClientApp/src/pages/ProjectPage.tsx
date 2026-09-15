@@ -152,6 +152,7 @@ interface ProjectCalendarItemDraft {
   ownerUserID: number | '';
   receivedDate: string;
   completedDate: string;
+  percentComplete: number;
   notes: string;
   sortOrder?: number;
 }
@@ -183,6 +184,7 @@ function newCalendarDraft(sortOrder = 0): ProjectCalendarItemDraft {
     ownerUserID: '',
     receivedDate: '',
     completedDate: '',
+    percentComplete: 0,
     notes: '',
     sortOrder,
   };
@@ -248,6 +250,8 @@ interface ProjectNoteRow {
   noteType?: string | null;
   noteText?: string | null;
   isPinned: boolean;
+  calendarItemID?: number | null;
+  calendarItemTitle?: string | null;
   createdDate?: string | null;
 }
 
@@ -394,6 +398,7 @@ function mapCalendarItemFromApi(row: {
   ownerUserID?: number | null;
   receivedDate?: string | null;
   completedDate?: string | null;
+  percentComplete?: number | null;
   notes?: string | null;
   sortOrder?: number;
 }): ProjectCalendarItemDraft {
@@ -401,6 +406,7 @@ function mapCalendarItemFromApi(row: {
   const itemType = (CALENDAR_ITEM_TYPES as string[]).includes(rawType)
     ? (rawType as ProjectCalendarItemDraft['itemType'])
     : 'Task';
+  const pct = Number(row.percentComplete ?? 0);
   return {
     tempId: `cal-${row.calendarItemID}`,
     calendarItemID: row.calendarItemID,
@@ -409,6 +415,7 @@ function mapCalendarItemFromApi(row: {
     ownerUserID: row.ownerUserID && row.ownerUserID > 0 ? row.ownerUserID : '',
     receivedDate: toInputDateValue(row.receivedDate),
     completedDate: toInputDateValue(row.completedDate),
+    percentComplete: Number.isFinite(pct) ? Math.min(100, Math.max(0, Math.round(pct))) : 0,
     notes: row.notes ?? '',
     sortOrder: row.sortOrder ?? 0,
   };
@@ -1453,6 +1460,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
       ownerUserID: calendarEditDraft.ownerUserID,
       receivedDate: calendarEditDraft.receivedDate,
       completedDate: calendarEditDraft.completedDate,
+      percentComplete: Math.min(100, Math.max(0, Math.round(Number(calendarEditDraft.percentComplete) || 0))),
       notes: calendarEditDraft.notes,
     });
     closeCalendarEdit();
@@ -1468,6 +1476,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         ownerUserID: typeof row.ownerUserID === 'number' && row.ownerUserID > 0 ? row.ownerUserID : null,
         receivedDate: toApiDateValue(row.receivedDate),
         completedDate: toApiDateValue(row.completedDate),
+        percentComplete: Math.min(100, Math.max(0, Math.round(Number(row.percentComplete) || 0))),
         notes: row.notes.trim().length > 0 ? row.notes.trim() : null,
         sortOrder: index,
         isActive: true,
@@ -1482,6 +1491,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         ownerUserID: r.ownerUserID === '' ? 0 : r.ownerUserID,
         receivedDate: r.receivedDate,
         completedDate: r.completedDate,
+        percentComplete: r.percentComplete,
         notes: r.notes,
         sortOrder: r.sortOrder,
       })),
@@ -1663,6 +1673,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             ownerUserID: row.ownerUserID === '' ? null : row.ownerUserID,
             receivedDate: row.receivedDate ? row.receivedDate : null,
             completedDate: row.completedDate ? row.completedDate : null,
+            percentComplete: Math.min(100, Math.max(0, Math.round(Number(row.percentComplete) || 0))),
             notes: row.notes.trim().length > 0 ? row.notes.trim() : null,
             sortOrder: index,
             isActive: true,
@@ -1807,6 +1818,16 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         if (saveCalendar) {
           setBaselineCalendarItems(JSON.parse(JSON.stringify(calendarItems)) as ProjectCalendarItemDraft[]);
         }
+      }
+    }
+
+    if (saveCalendar && !tabs.includes('notes')) {
+      try {
+        const refreshedNotes = await apiGet<ProjectNoteRow[]>(`/api/projects/${projectId}/notes`);
+        setNotes(refreshedNotes);
+        setBaselineNotes(JSON.parse(JSON.stringify(refreshedNotes)) as ProjectNoteRow[]);
+      } catch {
+        /* notes refresh is best-effort after calendar save */
       }
     }
   };
@@ -2829,6 +2850,22 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 value={calendarEditDraft.notes}
                 onChange={(e) => setCalendarEditDraft({ ...calendarEditDraft, notes: e.target.value })}
                 rows={5}
+                placeholder="Add note"
+              />
+
+              <label htmlFor="cal-edit-percent">% Complete</label>
+              <input
+                id="cal-edit-percent"
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={calendarEditDraft.percentComplete}
+                onChange={(e) => {
+                  const raw = e.target.value === '' ? 0 : Number(e.target.value);
+                  const next = Number.isFinite(raw) ? Math.min(100, Math.max(0, Math.round(raw))) : 0;
+                  setCalendarEditDraft({ ...calendarEditDraft, percentComplete: next });
+                }}
               />
             </div>
             <div className="home-modal-actions">
@@ -3806,13 +3843,14 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                         <th>Received</th>
                         <th>Completed</th>
                         <th>Notes</th>
+                        <th>% Complete</th>
                         <th>&nbsp;</th>
                       </tr>
                     </thead>
                     <tbody>
                       {calendarItems.length === 0 ? (
                         <tr>
-                          <td colSpan={7}>No calendar items yet. Click Add row, or add services from the Services tab.</td>
+                          <td colSpan={8}>No calendar items yet. Click Add row, or add services from the Services tab.</td>
                         </tr>
                       ) : (
                         calendarItems.map((row) => (
@@ -3911,8 +3949,30 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                                   e.stopPropagation();
                                   openCalendarEdit(row);
                                 }}
-                                placeholder="Notes"
+                                placeholder="Add note"
                                 aria-label="Calendar item notes"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="project-calendar-cell-input project-calendar-percent-input"
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={1}
+                                value={row.percentComplete}
+                                onChange={(e) => {
+                                  const raw = e.target.value === '' ? 0 : Number(e.target.value);
+                                  const next = Number.isFinite(raw)
+                                    ? Math.min(100, Math.max(0, Math.round(raw)))
+                                    : 0;
+                                  updateCalendarItem(row.tempId, { percentComplete: next });
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  openCalendarEdit(row);
+                                }}
+                                aria-label="Percent complete"
                               />
                             </td>
                             <td>
@@ -4122,6 +4182,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                       <td>{formatCalendarDateDisplay(n.noteDate)}</td>
                       <td>
                         {n.noteType ?? ''}
+                        {(n.calendarItemTitle ?? '').trim()
+                          ? ` — ${(n.calendarItemTitle ?? '').trim()}`
+                          : ''}
                         {n.isPinned ? ' (pinned)' : ''}
                         {n.noteID < 0 ? ' (pending save)' : ''}
                       </td>

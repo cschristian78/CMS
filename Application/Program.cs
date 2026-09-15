@@ -5,6 +5,7 @@ using ClientManagementSystem.Models;
 using ClientManagementSystem.Security;
 using ClientManagementSystem.Serialization;
 using ClientManagementSystem.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 
@@ -37,6 +38,39 @@ builder.Services
     .SetApplicationName("ClientManagementSystem")
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath));
 
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "cms.auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(12);
+        options.Events.OnRedirectToLogin = context =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            }
+
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return Task.CompletedTask;
+            }
+
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
+    });
+
 builder.Services.AddSingleton<ISecureConnectionSettingsStore, SecureConnectionSettingsStore>();
 builder.Services.AddSingleton<IUserPhotoStorage>(sp =>
 {
@@ -67,6 +101,7 @@ builder.Services.AddScoped<IDataAuditRepository, DataAuditRepository>();
 builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IHomeRepository, HomeRepository>();
 builder.Services.AddScoped<ITmsRepository, TmsRepository>();
+builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 
 builder.Services.AddScoped<IClientService, ClientService>();
 builder.Services.AddScoped<IProjectService, ClientManagementSystem.Services.ProjectService>();
@@ -74,6 +109,7 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IClientProjectListService, ClientProjectListService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITmsService, TmsService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<HomeClientProjectBulkImportService>();
 builder.Services.AddScoped<IHomeService, HomeService>();
 builder.Services.AddHttpClient();
@@ -128,7 +164,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-// Authentication and authorization can be added here when the firm's identity provider is selected.
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
@@ -158,5 +194,22 @@ app.MapFallback(async context =>
     context.Response.ContentType = "text/html; charset=utf-8";
     await context.Response.SendFileAsync(indexPath);
 });
+
+try
+{
+    using var scope = app.Services.CreateScope();
+    var auth = scope.ServiceProvider.GetRequiredService<IAuthService>();
+    auth.EnsureSchemaAsync().GetAwaiter().GetResult();
+    var admin = scope.ServiceProvider.GetRequiredService<IAdminRepository>();
+    admin.EnsureUserTypeOptionsAsync().GetAwaiter().GetResult();
+    var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
+    projects.EnsureProjectNoteSchemaAsync().GetAwaiter().GetResult();
+    projects.EnsureProjectCalendarSchemaAsync().GetAwaiter().GetResult();
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    logger.LogWarning(ex, "Could not ensure login/user-type/note/calendar schema at startup. It will retry on first use.");
+}
 
 app.Run();

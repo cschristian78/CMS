@@ -15,6 +15,7 @@ public interface IAdminRepository
     Task<IReadOnlyList<UserContactInfo>> GetUserContactInfoByIdsAsync(IEnumerable<int> userIds, CancellationToken cancellationToken = default);
 
     Task<int> SaveUserAsync(User user, CancellationToken cancellationToken = default);
+    Task EnsureUserTypeOptionsAsync(CancellationToken cancellationToken = default);
     Task<int> CreateUserWithPrimaryAddressAsync(User user, UserAddress? primaryAddress, CancellationToken cancellationToken = default);
     Task<int> SoftDeleteUserAsync(int userId, CancellationToken cancellationToken = default);
     Task<int> RestoreUserAsync(int userId, CancellationToken cancellationToken = default);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { FlashFn } from '../App';
 import { ApiError, apiGet, apiPostJson } from '../api';
+import { fetchAuthSession } from '../authSession';
 import { setCatAppMode } from '../catAppMode';
 import { formatCalendarDateDisplay, toInputDateValue } from '../utils/dateInput';
 
@@ -145,6 +146,7 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
   const [addCategory, setAddCategory] = useState<string>(DEFAULT_OTHER[0]);
   const [activeTab, setActiveTab] = useState<TmsTimeTab>('client');
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<number>>(() => new Set());
+  const [canSelectAnyUser, setCanSelectAnyUser] = useState(false);
 
   const weekDays = useMemo(
     () => DAY_LABELS.map((label, i) => ({ label, date: addDays(weekStart, i), ymd: toYmd(addDays(weekStart, i)) })),
@@ -176,20 +178,67 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
     (async () => {
       setLoadingUsers(true);
       try {
-        const raw = await apiGet<unknown>('/api/tms/cat-users');
+        const [session, raw] = await Promise.all([
+          fetchAuthSession(),
+          apiGet<unknown>('/api/tms/cat-users'),
+        ]);
         const rows = Array.isArray(raw) ? raw : [];
         if (cancelled) {
           return;
         }
-        setCatUsers(
-          rows
-            .map((row) => normalizeCatUser(row as Record<string, unknown>))
-            .filter((x): x is CatUser => x !== null),
-        );
+        const allUsers = rows
+          .map((row) => normalizeCatUser(row as Record<string, unknown>))
+          .filter((x): x is CatUser => x !== null)
+          .sort((a, b) => a.userFullName.localeCompare(b.userFullName));
+        const sessionUserId = session.authenticated ? Number(session.userID ?? 0) : 0;
+        const sessionEmail = (session.email ?? '').trim().toLowerCase();
+        const sessionName = (session.fullName ?? '').trim().toLowerCase();
+        const isAdmin =
+          session.authenticated &&
+          (session.userType ?? '').trim().toLowerCase() === 'administrator';
+
+        const matched =
+          (sessionUserId > 0 ? allUsers.find((u) => u.userID === sessionUserId) : undefined) ??
+          (sessionEmail
+            ? allUsers.find((u) => (u.email ?? '').trim().toLowerCase() === sessionEmail)
+            : undefined) ??
+          (sessionName
+            ? allUsers.find((u) => u.userFullName.trim().toLowerCase() === sessionName)
+            : undefined);
+
+        if (isAdmin) {
+          if (allUsers.length === 0) {
+            setCatUsers([]);
+            setSelectedUserId('');
+            setCanSelectAnyUser(false);
+            flash('error', 'No active CAT users are available for time review.');
+            return;
+          }
+          setCanSelectAnyUser(true);
+          setCatUsers(allUsers);
+          setSelectedUserId(matched?.userID ?? allUsers[0].userID);
+          return;
+        }
+
+        setCanSelectAnyUser(false);
+        if (!matched) {
+          setCatUsers([]);
+          setSelectedUserId('');
+          flash(
+            'error',
+            'Your signed-in account is not in the CAT department list, so time tracking is unavailable.',
+          );
+          return;
+        }
+
+        setCatUsers([matched]);
+        setSelectedUserId(matched.userID);
       } catch (err) {
         if (!cancelled) {
           flash('error', err instanceof ApiError ? err.message : 'Could not load CAT users.');
           setCatUsers([]);
+          setSelectedUserId('');
+          setCanSelectAnyUser(false);
         }
       } finally {
         if (!cancelled) {
@@ -438,30 +487,48 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
         <p>
-          Select a CAT department user, then enter weekly hours under Client Time (projects) or Non-Client Time
-          (meetings, PTO, and other categories). Save applies to both tabs for the selected week.
+          {canSelectAnyUser
+            ? 'As an Administrator, you can select any CAT user to review or enter weekly time. Save applies to both tabs for the selected week.'
+            : 'Time entry is locked to your signed-in CAT account. Enter weekly hours under Client Time (projects) or Non-Client Time (meetings, PTO, and other categories). Save applies to both tabs for the selected week.'}
         </p>
       </section>
 
       <section className="card admin-card tms-tracker-card">
         <div className="form-grid tms-user-week-bar">
           <label htmlFor="tms-cat-user">CAT user</label>
-          <select
-            id="tms-cat-user"
-            value={selectedUserId === '' ? '' : String(selectedUserId)}
-            disabled={loadingUsers || saving}
-            onChange={(e) => {
-              const value = e.target.value;
-              setSelectedUserId(value ? Number(value) : '');
-            }}
-          >
-            <option value="">{loadingUsers ? 'Loading users…' : 'Select a CAT user'}</option>
-            {catUsers.map((user) => (
-              <option key={user.userID} value={user.userID}>
-                {user.userFullName}
-              </option>
-            ))}
-          </select>
+          {canSelectAnyUser ? (
+            <select
+              id="tms-cat-user"
+              value={selectedUserId === '' ? '' : String(selectedUserId)}
+              disabled={loadingUsers || saving}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setSelectedUserId(Number.isFinite(next) && next > 0 ? next : '');
+              }}
+            >
+              {loadingUsers ? <option value="">Loading CAT users…</option> : null}
+              {!loadingUsers && catUsers.length === 0 ? (
+                <option value="">No CAT users available</option>
+              ) : null}
+              {catUsers.map((u) => (
+                <option key={u.userID} value={u.userID}>
+                  {u.userFullName}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="tms-cat-user"
+              type="text"
+              readOnly
+              aria-readonly="true"
+              value={
+                loadingUsers
+                  ? 'Loading signed-in user…'
+                  : selectedUser?.userFullName ?? 'Signed-in CAT user unavailable'
+              }
+            />
+          )}
 
           <span className="field-label">Week</span>
           <div className="page-header-actions project-services-select-actions project-time-week-nav">
@@ -505,9 +572,9 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
 
-        {selectedUserId === '' ? (
+        {selectedUserId === '' && !loadingUsers ? (
           <p className="field-help" role="status">
-            Choose a CAT department user to load their projects and weekly time grid.
+            Sign in with a CAT department account to load your projects and weekly time grid.
           </p>
         ) : null}
 

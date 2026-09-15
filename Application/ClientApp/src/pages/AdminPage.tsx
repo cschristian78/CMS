@@ -719,12 +719,16 @@ function dataAuditCheckGroupKey(check: DataAuditCheck): string {
   if (id.startsWith('user-groups-') || title.startsWith('user groups ')) {
     return 'user-groups';
   }
+  if (id.startsWith('user-logins-') || title.startsWith('user login')) {
+    return 'logins';
+  }
   return 'other';
 }
 
 const DATA_AUDIT_GROUP_ORDER: { key: string; label: string }[] = [
   { key: 'projects', label: 'Projects' },
   { key: 'user-groups', label: 'User groups' },
+  { key: 'logins', label: 'Logins' },
   { key: 'other', label: 'Other' },
 ];
 
@@ -875,6 +879,19 @@ function safeInternalReturnPath(raw: string | null): string | null {
   return s;
 }
 
+type UserTypeOption = 'Basic' | 'External' | 'Administrator';
+
+function normalizeUserType(value?: string | null): UserTypeOption {
+  const v = (value ?? '').trim().toLowerCase();
+  if (v === 'external') {
+    return 'External';
+  }
+  if (v === 'administrator') {
+    return 'Administrator';
+  }
+  return 'Basic';
+}
+
 export default function AdminPage({ flash }: { flash: FlashFn }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -993,7 +1010,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     email: '',
     phone: '',
     company: 'BMS',
-    userType: 'Internal' as 'Internal' | 'External',
+    userType: 'Basic' as 'Basic' | 'External' | 'Administrator',
     address: '',
     addressType: 'Work',
     city: '',
@@ -1169,7 +1186,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       email: '',
       phone: '',
       company: 'BMS',
-      userType: 'Internal',
+      userType: 'Basic',
       address: '',
       addressType: 'Work',
       city: '',
@@ -1217,7 +1234,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       email: u.email ?? '',
       phone: u.phone ?? '',
       company: u.company ?? 'BMS',
-      userType: (u.userType === 'External' ? 'External' : 'Internal') as 'Internal' | 'External',
+      userType: normalizeUserType(u.userType),
       address: addr?.address1 ?? '',
       addressType: addr?.addressType ?? 'Work',
       city: addr?.city ?? '',
@@ -3628,12 +3645,13 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 <select
                   value={userForm.userType}
                   onChange={(e) =>
-                    setUserForm({ ...userForm, userType: e.target.value === 'External' ? 'External' : 'Internal' })
+                    setUserForm({ ...userForm, userType: normalizeUserType(e.target.value) })
                   }
-                  aria-label="User type (Internal or External)"
+                  aria-label="User type (Basic, External, or Administrator)"
                 >
-                  <option value="Internal">Internal</option>
+                  <option value="Basic">Basic</option>
                   <option value="External">External</option>
+                  <option value="Administrator">Administrator</option>
                 </select>
                 <label>Address type</label>
                 <select
@@ -5038,8 +5056,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
         <div id="admin-tab-data-audit" className={'admin-tab-panel' + (tab === 'dataAudit' ? ' active' : '')}>
           <h2>Data Audit</h2>
           <p className="field-help">
-            Client → Project → User Group → User linkage checks. Run the report to refresh counts and drill into
-            findings.
+            Client → Project → User Group → User linkage checks, plus CAT user login counts. Run the report to refresh
+            counts and drill into findings.
           </p>
           <div className="button-row wrap-buttons">
             <button
@@ -5098,15 +5116,24 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   <div className="admin-data-audit-detail">
                     <h3 className="admin-subheading">{selected.title}</h3>
                     <p className="field-help">{selected.description}</p>
-                    {selected.count === 0 ? (
+                    {selected.rows.length === 0 ? (
                       <p className="field-help" role="status">
-                        No findings for this check.
+                        {selected.checkId === 'user-logins-activity'
+                          ? 'No CAT users available for login tracking.'
+                          : 'No findings for this check.'}
                       </p>
                     ) : (
                       <>
-                        <p className="field-help">
-                          Double-click a row with a user group (UGID) to open that group on the UserGroup tab.
-                        </p>
+                        {selected.checkId === 'user-logins-activity' ? (
+                          <p className="field-help">
+                            Card count is total successful launches across CAT users. Each row shows that user&apos;s
+                            login total and last sign-in (UTC).
+                          </p>
+                        ) : (
+                          <p className="field-help">
+                            Double-click a row with a user group (UGID) to open that group on the UserGroup tab.
+                          </p>
+                        )}
                         <div className="admin-usergroup-table-wrap admin-data-audit-table-wrap">
                           <table
                             className="admin-usergroup-table admin-data-audit-table"

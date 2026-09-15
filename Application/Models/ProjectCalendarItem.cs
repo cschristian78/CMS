@@ -20,6 +20,9 @@ public sealed class ProjectCalendarItem
     /// <summary>Date-only; JSON typically posts as <c>yyyy-MM-dd</c>.</summary>
     public DateTime? CompletedDate { get; set; }
 
+    /// <summary>0–100 progress for the calendar row.</summary>
+    public int PercentComplete { get; set; }
+
     public string? Notes { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;

@@ -37,12 +37,16 @@ public interface IProjectService
     Task<int> DeleteRevenueAsync(int revenueId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default);
-    Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
+    Task<int> AddNoteAsync(ProjectNote note, int actingUserId = 0, CancellationToken cancellationToken = default);
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(int projectId, CancellationToken cancellationToken = default);
-    Task<int> SaveCalendarItemsAsync(int projectId, IReadOnlyList<ProjectCalendarItem> items, CancellationToken cancellationToken = default);
+    Task<int> SaveCalendarItemsAsync(
+        int projectId,
+        IReadOnlyList<ProjectCalendarItem> items,
+        int actingUserId = 0,
+        CancellationToken cancellationToken = default);
     Task<ProjectTimeWeekResponse> GetTimeWeekAsync(
         int projectId,
         DateTime weekStartDate,

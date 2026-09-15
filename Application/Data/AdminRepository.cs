@@ -108,8 +108,148 @@ public sealed class AdminRepository : IAdminRepository
 
     // -- USERS -----------------------------------------------------------
 
+    public async Task EnsureUserTypeOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            IF EXISTS (
+                SELECT 1
+                  FROM sys.check_constraints
+                 WHERE name = N'CK_tUser_UserType'
+                   AND parent_object_id = OBJECT_ID(N'dbo.tUser')
+            )
+            BEGIN
+                ALTER TABLE dbo.tUser DROP CONSTRAINT CK_tUser_UserType;
+            END;
+
+            UPDATE dbo.tUser
+               SET UserType = N'Basic',
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE UserType = N'Internal';
+
+            UPDATE dbo.tUser
+               SET UserType = N'Administrator',
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE (
+                       LOWER(LTRIM(RTRIM(Email))) = N'scott.christian@bmsgroup.com'
+                    OR (
+                           LOWER(LTRIM(RTRIM(FirstName))) = N'scott'
+                       AND LOWER(LTRIM(RTRIM(LastName))) = N'christian'
+                       )
+                   )
+               AND IsActive = 1;
+
+            IF NOT EXISTS (
+                SELECT 1
+                  FROM sys.check_constraints
+                 WHERE name = N'CK_tUser_UserType'
+                   AND parent_object_id = OBJECT_ID(N'dbo.tUser')
+            )
+            BEGIN
+                ALTER TABLE dbo.tUser
+                    ADD CONSTRAINT CK_tUser_UserType
+                    CHECK (UserType IN (N'Basic', N'External', N'Administrator'));
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(sql, cancellationToken: cancellationToken);
+
+        // Keep create SP validation aligned with the new allowed values.
+        const string spSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_User_CreateWithPrimaryAddress
+                @FirstName                    VARCHAR(50),
+                @LastName                     VARCHAR(50),
+                @Title                        VARCHAR(100) = NULL,
+                @Email                        VARCHAR(150),
+                @Phone                        VARCHAR(30) = NULL,
+                @Company                      VARCHAR(150) = NULL,
+                @Department                   VARCHAR(100) = NULL,
+                @UserType                     VARCHAR(20),
+                @AddressType                  VARCHAR(20) = NULL,
+                @Address1                     VARCHAR(200) = NULL,
+                @Address2                     VARCHAR(200) = NULL,
+                @City                         VARCHAR(100) = NULL,
+                @State                        VARCHAR(50)  = NULL,
+                @PostalCode                   VARCHAR(20)  = NULL,
+                @Country                      VARCHAR(50)  = NULL,
+                @ActingUserID                INT,
+                @NewUserID                   INT OUTPUT,
+                @NewAddressID                INT = NULL OUTPUT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                IF @UserType NOT IN ('Basic', 'External', 'Administrator')
+                    THROW 50003, 'UserType must be Basic, External, or Administrator.', 1;
+
+                IF EXISTS (SELECT 1 FROM dbo.tUser WHERE Email = @Email AND IsActive = 1)
+                    THROW 50004, 'Email already exists.', 1;
+
+                SET @NewAddressID = NULL;
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserType)
+                    VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserType);
+
+                    SET @NewUserID = SCOPE_IDENTITY();
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'User',
+                        @EntityID   = @NewUserID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Insert';
+
+                    IF NULLIF(LTRIM(RTRIM(@Address1)), '') IS NOT NULL
+                    BEGIN
+                        DECLARE @AddrType VARCHAR(20) = COALESCE(NULLIF(LTRIM(RTRIM(@AddressType)), ''), 'Work');
+                        DECLARE @AddrCountry VARCHAR(50) = COALESCE(NULLIF(LTRIM(RTRIM(@Country)), ''), 'US');
+
+                        INSERT INTO dbo.tAddress (Address1, Address2, City, State, PostalCode, Country)
+                        VALUES (
+                            LTRIM(RTRIM(@Address1)),
+                            @Address2,
+                            @City,
+                            @State,
+                            @PostalCode,
+                            @AddrCountry
+                        );
+
+                        SET @NewAddressID = SCOPE_IDENTITY();
+
+                        EXEC dbo.usp_ActivityLog_Insert
+                            @EntityType = 'Address',
+                            @EntityID   = @NewAddressID,
+                            @UserID     = @ActingUserID,
+                            @Action     = 'Insert';
+
+                        INSERT INTO dbo.tUserAddressRef (UserID, AddressID, AddressType, IsPrimary)
+                        VALUES (@NewUserID, @NewAddressID, @AddrType, 1);
+
+                        EXEC dbo.usp_ActivityLog_Insert
+                            @EntityType = 'UserAddressRef',
+                            @EntityID   = @NewUserID,
+                            @UserID     = @ActingUserID,
+                            @Action     = 'Insert';
+                    END;
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(spSql, cancellationToken: cancellationToken);
+    }
+
     public async Task<int> SaveUserAsync(User user, CancellationToken cancellationToken = default)
     {
+        await EnsureUserTypeOptionsAsync(cancellationToken);
+
         if (user.UserID > 0)
         {
             await _db.ExecuteAsync("dbo.usp_User_Update", BuildUserUpdateParameters(user), cancellationToken);
@@ -136,6 +276,8 @@ public sealed class AdminRepository : IAdminRepository
 
     public async Task<int> CreateUserWithPrimaryAddressAsync(User user, UserAddress? primaryAddress, CancellationToken cancellationToken = default)
     {
+        await EnsureUserTypeOptionsAsync(cancellationToken);
+
         var userOutput = SqlParameterFactory.OutputInt("@NewUserID");
         var addressOutput = SqlParameterFactory.OutputInt("@NewAddressID");
         var parameters = new List<SqlParameter>

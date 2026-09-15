@@ -4,7 +4,7 @@ namespace ClientManagementSystem.Models;
 
 /// <summary>Mirrors <c>dbo.tUser</c> + <c>dbo.vUser</c>. In the CMS_PhaseI_All schema the inline
 /// address columns moved out to <c>dbo.tUserAddress</c>; the user row gains <see cref="UserType"/>
-/// (<c>Internal</c>/<c>External</c>) and soft-delete fields.</summary>
+/// (<c>Basic</c>/<c>External</c>/<c>Administrator</c>) and soft-delete fields.</summary>
 public sealed class User
 {
     public int UserID { get; set; }
@@ -36,10 +36,10 @@ public sealed class User
     [MaxLength(100)]
     public string? Department { get; set; }
 
-    /// <summary>'Internal' or 'External' per <c>CK_tUser_UserType</c>.</summary>
+    /// <summary>'Basic', 'External', or 'Administrator' per <c>CK_tUser_UserType</c>.</summary>
     [Required]
     [MaxLength(20)]
-    public string UserType { get; set; } = "Internal";
+    public string UserType { get; set; } = "Basic";
 
     public int StatusID { get; set; }
     public string? StatusCode { get; set; }

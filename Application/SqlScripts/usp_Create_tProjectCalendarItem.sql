@@ -26,6 +26,9 @@ BEGIN
                 REFERENCES dbo.tUser (UserID),
         ReceivedDate     DATE           NULL,
         CompletedDate    DATE           NULL,
+        PercentComplete  TINYINT        NOT NULL
+            CONSTRAINT DF_tProjectCalendarItem_PercentComplete DEFAULT (0)
+            CONSTRAINT CK_tProjectCalendarItem_PercentComplete CHECK (PercentComplete BETWEEN 0 AND 100),
         Notes            NVARCHAR(MAX)  NULL,
         SortOrder        INT            NOT NULL
             CONSTRAINT DF_tProjectCalendarItem_SortOrder DEFAULT (0),
@@ -73,6 +76,7 @@ BEGIN
         END,
         ci.ReceivedDate,
         ci.CompletedDate,
+        ci.PercentComplete,
         ci.Notes,
         ci.SortOrder,
         ci.IsActive,
@@ -95,6 +99,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_ProjectCalendarItem_Create
     @OwnerUserID      INT = NULL,
     @ReceivedDate     DATE = NULL,
     @CompletedDate    DATE = NULL,
+    @PercentComplete  TINYINT = 0,
     @Notes            NVARCHAR(MAX) = NULL,
     @SortOrder        INT = 0,
     @ActingUserID     INT,
@@ -110,6 +115,9 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@Title)), N'') IS NULL
         THROW 50002, 'Title is required.', 1;
 
+    IF @PercentComplete > 100
+        THROW 50004, 'PercentComplete must be between 0 and 100.', 1;
+
     IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID AND IsActive = 1)
         THROW 50003, 'ProjectRef not found or inactive.', 1;
 
@@ -119,7 +127,7 @@ BEGIN
         INSERT INTO dbo.tProjectCalendarItem
         (
             ProjectRefID, ItemType, Title, OwnerUserID,
-            ReceivedDate, CompletedDate, Notes, SortOrder
+            ReceivedDate, CompletedDate, PercentComplete, Notes, SortOrder
         )
         VALUES
         (
@@ -129,6 +137,7 @@ BEGIN
             @OwnerUserID,
             @ReceivedDate,
             @CompletedDate,
+            @PercentComplete,
             @Notes,
             @SortOrder
         );
@@ -157,6 +166,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_ProjectCalendarItem_Update
     @OwnerUserID      INT = NULL,
     @ReceivedDate     DATE = NULL,
     @CompletedDate    DATE = NULL,
+    @PercentComplete  TINYINT = 0,
     @Notes            NVARCHAR(MAX) = NULL,
     @SortOrder        INT = 0,
     @ActingUserID     INT
@@ -174,6 +184,9 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@Title)), N'') IS NULL
         THROW 50003, 'Title is required.', 1;
 
+    IF @PercentComplete > 100
+        THROW 50004, 'PercentComplete must be between 0 and 100.', 1;
+
     BEGIN TRY
         BEGIN TRAN;
 
@@ -183,6 +196,7 @@ BEGIN
                OwnerUserID = @OwnerUserID,
                ReceivedDate = @ReceivedDate,
                CompletedDate = @CompletedDate,
+               PercentComplete = @PercentComplete,
                Notes = @Notes,
                SortOrder = @SortOrder,
                ModifiedDate = SYSUTCDATETIME()

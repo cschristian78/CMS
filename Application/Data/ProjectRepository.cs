@@ -392,29 +392,176 @@ public sealed class ProjectRepository : IProjectRepository
         }
     }
 
-    public Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default)
+    public async Task EnsureProjectNoteSchemaAsync(CancellationToken cancellationToken = default)
     {
+        // Each ALTER that references a newly added column must run in its own batch.
+        const string addColumnsSql = """
+            IF OBJECT_ID(N'dbo.tProjectNote', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'CreatedByUserID') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote ADD CreatedByUserID INT NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'CalendarItemID') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote ADD CalendarItemID INT NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'CalendarItemTitle') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote ADD CalendarItemTitle NVARCHAR(200) NULL;
+            END;
+            """;
+
+        const string addCreatedByFkSql = """
+            IF OBJECT_ID(N'dbo.tProjectNote', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'CreatedByUserID') IS NULL
+                RETURN;
+
+            IF OBJECT_ID(N'dbo.FK_tProjectNote_CreatedByUserID', N'F') IS NULL
+               AND OBJECT_ID(N'dbo.tUser', N'U') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote
+                    ADD CONSTRAINT FK_tProjectNote_CreatedByUserID
+                    FOREIGN KEY (CreatedByUserID) REFERENCES dbo.tUser (UserID);
+            END;
+            """;
+
+        const string addCalendarFkSql = """
+            IF OBJECT_ID(N'dbo.tProjectNote', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'CalendarItemID') IS NULL
+                RETURN;
+
+            IF OBJECT_ID(N'dbo.FK_tProjectNote_CalendarItemID', N'F') IS NULL
+               AND OBJECT_ID(N'dbo.tProjectCalendarItem', N'U') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote
+                    ADD CONSTRAINT FK_tProjectNote_CalendarItemID
+                    FOREIGN KEY (CalendarItemID) REFERENCES dbo.tProjectCalendarItem (CalendarItemID);
+            END;
+            """;
+
+        const string addIndexSql = """
+            SET QUOTED_IDENTIFIER ON;
+
+            IF OBJECT_ID(N'dbo.tProjectNote', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'CalendarItemID') IS NULL
+                RETURN;
+
+            IF NOT EXISTS (
+                SELECT 1
+                  FROM sys.indexes
+                 WHERE name = N'IX_tProjectNote_CalendarItemID'
+                   AND object_id = OBJECT_ID(N'dbo.tProjectNote')
+            )
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_tProjectNote_CalendarItemID
+                    ON dbo.tProjectNote (CalendarItemID)
+                    WHERE CalendarItemID IS NOT NULL;
+            END;
+            """;
+
+        const string procSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectNote_Create
+                @ProjectRefID                 INT,
+                @NoteDate                     DATETIME2(0),
+                @NoteType                     VARCHAR(30),
+                @NoteText                     NVARCHAR(MAX),
+                @IsPinned                     BIT,
+                @ActingUserID                 INT,
+                @CreatedByUserID              INT = NULL,
+                @CalendarItemID               INT = NULL,
+                @CalendarItemTitle            NVARCHAR(200) = NULL,
+                @NewNoteID                    INT OUTPUT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    INSERT INTO dbo.tProjectNote (
+                        ProjectRefID,
+                        NoteDate,
+                        NoteType,
+                        NoteText,
+                        IsPinned,
+                        CreatedByUserID,
+                        CalendarItemID,
+                        CalendarItemTitle
+                    )
+                    VALUES (
+                        @ProjectRefID,
+                        @NoteDate,
+                        @NoteType,
+                        @NoteText,
+                        @IsPinned,
+                        @CreatedByUserID,
+                        @CalendarItemID,
+                        @CalendarItemTitle
+                    );
+
+                    SET @NewNoteID = SCOPE_IDENTITY();
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'ProjectNote',
+                        @EntityID   = @NewNoteID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Insert';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(addColumnsSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(addCreatedByFkSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(addCalendarFkSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(addIndexSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(procSql, cancellationToken: cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        await EnsureProjectNoteSchemaAsync(cancellationToken);
+
         const string sql = """
             SELECT
                 pn.NoteID,
                 p.ProjectID,
-                NoteUserID = CAST(NULL AS INT),
-                UserFullName = CAST(NULL AS NVARCHAR(200)),
+                NoteUserID = pn.CreatedByUserID,
+                UserFullName = LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))),
                 pn.NoteDate,
                 pn.NoteType,
                 pn.NoteText,
                 pn.IsPinned,
+                pn.CalendarItemID,
+                pn.CalendarItemTitle,
                 pn.CreatedDate,
                 pn.ModifiedDate
               FROM dbo.tProjectNote AS pn
               INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = pn.ProjectRefID AND pr.IsActive = 1
               INNER JOIN dbo.tProject AS p ON p.ProjectID = pr.ProjectID
+              LEFT JOIN dbo.tUser AS u ON u.UserID = pn.CreatedByUserID
              WHERE p.ProjectID = @ProjectID
                AND pn.IsActive = 1
              ORDER BY pn.NoteDate DESC, pn.NoteID DESC;
             """;
 
-        return _db.QueryTextAsync(sql, MapNote,
+        return await _db.QueryTextAsync(sql, MapNote,
         [
             SqlParameterFactory.Int("@ProjectID", projectId)
         ], cancellationToken);
@@ -427,8 +574,16 @@ public sealed class ProjectRepository : IProjectRepository
             throw new InvalidOperationException("ProjectID is required.");
         }
 
+        await EnsureProjectNoteSchemaAsync(cancellationToken);
+
         var projectRefId = await ResolveProjectRefIdForProjectAsync(note.ProjectID, cancellationToken);
         var noteDate = note.NoteDate == default ? DateTime.UtcNow : note.NoteDate;
+        var actingUserId = note.UserID > 0 ? note.UserID : CmsDefaults.ActingUserId;
+        var createdByUserId = note.UserID > 0 ? note.UserID : (int?)null;
+        var calendarItemId = note.CalendarItemID is > 0 ? note.CalendarItemID : null;
+        var calendarItemTitle = string.IsNullOrWhiteSpace(note.CalendarItemTitle)
+            ? null
+            : note.CalendarItemTitle.Trim();
         var output = SqlParameterFactory.OutputInt("@NewNoteID");
         await _db.ExecuteWithOutputIntAsync(
             "dbo.usp_ProjectNote_Create",
@@ -438,7 +593,10 @@ public sealed class ProjectRepository : IProjectRepository
                 SqlParameterFactory.VarChar("@NoteType", 30, note.NoteType),
                 SqlParameterFactory.NVarChar("@NoteText", -1, note.NoteText),
                 SqlParameterFactory.Bit("@IsPinned", note.IsPinned),
-                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
+                SqlParameterFactory.Int("@ActingUserID", actingUserId),
+                SqlParameterFactory.Int("@CreatedByUserID", createdByUserId),
+                SqlParameterFactory.Int("@CalendarItemID", calendarItemId),
+                SqlParameterFactory.NVarChar("@CalendarItemTitle", 200, calendarItemTitle),
                 output
             ],
             "@NewNoteID",
@@ -467,22 +625,227 @@ public sealed class ProjectRepository : IProjectRepository
         return noteId;
     }
 
-    public Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(
+    public async Task EnsureProjectCalendarSchemaAsync(CancellationToken cancellationToken = default)
+    {
+        // Keep ADD COLUMN in its own batch. SQL Server cannot compile a CHECK on a column
+        // that is added in the same batch (Invalid column name 'PercentComplete').
+        const string addColumnSql = """
+            IF OBJECT_ID(N'dbo.tProjectCalendarItem', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectCalendarItem', N'PercentComplete') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectCalendarItem
+                    ADD PercentComplete TINYINT NOT NULL
+                        CONSTRAINT DF_tProjectCalendarItem_PercentComplete DEFAULT (0);
+            END;
+            """;
+
+        const string addCheckSql = """
+            IF OBJECT_ID(N'dbo.tProjectCalendarItem', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectCalendarItem', N'PercentComplete') IS NULL
+                RETURN;
+
+            IF OBJECT_ID(N'dbo.CK_tProjectCalendarItem_PercentComplete', N'C') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectCalendarItem
+                    ADD CONSTRAINT CK_tProjectCalendarItem_PercentComplete
+                    CHECK (PercentComplete BETWEEN 0 AND 100);
+            END;
+            """;
+
+        const string listSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectCalendarItem_ListByProject
+                @ProjectID INT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+
+                SELECT
+                    ci.CalendarItemID,
+                    p.ProjectID,
+                    ci.ProjectRefID,
+                    ci.ItemType,
+                    ci.Title,
+                    ci.OwnerUserID,
+                    OwnerFullName = CASE
+                        WHEN u.UserID IS NULL THEN NULL
+                        ELSE LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName)))
+                    END,
+                    ci.ReceivedDate,
+                    ci.CompletedDate,
+                    ci.PercentComplete,
+                    ci.Notes,
+                    ci.SortOrder,
+                    ci.IsActive,
+                    ci.CreatedDate,
+                    ci.ModifiedDate
+                  FROM dbo.tProjectCalendarItem AS ci
+                  INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = ci.ProjectRefID AND pr.IsActive = 1
+                  INNER JOIN dbo.tProject AS p ON p.ProjectID = pr.ProjectID
+                  LEFT JOIN dbo.tUser AS u ON u.UserID = ci.OwnerUserID
+                 WHERE p.ProjectID = @ProjectID
+                   AND ci.IsActive = 1
+                 ORDER BY ci.SortOrder, ci.CalendarItemID;
+            END;
+            """;
+
+        const string createSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectCalendarItem_Create
+                @ProjectRefID     INT,
+                @ItemType         VARCHAR(30),
+                @Title            NVARCHAR(200),
+                @OwnerUserID      INT = NULL,
+                @ReceivedDate     DATE = NULL,
+                @CompletedDate    DATE = NULL,
+                @PercentComplete  TINYINT = 0,
+                @Notes            NVARCHAR(MAX) = NULL,
+                @SortOrder        INT = 0,
+                @ActingUserID     INT,
+                @NewCalendarItemID INT OUTPUT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                IF @ItemType NOT IN ('Deliverable', 'Meeting', 'Task', 'Other')
+                    THROW 50001, 'ItemType must be Deliverable, Meeting, Task, or Other.', 1;
+
+                IF NULLIF(LTRIM(RTRIM(@Title)), N'') IS NULL
+                    THROW 50002, 'Title is required.', 1;
+
+                IF @PercentComplete > 100
+                    THROW 50004, 'PercentComplete must be between 0 and 100.', 1;
+
+                IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID AND IsActive = 1)
+                    THROW 50003, 'ProjectRef not found or inactive.', 1;
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    INSERT INTO dbo.tProjectCalendarItem
+                    (
+                        ProjectRefID, ItemType, Title, OwnerUserID,
+                        ReceivedDate, CompletedDate, PercentComplete, Notes, SortOrder
+                    )
+                    VALUES
+                    (
+                        @ProjectRefID,
+                        @ItemType,
+                        LTRIM(RTRIM(@Title)),
+                        @OwnerUserID,
+                        @ReceivedDate,
+                        @CompletedDate,
+                        @PercentComplete,
+                        @Notes,
+                        @SortOrder
+                    );
+
+                    SET @NewCalendarItemID = SCOPE_IDENTITY();
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'ProjectCalendarItem',
+                        @EntityID   = @NewCalendarItemID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Insert';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END;
+            """;
+
+        const string updateSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectCalendarItem_Update
+                @CalendarItemID   INT,
+                @ItemType         VARCHAR(30),
+                @Title            NVARCHAR(200),
+                @OwnerUserID      INT = NULL,
+                @ReceivedDate     DATE = NULL,
+                @CompletedDate    DATE = NULL,
+                @PercentComplete  TINYINT = 0,
+                @Notes            NVARCHAR(MAX) = NULL,
+                @SortOrder        INT = 0,
+                @ActingUserID     INT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                IF NOT EXISTS (SELECT 1 FROM dbo.tProjectCalendarItem WHERE CalendarItemID = @CalendarItemID AND IsActive = 1)
+                    THROW 50001, 'Calendar item not found or inactive.', 1;
+
+                IF @ItemType NOT IN ('Deliverable', 'Meeting', 'Task', 'Other')
+                    THROW 50002, 'ItemType must be Deliverable, Meeting, Task, or Other.', 1;
+
+                IF NULLIF(LTRIM(RTRIM(@Title)), N'') IS NULL
+                    THROW 50003, 'Title is required.', 1;
+
+                IF @PercentComplete > 100
+                    THROW 50004, 'PercentComplete must be between 0 and 100.', 1;
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    UPDATE dbo.tProjectCalendarItem
+                       SET ItemType = @ItemType,
+                           Title = LTRIM(RTRIM(@Title)),
+                           OwnerUserID = @OwnerUserID,
+                           ReceivedDate = @ReceivedDate,
+                           CompletedDate = @CompletedDate,
+                           PercentComplete = @PercentComplete,
+                           Notes = @Notes,
+                           SortOrder = @SortOrder,
+                           ModifiedDate = SYSUTCDATETIME()
+                     WHERE CalendarItemID = @CalendarItemID;
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'ProjectCalendarItem',
+                        @EntityID   = @CalendarItemID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Update';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(addColumnSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(addCheckSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(listSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(createSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(updateSql, cancellationToken: cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(
         int projectId,
         CancellationToken cancellationToken = default)
-        => _db.QueryAsync(
+    {
+        await EnsureProjectCalendarSchemaAsync(cancellationToken);
+        return await _db.QueryAsync(
             "dbo.usp_ProjectCalendarItem_ListByProject",
             MapCalendarItem,
             [
                 SqlParameterFactory.Int("@ProjectID", projectId)
             ],
             cancellationToken);
+    }
 
     public async Task ReplaceCalendarItemsAsync(
         int projectId,
         IReadOnlyList<ProjectCalendarItem> items,
         CancellationToken cancellationToken = default)
     {
+        await EnsureProjectCalendarSchemaAsync(cancellationToken);
         var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
         var existing = await ListCalendarItemsAsync(projectId, cancellationToken);
         var existingIds = existing.Select(row => row.CalendarItemID).ToHashSet();
@@ -503,6 +866,7 @@ public sealed class ProjectRepository : IProjectRepository
             var ownerUserId = item.OwnerUserID is > 0 ? item.OwnerUserID : null;
             var receivedDate = NormalizeCalendarDate(item.ReceivedDate);
             var completedDate = NormalizeCalendarDate(item.CompletedDate);
+            var percentComplete = Math.Clamp(item.PercentComplete, 0, 100);
             var notes = string.IsNullOrWhiteSpace(item.Notes) ? null : item.Notes.Trim();
 
             if (item.CalendarItemID > 0 && existingIds.Contains(item.CalendarItemID))
@@ -516,6 +880,7 @@ public sealed class ProjectRepository : IProjectRepository
                         SqlParameterFactory.Int("@OwnerUserID", ownerUserId),
                         SqlParameterFactory.Date("@ReceivedDate", receivedDate),
                         SqlParameterFactory.Date("@CompletedDate", completedDate),
+                        SqlParameterFactory.Int("@PercentComplete", percentComplete),
                         SqlParameterFactory.NVarChar("@Notes", -1, notes),
                         SqlParameterFactory.Int("@SortOrder", sortOrder),
                         SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
@@ -535,6 +900,7 @@ public sealed class ProjectRepository : IProjectRepository
                         SqlParameterFactory.Int("@OwnerUserID", ownerUserId),
                         SqlParameterFactory.Date("@ReceivedDate", receivedDate),
                         SqlParameterFactory.Date("@CompletedDate", completedDate),
+                        SqlParameterFactory.Int("@PercentComplete", percentComplete),
                         SqlParameterFactory.NVarChar("@Notes", -1, notes),
                         SqlParameterFactory.Int("@SortOrder", sortOrder),
                         SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
@@ -1360,6 +1726,8 @@ public sealed class ProjectRepository : IProjectRepository
         NoteType = r.GetNullableString("NoteType") ?? "General",
         NoteText = r.GetNullableString("NoteText") ?? string.Empty,
         IsPinned = r.GetBooleanOrDefault("IsPinned"),
+        CalendarItemID = r.TryGetNullableInt32("CalendarItemID"),
+        CalendarItemTitle = r.TryGetNullableString("CalendarItemTitle"),
         CreatedDate = r.GetDateTimeOrDefault("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
     };
@@ -1375,6 +1743,7 @@ public sealed class ProjectRepository : IProjectRepository
         OwnerFullName = r.TryGetNullableString("OwnerFullName"),
         ReceivedDate = r.TryGetNullableDateTime("ReceivedDate"),
         CompletedDate = r.TryGetNullableDateTime("CompletedDate"),
+        PercentComplete = Math.Clamp(r.TryGetNullableInt32("PercentComplete") ?? 0, 0, 100),
         Notes = r.TryGetNullableString("Notes"),
         SortOrder = r.GetInt32OrDefault("SortOrder"),
         IsActive = r.TryGetNullableBoolean("IsActive") ?? true,

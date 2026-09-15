@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using ClientManagementSystem.Data;
 using ClientManagementSystem.Models;
 using ClientManagementSystem.Services;
 using ClientManagementSystem.ViewModels;
@@ -164,7 +166,7 @@ public sealed class ProjectsApiController : ControllerBase
     public async Task<ActionResult<object>> AddNoteAsync(int id, [FromBody] ProjectNote body, CancellationToken cancellationToken)
     {
         body.ProjectID = id;
-        var noteId = await _projectService.AddNoteAsync(body, cancellationToken);
+        var noteId = await _projectService.AddNoteAsync(body, GetActingUserId(), cancellationToken);
         return Ok(new { noteId });
     }
 
@@ -226,7 +228,7 @@ public sealed class ProjectsApiController : ControllerBase
         var items = request.Items ?? request.CalendarItems ?? [];
         try
         {
-            var saved = await _projectService.SaveCalendarItemsAsync(id, items, cancellationToken);
+            var saved = await _projectService.SaveCalendarItemsAsync(id, items, GetActingUserId(), cancellationToken);
             return Ok(new
             {
                 projectId = id,
@@ -763,6 +765,12 @@ public sealed class ProjectsApiController : ControllerBase
                 title: "Analysis profile save failed",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private int GetActingUserId()
+    {
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(raw, out var id) && id > 0 ? id : CmsDefaults.ActingUserId;
     }
 }
 

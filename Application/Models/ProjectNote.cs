@@ -11,6 +11,8 @@ public sealed class ProjectNote
     public string NoteType { get; set; } = "General";
     public string NoteText { get; set; } = string.Empty;
     public bool IsPinned { get; set; }
+    public int? CalendarItemID { get; set; }
+    public string? CalendarItemTitle { get; set; }
     public DateTime CreatedDate { get; set; }
     public DateTime? ModifiedDate { get; set; }
 }

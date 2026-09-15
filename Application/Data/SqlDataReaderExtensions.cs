@@ -27,13 +27,15 @@ public static class SqlDataReaderExtensions
     public static int GetInt32OrDefault(this SqlDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
-        return reader.IsDBNull(ordinal) ? 0 : reader.GetInt32(ordinal);
+        return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static int? GetNullableInt32(this SqlDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
-        return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : Convert.ToInt32(reader.GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static double? GetNullableDouble(this SqlDataReader reader, string columnName)
@@ -55,7 +57,9 @@ public static class SqlDataReaderExtensions
         {
             if (string.Equals(reader.GetName(i), columnName, StringComparison.OrdinalIgnoreCase))
             {
-                return reader.IsDBNull(i) ? null : reader.GetInt32(i);
+                return reader.IsDBNull(i)
+                    ? null
+                    : Convert.ToInt32(reader.GetValue(i), System.Globalization.CultureInfo.InvariantCulture);
             }
         }
 

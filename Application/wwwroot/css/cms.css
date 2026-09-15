@@ -396,6 +396,62 @@ main.page-shell.page-shell--hub-wide {
     outline: none;
 }
 
+.login-gate-overlay {
+    z-index: 3000;
+    background: rgba(4, 7, 12, 0.72);
+}
+
+.login-gate-dialog {
+    max-width: 28rem;
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.login-gate-dialog .home-modal-title {
+    color: var(--white);
+}
+
+.login-gate-dialog .home-modal-body,
+.login-gate-dialog .home-modal-hint {
+    color: var(--muted);
+}
+
+.login-gate-form {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 1rem;
+}
+
+.login-gate-form label {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.login-gate-form select,
+.login-gate-form input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.login-gate-form .alert {
+    margin-top: 0.75rem;
+}
+
+.app-auth-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin: 0 0 0.75rem;
+}
+
+.app-auth-bar-user {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
 .app-hub-lede {
     margin: 0.85rem 0 0;
     color: var(--muted);
@@ -1427,7 +1483,7 @@ textarea {
     box-sizing: border-box;
 }
 
-/* Calendar: fixed widths for Type/Title/Owner/Received/Completed; Notes expands; Remove stays one line */
+/* Calendar: fixed widths for Type/Title/Owner/Received/Completed; Notes expands; % Complete + Remove stay far right */
 .project-workflow-card .project-calendar-table {
     table-layout: fixed;
     width: 100%;
@@ -1467,6 +1523,16 @@ textarea {
 
 .project-workflow-card .project-calendar-table th:nth-child(7),
 .project-workflow-card .project-calendar-table td:nth-child(7) {
+    width: 4.5rem;
+    min-width: 4.5rem;
+    max-width: 4.5rem;
+    white-space: nowrap;
+    text-align: center;
+    overflow: visible;
+}
+
+.project-workflow-card .project-calendar-table th:nth-child(8),
+.project-workflow-card .project-calendar-table td:nth-child(8) {
     width: 5.75rem;
     min-width: 5.75rem;
     max-width: 5.75rem;
@@ -1480,7 +1546,27 @@ textarea {
     max-width: 100%;
 }
 
-.project-workflow-card .project-calendar-table tbody td:nth-child(7) .danger-button {
+.project-workflow-card .project-calendar-table .project-calendar-percent-input,
+.project-workflow-card .project-calendar-table td:nth-child(7) input[type='number'] {
+    width: 3.25rem;
+    min-width: 3.25rem;
+    max-width: 3.25rem;
+    box-sizing: border-box;
+    text-align: center;
+    padding-left: 0.2rem;
+    padding-right: 0.2rem;
+    /* Hide spinner so three digits fit cleanly */
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.project-workflow-card .project-calendar-table td:nth-child(7) input[type='number']::-webkit-outer-spin-button,
+.project-workflow-card .project-calendar-table td:nth-child(7) input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.project-workflow-card .project-calendar-table tbody td:nth-child(8) .danger-button {
     margin: 0.25rem 0.15rem;
     white-space: nowrap;
     display: inline-block;

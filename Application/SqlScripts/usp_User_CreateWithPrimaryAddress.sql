@@ -28,8 +28,8 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF @UserType NOT IN ('Internal', 'External')
-        THROW 50003, 'UserType must be Internal or External.', 1;
+    IF @UserType NOT IN ('Basic', 'External', 'Administrator')
+        THROW 50003, 'UserType must be Basic, External, or Administrator.', 1;
 
     IF EXISTS (SELECT 1 FROM dbo.tUser WHERE Email = @Email AND IsActive = 1)
         THROW 50004, 'Email already exists.', 1;

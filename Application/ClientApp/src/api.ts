@@ -27,10 +27,13 @@ export class ApiError extends Error {
       const json = JSON.parse(text) as {
         title?: string;
         detail?: string;
+        message?: string;
         errors?: Record<string, string[]>;
       };
       if (json.detail) {
         message = json.detail;
+      } else if (json.message) {
+        message = json.message;
       } else if (json.title) {
         message = json.title;
       }

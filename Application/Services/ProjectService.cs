@@ -391,8 +391,15 @@ public sealed class ProjectService : IProjectService
     public Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default)
         => _projects.ListNotesAsync(projectId, cancellationToken);
 
-    public Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default)
-        => _projects.AddNoteAsync(note, cancellationToken);
+    public Task<int> AddNoteAsync(ProjectNote note, int actingUserId = 0, CancellationToken cancellationToken = default)
+    {
+        if (actingUserId > 0)
+        {
+            note.UserID = actingUserId;
+        }
+
+        return _projects.AddNoteAsync(note, cancellationToken);
+    }
 
     public Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default)
         => _projects.UpdateNoteAsync(note, cancellationToken);
@@ -408,6 +415,7 @@ public sealed class ProjectService : IProjectService
     public async Task<int> SaveCalendarItemsAsync(
         int projectId,
         IReadOnlyList<ProjectCalendarItem> items,
+        int actingUserId = 0,
         CancellationToken cancellationToken = default)
     {
         if (projectId <= 0)
@@ -423,8 +431,67 @@ public sealed class ProjectService : IProjectService
 
         items ??= Array.Empty<ProjectCalendarItem>();
         var beforeSave = await _projects.ListCalendarItemsAsync(projectId, cancellationToken);
-        await _projects.ReplaceCalendarItemsAsync(projectId, items, cancellationToken);
+
+        // Calendar Notes cell is a one-shot draft: append to tProjectNote history, then clear the cell.
+        var noteSources = items
+            .Select((item, index) => new
+            {
+                item.CalendarItemID,
+                Title = (item.Title ?? string.Empty).Trim(),
+                Notes = string.IsNullOrWhiteSpace(item.Notes) ? null : item.Notes.Trim(),
+                SortOrder = item.SortOrder >= 0 ? item.SortOrder : index,
+            })
+            .Where(x => x.Title.Length > 0 && x.Notes is not null)
+            .ToList();
+
+        var itemsToSave = items
+            .Select(item => new ProjectCalendarItem
+            {
+                CalendarItemID = item.CalendarItemID,
+                ProjectID = item.ProjectID,
+                ProjectRefID = item.ProjectRefID,
+                ItemType = item.ItemType,
+                Title = item.Title,
+                OwnerUserID = item.OwnerUserID,
+                OwnerFullName = item.OwnerFullName,
+                ReceivedDate = item.ReceivedDate,
+                CompletedDate = item.CompletedDate,
+                PercentComplete = item.PercentComplete,
+                Notes = null,
+                SortOrder = item.SortOrder,
+                IsActive = item.IsActive,
+                CreatedDate = item.CreatedDate,
+                ModifiedDate = item.ModifiedDate,
+            })
+            .ToList();
+
+        await _projects.ReplaceCalendarItemsAsync(projectId, itemsToSave, cancellationToken);
         var afterSave = await _projects.ListCalendarItemsAsync(projectId, cancellationToken);
+
+        if (noteSources.Count > 0)
+        {
+            var userId = actingUserId > 0 ? actingUserId : CmsDefaults.ActingUserId;
+            var usedIds = new HashSet<int>();
+
+            foreach (var src in noteSources)
+            {
+                var calendarItemId = ResolveCalendarItemId(src.CalendarItemID, src.Title, src.SortOrder, afterSave, usedIds);
+                await _projects.AddNoteAsync(
+                    new ProjectNote
+                    {
+                        ProjectID = projectId,
+                        UserID = userId,
+                        NoteDate = DateTime.UtcNow,
+                        NoteType = "Calendar",
+                        NoteText = src.Notes!,
+                        IsPinned = false,
+                        CalendarItemID = calendarItemId > 0 ? calendarItemId : null,
+                        CalendarItemTitle = src.Title,
+                    },
+                    cancellationToken);
+            }
+        }
+
         var saved = items.Count(i => !string.IsNullOrWhiteSpace(i.Title));
         _logger?.LogInformation("Saved {Count} calendar item(s) for ProjectID {ProjectID}.", saved, projectId);
 
@@ -435,6 +502,45 @@ public sealed class ProjectService : IProjectService
             cancellationToken);
 
         return saved;
+    }
+
+    private static int ResolveCalendarItemId(
+        int postedCalendarItemId,
+        string title,
+        int sortOrder,
+        IReadOnlyList<ProjectCalendarItem> afterSave,
+        HashSet<int> usedIds)
+    {
+        if (postedCalendarItemId > 0)
+        {
+            var byId = afterSave.FirstOrDefault(a => a.CalendarItemID == postedCalendarItemId);
+            if (byId is not null)
+            {
+                usedIds.Add(byId.CalendarItemID);
+                return byId.CalendarItemID;
+            }
+        }
+
+        var match = afterSave.FirstOrDefault(a =>
+            !usedIds.Contains(a.CalendarItemID)
+            && a.SortOrder == sortOrder
+            && string.Equals((a.Title ?? string.Empty).Trim(), title, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            usedIds.Add(match.CalendarItemID);
+            return match.CalendarItemID;
+        }
+
+        match = afterSave.FirstOrDefault(a =>
+            !usedIds.Contains(a.CalendarItemID)
+            && string.Equals((a.Title ?? string.Empty).Trim(), title, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            usedIds.Add(match.CalendarItemID);
+            return match.CalendarItemID;
+        }
+
+        return 0;
     }
 
     public async Task<ProjectTimeWeekResponse> GetTimeWeekAsync(

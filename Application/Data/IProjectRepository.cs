@@ -40,6 +40,8 @@ public interface IProjectRepository
         CancellationToken cancellationToken = default);
 
     // Notes
+    Task EnsureProjectNoteSchemaAsync(CancellationToken cancellationToken = default);
+    Task EnsureProjectCalendarSchemaAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);

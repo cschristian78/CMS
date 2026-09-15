@@ -2375,7 +2375,7 @@ BEGIN
         IsActive                     BIT                  NOT NULL CONSTRAINT DF_tUser_IsActive DEFAULT (1),
         CONSTRAINT PK_tUser PRIMARY KEY CLUSTERED (UserID),
         CONSTRAINT UQ_tUser_Email UNIQUE (Email),
-        CONSTRAINT CK_tUser_UserType CHECK (UserType IN ('Internal','External'))
+        CONSTRAINT CK_tUser_UserType CHECK (UserType IN ('Basic','External','Administrator'))
 		)
     END;
 END;
@@ -2446,8 +2446,8 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF @UserType NOT IN ('Internal', 'External')
-        THROW 50003, 'UserType must be Internal or External.', 1;
+    IF @UserType NOT IN ('Basic', 'External', 'Administrator')
+        THROW 50003, 'UserType must be Basic, External, or Administrator.', 1;
 
     IF EXISTS (SELECT 1 FROM dbo.tUser WHERE Email = @Email AND IsActive = 1)
         THROW 50004, 'Email already exists.', 1;
@@ -3451,6 +3451,9 @@ BEGIN
         NoteType                     VARCHAR(30)          NOT NULL,
         NoteText                     NVARCHAR(MAX)        NOT NULL,
         IsPinned                     BIT                  NOT NULL,
+        CreatedByUserID              INT                  NULL,
+        CalendarItemID               INT                  NULL,
+        CalendarItemTitle            NVARCHAR(200)        NULL,
         CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectNote_CreatedDate  DEFAULT (SYSUTCDATETIME()),
         ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProjectNote_ModifiedDate DEFAULT (SYSUTCDATETIME()),
         IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProjectNote_IsActive DEFAULT (1),
@@ -3459,6 +3462,9 @@ BEGIN
         );
 
         CREATE INDEX IX_tProjectNote_ProjectRefID ON dbo.tProjectNote (ProjectRefID);
+        CREATE NONCLUSTERED INDEX IX_tProjectNote_CalendarItemID
+            ON dbo.tProjectNote (CalendarItemID)
+            WHERE CalendarItemID IS NOT NULL;
     END;
 END;
 GO
@@ -3468,8 +3474,11 @@ CREATE OR ALTER PROCEDURE usp_ProjectNote_Create
     @NoteType                     VARCHAR(30),
     @NoteText                     NVARCHAR(MAX),
     @IsPinned                     BIT,
-    @ActingUserID                INT,
-    @NewNoteID                   INT OUTPUT
+    @ActingUserID                 INT,
+    @CreatedByUserID              INT = NULL,
+    @CalendarItemID               INT = NULL,
+    @CalendarItemTitle            NVARCHAR(200) = NULL,
+    @NewNoteID                    INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -3478,8 +3487,26 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
 
-        INSERT INTO dbo.tProjectNote (ProjectRefID, NoteDate, NoteType, NoteText, IsPinned)
-        VALUES (@ProjectRefID, @NoteDate, @NoteType, @NoteText, @IsPinned);
+        INSERT INTO dbo.tProjectNote (
+            ProjectRefID,
+            NoteDate,
+            NoteType,
+            NoteText,
+            IsPinned,
+            CreatedByUserID,
+            CalendarItemID,
+            CalendarItemTitle
+        )
+        VALUES (
+            @ProjectRefID,
+            @NoteDate,
+            @NoteType,
+            @NoteText,
+            @IsPinned,
+            @CreatedByUserID,
+            @CalendarItemID,
+            @CalendarItemTitle
+        );
 
         SET @NewNoteID = SCOPE_IDENTITY();
 

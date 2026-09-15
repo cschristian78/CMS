@@ -119,7 +119,11 @@ public sealed class AdminService : IAdminService
 
         if (string.IsNullOrWhiteSpace(user.UserType))
         {
-            user.UserType = "Internal";
+            user.UserType = "Basic";
+        }
+        else
+        {
+            user.UserType = NormalizeUserType(user.UserType);
         }
 
         var userId = await _admin.SaveUserAsync(user, cancellationToken);
@@ -901,7 +905,7 @@ public sealed class AdminService : IAdminService
                 Company = NullIfBlank(OptionalCell(cells, columnIndex, "Company")) ?? "BMS",
                 Department = NullIfBlank(OptionalCell(cells, columnIndex, "Department")) ?? string.Empty,
                 Title = NullIfBlank(OptionalCell(cells, columnIndex, "Title")) ?? string.Empty,
-                UserType = NullIfBlank(OptionalCell(cells, columnIndex, "UserType")) ?? "Internal",
+                UserType = NullIfBlank(OptionalCell(cells, columnIndex, "UserType")) ?? "Basic",
                 IsActive = ParseOptionalBoolFromCsv(cells, columnIndex, "IsActive", defaultWhenMissingOrEmpty: true),
 
                 AddressType = NullIfBlank(OptionalCell(cells, columnIndex, "AddressType")) ?? "Work",
@@ -937,10 +941,9 @@ public sealed class AdminService : IAdminService
             if (r.FirstName.Length > UserNameFieldMaxLength) errors.Add($"Line {r.LineNumber}: FirstName exceeds {UserNameFieldMaxLength} characters.");
             if (r.LastName.Length > UserNameFieldMaxLength) errors.Add($"Line {r.LineNumber}: LastName exceeds {UserNameFieldMaxLength} characters.");
 
-            if (!string.Equals(r.UserType, "Internal", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(r.UserType, "External", StringComparison.OrdinalIgnoreCase))
+            if (!IsAllowedUserType(r.UserType))
             {
-                errors.Add($"Line {r.LineNumber}: UserType must be Internal or External.");
+                errors.Add($"Line {r.LineNumber}: UserType must be Basic, External, or Administrator.");
             }
         }
 
@@ -993,7 +996,7 @@ public sealed class AdminService : IAdminService
                     Company = Truncate(NullIfBlank(dto.Company) ?? "BMS", 150),
                     Department = Truncate(NullIfBlank(dto.Department), 100),
                     Title = Truncate(NullIfBlank(dto.Title), 100),
-                    UserType = string.Equals(dto.UserType, "External", StringComparison.OrdinalIgnoreCase) ? "External" : "Internal"
+                    UserType = NormalizeUserType(dto.UserType)
                 };
 
                 UserAddress? primaryAddress = null;
@@ -1335,7 +1338,39 @@ public sealed class AdminService : IAdminService
         user.Company = user.Company?.Trim();
         user.Department = user.Department?.Trim();
         user.Title = user.Title?.Trim();
-        user.UserType = (user.UserType ?? "Internal").Trim();
+        user.UserType = NormalizeUserType(user.UserType);
+    }
+
+    private static bool IsAllowedUserType(string? value)
+    {
+        var raw = (value ?? "Basic").Trim();
+        if (string.IsNullOrWhiteSpace(raw)
+            || string.Equals(raw, "Basic", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(raw, "Internal", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(raw, "External", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(raw, "Administrator", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string NormalizeUserType(string? value)
+    {
+        var raw = (value ?? string.Empty).Trim();
+        if (string.Equals(raw, "External", StringComparison.OrdinalIgnoreCase))
+        {
+            return "External";
+        }
+
+        if (string.Equals(raw, "Administrator", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Administrator";
+        }
+
+        // Legacy Internal maps to Basic; blank / unknown also default to Basic.
+        return "Basic";
     }
 
     private static Dictionary<string, int> BuildUserImportHeaderMap(IReadOnlyList<string> headerCells)

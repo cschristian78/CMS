@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using ClientManagementSystem.Models;
 using ClientManagementSystem.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,11 +10,13 @@ namespace ClientManagementSystem.Api;
 public sealed class TmsApiController : ControllerBase
 {
     private readonly ITmsService _tms;
+    private readonly IAuthService _auth;
     private readonly ILogger<TmsApiController> _logger;
 
-    public TmsApiController(ITmsService tms, ILogger<TmsApiController> logger)
+    public TmsApiController(ITmsService tms, IAuthService auth, ILogger<TmsApiController> logger)
     {
         _tms = tms;
+        _auth = auth;
         _logger = logger;
     }
 
@@ -77,6 +80,7 @@ public sealed class TmsApiController : ControllerBase
 
         try
         {
+            userId = await ResolveRequestedUserIdAsync(userId, cancellationToken);
             var monday = (weekStart ?? DateTime.Today).Date;
             return Ok(await _tms.GetWeekAsync(userId, monday, cancellationToken));
         }
@@ -111,6 +115,7 @@ public sealed class TmsApiController : ControllerBase
 
         try
         {
+            request.UserID = await ResolveRequestedUserIdAsync(request.UserID, cancellationToken);
             return Ok(await _tms.SaveWeekAsync(request, cancellationToken));
         }
         catch (InvalidOperationException ex)
@@ -125,5 +130,32 @@ public sealed class TmsApiController : ControllerBase
                 title: "TMS week save failed",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private async Task<int> ResolveRequestedUserIdAsync(int requestedUserId, CancellationToken cancellationToken)
+    {
+        var actingUserId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
+        if (await IsAdministratorAsync(actingUserId, cancellationToken))
+        {
+            return requestedUserId;
+        }
+
+        if (actingUserId <= 0)
+        {
+            throw new InvalidOperationException("Sign in is required to load or save time.");
+        }
+
+        return actingUserId;
+    }
+
+    private async Task<bool> IsAdministratorAsync(int actingUserId, CancellationToken cancellationToken)
+    {
+        var userType = User.FindFirstValue("userType");
+        if (string.IsNullOrWhiteSpace(userType) && actingUserId > 0)
+        {
+            userType = await _auth.GetUserTypeAsync(actingUserId, cancellationToken);
+        }
+
+        return string.Equals(userType, "Administrator", StringComparison.OrdinalIgnoreCase);
     }
 }
