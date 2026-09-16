@@ -1,11 +1,12 @@
 using ClientManagementSystem.Data;
 using ClientManagementSystem.Models;
+using ClientManagementSystem.Security;
 
 namespace ClientManagementSystem.Services;
 
 public sealed class AuthService : IAuthService
 {
-    public const string DefaultPasswordSentinel = "none";
+    public const string DefaultPasswordSentinel = LoginPasswordProtector.UnsetSentinel;
 
     private readonly IAuthRepository _auth;
 
@@ -43,7 +44,7 @@ public sealed class AuthService : IAuthService
         }
 
         var stored = (user.LoginPw ?? DefaultPasswordSentinel).Trim();
-        var mustSet = string.Equals(stored, DefaultPasswordSentinel, StringComparison.OrdinalIgnoreCase);
+        var mustSet = LoginPasswordProtector.IsUnset(stored);
 
         if (mustSet)
         {
@@ -58,20 +59,33 @@ public sealed class AuthService : IAuthService
                 throw new InvalidOperationException("Choose a password other than the default value.");
             }
 
-            if (newPassword.Length < 4)
+            if (newPassword.Length < LoginPasswordProtector.MinPasswordLength)
             {
-                throw new InvalidOperationException("Password must be at least 4 characters.");
+                throw new InvalidOperationException(
+                    $"Password must be at least {LoginPasswordProtector.MinPasswordLength} characters.");
             }
 
-            await _auth.SetLoginPasswordAsync(user.UserID, newPassword, cancellationToken);
+            await _auth.SetLoginPasswordAsync(
+                user.UserID,
+                LoginPasswordProtector.Hash(newPassword),
+                cancellationToken);
             mustSet = false;
         }
         else
         {
             var password = request.Password ?? string.Empty;
-            if (!string.Equals(password, stored, StringComparison.Ordinal))
+            if (!LoginPasswordProtector.Verify(stored, password, out var needsRehash))
             {
                 throw new InvalidOperationException("Incorrect password.");
+            }
+
+            // Upgrade legacy plaintext (or older hash format) to the current PBKDF2 hash.
+            if (needsRehash)
+            {
+                await _auth.SetLoginPasswordAsync(
+                    user.UserID,
+                    LoginPasswordProtector.Hash(password),
+                    cancellationToken);
             }
         }
 

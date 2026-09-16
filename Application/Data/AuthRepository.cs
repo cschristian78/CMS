@@ -17,8 +17,19 @@ public sealed class AuthRepository : IAuthRepository
             IF COL_LENGTH('dbo.tUser', 'LoginPw') IS NULL
             BEGIN
                 ALTER TABLE dbo.tUser
-                    ADD LoginPw VARCHAR(200) NOT NULL
+                    ADD LoginPw VARCHAR(500) NOT NULL
                         CONSTRAINT DF_tUser_LoginPw DEFAULT ('none');
+            END
+            ELSE IF EXISTS (
+                SELECT 1
+                  FROM sys.columns
+                 WHERE object_id = OBJECT_ID(N'dbo.tUser')
+                   AND name = N'LoginPw'
+                   AND max_length > 0
+                   AND max_length < 500
+            )
+            BEGIN
+                ALTER TABLE dbo.tUser ALTER COLUMN LoginPw VARCHAR(500) NOT NULL;
             END;
 
             IF COL_LENGTH('dbo.tUser', 'LoginCount') IS NULL
@@ -154,7 +165,7 @@ public sealed class AuthRepository : IAuthRepository
             sql,
             [
                 SqlParameterFactory.Int("@UserID", userId),
-                SqlParameterFactory.VarCharAsWritten("@LoginPw", 200, password),
+                SqlParameterFactory.VarCharAsWritten("@LoginPw", 500, password),
             ],
             cancellationToken);
     }

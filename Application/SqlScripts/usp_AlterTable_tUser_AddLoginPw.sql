@@ -1,5 +1,6 @@
 -- Adds LoginPw / LoginCount / LastLoginUtc to dbo.tUser for CAT login tracking.
--- LoginPw defaults to 'none' (first-time password setup). LoginCount starts at 0. Safe to re-run.
+-- LoginPw defaults to 'none' (first-time password setup). Stored values are PBKDF2 hashes
+-- (ASP.NET Core PasswordHasher), not plaintext. LoginCount starts at 0. Safe to re-run.
 CREATE OR ALTER PROCEDURE dbo.usp_AlterTable_tUser_AddLoginPw
 AS
 BEGIN
@@ -11,8 +12,19 @@ BEGIN
     IF COL_LENGTH('dbo.tUser', 'LoginPw') IS NULL
     BEGIN
         ALTER TABLE dbo.tUser
-            ADD LoginPw VARCHAR(200) NOT NULL
+            ADD LoginPw VARCHAR(500) NOT NULL
                 CONSTRAINT DF_tUser_LoginPw DEFAULT ('none');
+    END
+    ELSE IF EXISTS (
+        SELECT 1
+          FROM sys.columns
+         WHERE object_id = OBJECT_ID(N'dbo.tUser')
+           AND name = N'LoginPw'
+           AND max_length > 0
+           AND max_length < 500
+    )
+    BEGIN
+        ALTER TABLE dbo.tUser ALTER COLUMN LoginPw VARCHAR(500) NOT NULL;
     END;
 
     IF COL_LENGTH('dbo.tUser', 'LoginCount') IS NULL
