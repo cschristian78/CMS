@@ -713,6 +713,9 @@ type DataAuditCheckGroup = {
 function dataAuditCheckGroupKey(check: DataAuditCheck): string {
   const id = (check.checkId ?? '').toLowerCase();
   const title = (check.title ?? '').trim().toLowerCase();
+  if (id.startsWith('clients-') || title.startsWith('clients ')) {
+    return 'clients';
+  }
   if (id.startsWith('projects-') || title.startsWith('projects ')) {
     return 'projects';
   }
@@ -726,6 +729,7 @@ function dataAuditCheckGroupKey(check: DataAuditCheck): string {
 }
 
 const DATA_AUDIT_GROUP_ORDER: { key: string; label: string }[] = [
+  { key: 'clients', label: 'Clients' },
   { key: 'projects', label: 'Projects' },
   { key: 'user-groups', label: 'User groups' },
   { key: 'logins', label: 'Logins' },
@@ -761,6 +765,30 @@ function auditRowUgid(check: DataAuditCheck, row: (string | null)[]): number | n
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function auditRowUserId(check: DataAuditCheck, row: (string | null)[]): number | null {
+  const idx = check.columns.findIndex((c) => {
+    const name = c.trim().toLowerCase();
+    return name === 'userid' || name === 'user id';
+  });
+  if (idx < 0) {
+    return null;
+  }
+  const n = Number(String(row[idx] ?? '').trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function auditRowGroupName(check: DataAuditCheck, row: (string | null)[]): string | null {
+  const idx = check.columns.findIndex((c) => {
+    const name = c.trim().toLowerCase();
+    return name === 'group' || name === 'ugname' || name === 'user group' || name === 'usergroup';
+  });
+  if (idx < 0) {
+    return null;
+  }
+  const value = String(row[idx] ?? '').trim();
+  return value.length > 0 ? value : null;
+}
+
 function auditHighlightForCheck(
   checkId: string,
 ): { highlight: AuditGroupHighlight; message: string } | null {
@@ -771,7 +799,13 @@ function auditHighlightForCheck(
         message:
           'This user group has no Analytics Lead. Add a member with the Analytics Lead role, then save.',
       };
-    case 'projects-empty-user-group':
+    case 'user-groups-missing-account-executive':
+      return {
+        highlight: 'members',
+        message:
+          'This user group has no Account Executive. Add a member with the Account Executive role, then save.',
+      };
+    case 'user-groups-without-members':
       return {
         highlight: 'members',
         message: 'This user group has no members. Add at least one user/role, then save.',
@@ -781,12 +815,6 @@ function auditHighlightForCheck(
         highlight: 'project-link',
         message:
           'This user group is not linked to any project. Assign it on a project (Project → User group) to clear this finding.',
-      };
-    case 'user-groups-missing-client':
-      return {
-        highlight: 'client-link',
-        message:
-          'This user group has no client path through a project. Link it to a project that has a client to clear this finding.',
       };
     case 'projects-inactive-or-missing-user-group':
       return {
@@ -2600,18 +2628,44 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       }
       const hint = auditHighlightForCheck(check.checkId);
       const summary = (admin?.userGroupSummaries ?? []).find((g) => g.ugid === ugid);
+      const groupName =
+        (summary?.ugName ?? '').trim() ||
+        auditRowGroupName(check, row) ||
+        `User Group ${ugid}`;
+      const filterRow: UserGroupListRow = summary ?? {
+        ugid,
+        userGroupNumber: summary?.userGroupNumber ?? '',
+        ugName: groupName,
+        memberCount: summary?.memberCount ?? 0,
+      };
+
+      // Keep the UserGroup listbox filtered to this group name (same as using Search).
+      setGroupSearchInput(groupName);
+      setGroupSearchResults([filterRow]);
+      setGroupSearchNoMatch(false);
+      setGroupListUseSearchResults(true);
+
       setTab('groups');
-      selectUserGroupByNumber(ugid, summary);
+      selectUserGroupByNumber(ugid, filterRow);
       setAuditGroupHighlight(hint?.highlight ?? 'members');
       setAuditGroupHighlightMessage(hint?.message ?? check.description);
-      if (hint?.highlight === 'members' && admin?.userRoles?.length) {
-        const analyticsLead = admin.userRoles.find((r) =>
-          /analytics\s*lead/i.test(`${r.userRoleName ?? ''} ${r.roleDescription ?? ''}`),
+      if (
+        hint?.highlight === 'members' &&
+        admin?.userRoles?.length &&
+        (check.checkId === 'user-groups-missing-account-executive' ||
+          check.checkId === 'user-groups-missing-analytics-lead')
+      ) {
+        const roleMatcher =
+          check.checkId === 'user-groups-missing-account-executive'
+            ? /account\s*executive/i
+            : /analytics\s*lead/i;
+        const preferredRole = admin.userRoles.find((r) =>
+          roleMatcher.test(`${r.userRoleName ?? ''} ${r.roleDescription ?? ''}`),
         );
-        if (analyticsLead) {
-          setAddMemberRoleId(analyticsLead.userRoleID);
-          setNewGroupRoleFilterDraft(rolePickerLabel(analyticsLead));
-          setNewGroupRoleFilterQuery(rolePickerLabel(analyticsLead));
+        if (preferredRole) {
+          setAddMemberRoleId(preferredRole.userRoleID);
+          setNewGroupRoleFilterDraft(rolePickerLabel(preferredRole));
+          setNewGroupRoleFilterQuery(rolePickerLabel(preferredRole));
         }
       }
       window.setTimeout(() => {
@@ -2619,6 +2673,34 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       }, 80);
     },
     [admin?.userGroupSummaries, admin?.userRoles, selectUserGroupByNumber],
+  );
+
+  const openUserFromDataAudit = useCallback(
+    (check: DataAuditCheck, row: (string | null)[]) => {
+      const userId = auditRowUserId(check, row);
+      if (userId == null || !admin) {
+        return;
+      }
+      const u = admin.users.find((x) => x.userID === userId);
+      if (!u) {
+        flash('error', `User ${userId} was not found in the Users list.`);
+        return;
+      }
+      setUserDepartmentFilter('CAT');
+      setUserDirectorySearch('');
+      setSelectedUserId(userId);
+      setTab('users');
+      void applyUserToForm(u);
+      window.setTimeout(() => {
+        document.getElementById(`admin-user-row-${userId}`)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }, 80);
+    },
+    // applyUserToForm closes over admin/flash; user list is the dependency that matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [admin, flash],
   );
 
   // Prefill UserGroup edit panel when arriving from Project Info (selectUserGroup query).
@@ -5098,7 +5180,15 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                           onClick={() => setExpandedAuditCheckId(check.checkId)}
                           title={check.description}
                         >
-                          <span className="admin-data-audit-card__count">{check.count}</span>
+                          <span className="admin-data-audit-card__header">
+                            <span className="admin-data-audit-card__count">{check.count}</span>
+                            <span
+                              className="admin-data-audit-card__status"
+                              aria-label={check.count > 0 ? 'Needs attention' : 'All clear'}
+                            >
+                              {check.count > 0 ? '!' : '✓'}
+                            </span>
+                          </span>
                           <span className="admin-data-audit-card__title">{check.title}</span>
                         </button>
                       ))}
@@ -5129,6 +5219,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             Card count is total successful launches across CAT users. Each row shows that user&apos;s
                             login total and last sign-in (UTC).
                           </p>
+                        ) : selected.checkId === 'user-groups-cat-users-without-membership' ? (
+                          <p className="field-help">
+                            Double-click a row to open that user on the Users tab (CAT filter applied).
+                          </p>
                         ) : (
                           <p className="field-help">
                             Double-click a row with a user group (UGID) to open that group on the UserGroup tab.
@@ -5151,18 +5245,27 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                             <tbody>
                               {selected.rows.map((row, ri) => {
                                 const ugid = auditRowUgid(selected, row);
+                                const userId = auditRowUserId(selected, row);
                                 const canOpenGroup = ugid != null;
+                                const canOpenUser =
+                                  selected.checkId === 'user-groups-cat-users-without-membership' &&
+                                  userId != null;
+                                const canJump = canOpenGroup || canOpenUser;
                                 return (
                                   <tr
                                     key={`${selected.checkId}-${ri}`}
-                                    className={canOpenGroup ? 'admin-data-audit-row--jump' : undefined}
+                                    className={canJump ? 'admin-data-audit-row--jump' : undefined}
                                     title={
-                                      canOpenGroup
-                                        ? `Double-click to open user group ${ugid} on the UserGroup tab`
-                                        : undefined
+                                      canOpenUser
+                                        ? `Double-click to open user ${userId} on the Users tab`
+                                        : canOpenGroup
+                                          ? `Double-click to open user group ${ugid} on the UserGroup tab`
+                                          : undefined
                                     }
                                     onDoubleClick={() => {
-                                      if (canOpenGroup) {
+                                      if (canOpenUser) {
+                                        openUserFromDataAudit(selected, row);
+                                      } else if (canOpenGroup) {
                                         openUserGroupFromDataAudit(selected, row);
                                       }
                                     }}

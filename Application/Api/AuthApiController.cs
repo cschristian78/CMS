@@ -13,11 +13,13 @@ namespace ClientManagementSystem.Api;
 public sealed class AuthApiController : ControllerBase
 {
     private readonly IAuthService _auth;
+    private readonly IPresenceTracker _presence;
     private readonly ILogger<AuthApiController> _logger;
 
-    public AuthApiController(IAuthService auth, ILogger<AuthApiController> logger)
+    public AuthApiController(IAuthService auth, IPresenceTracker presence, ILogger<AuthApiController> logger)
     {
         _auth = auth;
+        _presence = presence;
         _logger = logger;
     }
 
@@ -110,6 +112,11 @@ public sealed class AuthApiController : ControllerBase
     [HttpPost("logout")]
     public async Task<ActionResult> LogoutAsync()
     {
+        if (int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) && userId > 0)
+        {
+            _presence.Leave(userId);
+        }
+
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return Ok(new { message = "Signed out." });
     }

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppSidebar from './components/AppSidebar';
 import BackgroundLayer from './components/BackgroundLayer';
 import LoginGate from './components/LoginGate';
+import PresenceAvatars from './components/PresenceAvatars';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import LandingPage from './pages/LandingPage';
 import HomePage from './pages/HomePage';
@@ -15,6 +16,7 @@ import AdminPage from './pages/AdminPage';
 import CatAiPage from './pages/CatAiPage';
 import DashboardPage from './pages/DashboardPage';
 import { fetchAuthSession, logoutSession } from './authSession';
+import { apiPostJson } from './api';
 
 export type FlashFn = (kind: 'success' | 'error', message: string) => void;
 
@@ -68,6 +70,11 @@ export default function App() {
 
   const handleLogout = () => {
     void (async () => {
+      try {
+        await apiPostJson('/api/presence/leave', {});
+      } catch {
+        // best-effort; logout still clears the cookie
+      }
       await logoutSession();
       setAuthenticated(false);
       setAuthName('');
@@ -101,14 +108,17 @@ export default function App() {
             />
           ) : (
             <>
-              {hubWide && authName ? (
-                <div className="app-auth-bar">
-                  <span className="app-auth-bar-user">{authName}</span>
-                  <button type="button" className="secondary-button" onClick={handleLogout}>
-                    Sign out
-                  </button>
-                </div>
-              ) : null}
+              <div className="app-top-presence">
+                <PresenceAvatars />
+                {hubWide && authName ? (
+                  <div className="app-auth-bar">
+                    <span className="app-auth-bar-user">{authName}</span>
+                    <button type="button" className="secondary-button" onClick={handleLogout}>
+                      Sign out
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               {/* key=pathname remounts the boundary so navigating away clears a prior page error */}
               <RouteErrorBoundary key={location.pathname}>
                 <Routes>

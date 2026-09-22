@@ -77,6 +77,7 @@ builder.Services.AddSingleton<IUserPhotoStorage>(sp =>
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     return new UserPhotoFileStorage(env.ContentRootPath);
 });
+builder.Services.AddSingleton<IPresenceTracker, PresenceTracker>();
 builder.Services.Configure<AzureBlobOptions>(builder.Configuration.GetSection(AzureBlobOptions.SectionName));
 builder.Services.AddSingleton<IProjectBlobStorage, AzureProjectBlobStorage>();
 builder.Services.AddSingleton<IProjectFileUploadSessionStore, ProjectFileUploadSessionStore>();
