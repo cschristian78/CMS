@@ -19,6 +19,7 @@ public sealed class ProjectRepository : IProjectRepository
             p.ModifiedDate,
             IsDeleted = CAST(CASE WHEN p.IsActive = 0 THEN 1 ELSE 0 END AS BIT),
             IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
+            IsFeeBasedRevenue = CAST(ISNULL(p.IsFeeBasedRevenue, 0) AS BIT),
             c.ClientID,
             c.ClientName,
             c.ClientShortName,
@@ -160,6 +161,77 @@ public sealed class ProjectRepository : IProjectRepository
         [
             SqlParameterFactory.Int("@ProjectID", projectId),
             SqlParameterFactory.Bit("@IsOnline", isOnline)
+        ], cancellationToken);
+    }
+
+    public async Task AssignUserGroupAsync(int projectId, int userGroupId, CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new InvalidOperationException("ProjectID is required.");
+        }
+
+        if (userGroupId <= 0)
+        {
+            throw new InvalidOperationException("UserGroupID is required.");
+        }
+
+        var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
+        const string sql = """
+            UPDATE dbo.tProjectRef
+               SET UserGroupID = @UserGroupID
+             WHERE ProjectRefID = @ProjectRefID
+               AND IsActive = 1;
+            """;
+
+        await _db.ExecuteTextAsync(
+            sql,
+            [
+                SqlParameterFactory.Int("@ProjectRefID", projectRefId),
+                SqlParameterFactory.Int("@UserGroupID", userGroupId),
+            ],
+            cancellationToken);
+    }
+
+    public async Task UnassignUserGroupAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new InvalidOperationException("ProjectID is required.");
+        }
+
+        var projectRefId = await ResolveProjectRefIdForProjectAsync(projectId, cancellationToken);
+        const string sql = """
+            UPDATE dbo.tProjectRef
+               SET UserGroupID = NULL
+             WHERE ProjectRefID = @ProjectRefID
+               AND IsActive = 1;
+            """;
+
+        await _db.ExecuteTextAsync(
+            sql,
+            [SqlParameterFactory.Int("@ProjectRefID", projectRefId)],
+            cancellationToken);
+    }
+
+    public async Task UpdateRenewalDateAsync(int projectId, DateTime renewalDate, CancellationToken cancellationToken = default)
+    {
+        if (projectId <= 0)
+        {
+            throw new InvalidOperationException("ProjectID is required.");
+        }
+
+        var project = await GetAsync(projectId, cancellationToken)
+            ?? throw new InvalidOperationException($"Project {projectId} was not found.");
+
+        await _db.ExecuteAsync("dbo.usp_Project_Update",
+        [
+            SqlParameterFactory.Int("@ProjectID", projectId),
+            SqlParameterFactory.VarChar("@ProjectNumber", 50, project.ProjectNumber),
+            SqlParameterFactory.VarChar("@ProjectName", 200, project.ProjectName),
+            SqlParameterFactory.Date("@RenewalDate", renewalDate.Date),
+            SqlParameterFactory.Date("@DueDate", project.DueDate),
+            SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
         ], cancellationToken);
     }
 
@@ -311,6 +383,7 @@ public sealed class ProjectRepository : IProjectRepository
 
             await SyncProjectActiveFromStatusAsync(connection, tx, projectId, statusId, cancellationToken);
             await SyncProjectOnlineAsync(connection, tx, projectId, project.IsOnline, cancellationToken);
+            await SyncProjectFeeBasedRevenueAsync(connection, tx, projectId, project.IsFeeBasedRevenue, cancellationToken);
 
             await ExecuteTextAsync(connection, tx,
                 "DELETE FROM dbo.tProjectService WHERE ProjectRefID = @ProjectRefID;",
@@ -623,6 +696,23 @@ public sealed class ProjectRepository : IProjectRepository
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
         ], cancellationToken);
         return noteId;
+    }
+
+    public async Task EnsureProjectFeeBasedRevenueSchemaAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.tProject', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProject', N'IsFeeBasedRevenue') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProject
+                    ADD IsFeeBasedRevenue BIT NOT NULL
+                        CONSTRAINT DF_tProject_IsFeeBasedRevenue DEFAULT (0);
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(sql, cancellationToken: cancellationToken);
     }
 
     public async Task EnsureProjectCalendarSchemaAsync(CancellationToken cancellationToken = default)
@@ -1476,6 +1566,26 @@ public sealed class ProjectRepository : IProjectRepository
         ], cancellationToken);
     }
 
+    private static async Task SyncProjectFeeBasedRevenueAsync(
+        SqlConnection connection,
+        SqlTransaction tx,
+        int projectId,
+        bool isFeeBasedRevenue,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteTextAsync(connection, tx,
+            """
+            UPDATE dbo.tProject
+               SET IsFeeBasedRevenue = @IsFeeBasedRevenue,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ProjectID = @ProjectID;
+            """,
+        [
+            SqlParameterFactory.Int("@ProjectID", projectId),
+            SqlParameterFactory.Bit("@IsFeeBasedRevenue", isFeeBasedRevenue)
+        ], cancellationToken);
+    }
+
     private static async Task SyncProjectActiveFromStatusAsync(
         SqlConnection connection,
         SqlTransaction tx,
@@ -1687,6 +1797,7 @@ public sealed class ProjectRepository : IProjectRepository
         StatusCode = r.TryGetNullableString("StatusCode"),
         StatusDescription = r.TryGetNullableString("StatusDescription"),
         IsOnline = r.TryGetNullableBoolean("IsOnline") ?? false,
+        IsFeeBasedRevenue = r.TryGetNullableBoolean("IsFeeBasedRevenue") ?? false,
         IsDeleted = r.TryGetNullableBoolean("IsDeleted") ?? false,
         CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")

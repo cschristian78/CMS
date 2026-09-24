@@ -38,6 +38,9 @@ public sealed class Project
     /// <summary>When true, the project is marked Online / currently in progress (green-dot on Home).</summary>
     public bool IsOnline { get; set; }
 
+    /// <summary>When true, project revenue is fee-based (Project Info checkbox).</summary>
+    public bool IsFeeBasedRevenue { get; set; }
+
     /// <summary>Latest <c>tProjectRevenue</c> row surfaced by <c>vProject_Current</c>.</summary>
     public decimal? LatestRevenue { get; set; }
     public DateTime? LatestRevenueEffectiveDate { get; set; }

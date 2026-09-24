@@ -565,6 +565,20 @@ public sealed class AdminApiController : ControllerBase
         }
     }
 
+    [HttpGet("data-audit/export")]
+    public async Task<ActionResult<object>> GetDataAuditExportAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _adminService.GetDataAuditExportAsync(cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Admin API DataAudit export failed.");
+            return Problem(detail: UserFacingError(ex), title: "Operation failed", statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
     private string UserFacingError(Exception ex) =>
         _environment.IsDevelopment()
             ? ex.Message

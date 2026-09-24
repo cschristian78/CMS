@@ -1,4 +1,4 @@
--- Replaces UserType options: Basic (was Internal), External, Administrator.
+-- UserType options: Basic (was Internal), External, Administrator, Manager, Analyst.
 -- Migrates existing Internal rows to Basic and promotes Scott Christian to Administrator.
 -- Safe to re-run.
 CREATE OR ALTER PROCEDURE dbo.usp_AlterTable_tUser_UpdateUserTypeOptions
@@ -45,7 +45,7 @@ BEGIN
     BEGIN
         ALTER TABLE dbo.tUser
             ADD CONSTRAINT CK_tUser_UserType
-            CHECK (UserType IN (N'Basic', N'External', N'Administrator'));
+            CHECK (UserType IN (N'Basic', N'External', N'Administrator', N'Manager', N'Analyst'));
     END;
 END;
 GO

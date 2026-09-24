@@ -1,7 +1,12 @@
 ﻿import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import type { FlashFn } from '../App';
-import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson } from '../api';
+import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson, apiPutJson } from '../api';
+import { fetchAuthSession } from '../authSession';
+import {
+  downloadDataAuditReportPdf,
+  type DataAuditExportReport,
+} from '../admin/exportDataAuditReportPdf';
 import { formatCalendarDateDisplay } from '../utils/dateInput';
 
 interface ServerDraft {
@@ -676,6 +681,7 @@ interface ServiceBulkCommitResult {
 
 type TabId =
   | 'server'
+  | 'catai'
   | 'users'
   | 'roles'
   | 'groups'
@@ -769,6 +775,30 @@ function auditRowUserId(check: DataAuditCheck, row: (string | null)[]): number |
   const idx = check.columns.findIndex((c) => {
     const name = c.trim().toLowerCase();
     return name === 'userid' || name === 'user id';
+  });
+  if (idx < 0) {
+    return null;
+  }
+  const n = Number(String(row[idx] ?? '').trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function auditRowClientId(check: DataAuditCheck, row: (string | null)[]): number | null {
+  const idx = check.columns.findIndex((c) => {
+    const name = c.trim().toLowerCase();
+    return name === 'clientid' || name === 'client id';
+  });
+  if (idx < 0) {
+    return null;
+  }
+  const n = Number(String(row[idx] ?? '').trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function auditRowProjectId(check: DataAuditCheck, row: (string | null)[]): number | null {
+  const idx = check.columns.findIndex((c) => {
+    const name = c.trim().toLowerCase();
+    return name === 'projectid' || name === 'project id';
   });
   if (idx < 0) {
     return null;
@@ -907,7 +937,7 @@ function safeInternalReturnPath(raw: string | null): string | null {
   return s;
 }
 
-type UserTypeOption = 'Basic' | 'External' | 'Administrator';
+type UserTypeOption = 'Basic' | 'External' | 'Administrator' | 'Manager' | 'Analyst';
 
 function normalizeUserType(value?: string | null): UserTypeOption {
   const v = (value ?? '').trim().toLowerCase();
@@ -916,6 +946,12 @@ function normalizeUserType(value?: string | null): UserTypeOption {
   }
   if (v === 'administrator') {
     return 'Administrator';
+  }
+  if (v === 'manager') {
+    return 'Manager';
+  }
+  if (v === 'analyst') {
+    return 'Analyst';
   }
   return 'Basic';
 }
@@ -964,6 +1000,22 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     useIntegratedSecurity: true,
   });
 
+  const [isAdministrator, setIsAdministrator] = useState(false);
+  const [catAiDraft, setCatAiDraft] = useState({
+    apiKey: '',
+    apiKeyConfigured: false,
+    model: 'gpt-4o',
+    baseUrl: '',
+    deployment: '',
+    apiVersion: '2024-06-01',
+    systemPrompt: '',
+    temperature: 0.2,
+    maxTokens: 1500,
+    maxToolRounds: 5,
+  });
+  const [catAiKeyReplace, setCatAiKeyReplace] = useState('');
+  const [catAiLoaded, setCatAiLoaded] = useState(false);
+
   const reload = useCallback(async () => {
     const data = await apiGet<AdminModel>('/api/admin');
     setAdmin(data);
@@ -979,6 +1031,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   // Data Audit (state before load/effect that use it)
   const [dataAudit, setDataAudit] = useState<DataAuditReport | null>(null);
   const [dataAuditLoading, setDataAuditLoading] = useState(false);
+  const [dataAuditExporting, setDataAuditExporting] = useState(false);
   const [dataAuditError, setDataAuditError] = useState<string | null>(null);
   const [expandedAuditCheckId, setExpandedAuditCheckId] = useState<string | null>(null);
   const [auditGroupHighlight, setAuditGroupHighlight] = useState<AuditGroupHighlight | null>(null);
@@ -990,11 +1043,59 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       try {
         setLoadError(null);
         await reload();
+        const session = await fetchAuthSession();
+        const adminUser =
+          (session.userType ?? '').trim().toLowerCase() === 'administrator';
+        setIsAdministrator(adminUser);
       } catch (e) {
         setLoadError(e instanceof ApiError ? e.message : 'Could not load admin data.');
       }
     })();
   }, [reload]);
+
+  const loadCatAiSettings = useCallback(async () => {
+    const data = await apiGet<{
+      apiKey?: string;
+      apiKeyConfigured?: boolean;
+      model?: string;
+      baseUrl?: string;
+      deployment?: string;
+      apiVersion?: string;
+      systemPrompt?: string;
+      temperature?: number;
+      maxTokens?: number;
+      maxToolRounds?: number;
+    }>('/api/admin/catai-settings');
+    setCatAiDraft({
+      apiKey: data.apiKey ?? '',
+      apiKeyConfigured: data.apiKeyConfigured === true,
+      model: data.model ?? 'gpt-4o',
+      baseUrl: data.baseUrl ?? '',
+      deployment: data.deployment ?? '',
+      apiVersion: data.apiVersion ?? '2024-06-01',
+      systemPrompt: data.systemPrompt ?? '',
+      temperature: typeof data.temperature === 'number' ? data.temperature : 0.2,
+      maxTokens: typeof data.maxTokens === 'number' ? data.maxTokens : 1500,
+      maxToolRounds: typeof data.maxToolRounds === 'number' ? data.maxToolRounds : 5,
+    });
+    setCatAiKeyReplace('');
+    setCatAiLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isAdministrator || tab !== 'catai' || catAiLoaded) {
+      return;
+    }
+    void (async () => {
+      try {
+        await loadCatAiSettings();
+      } catch (err) {
+        flash('error', err instanceof ApiError ? err.message : 'Could not load CatAI settings.');
+      }
+    })();
+    // flash is stable enough for this admin page; avoid re-fetch loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdministrator, tab, catAiLoaded, loadCatAiSettings]);
 
   const loadDataAudit = useCallback(async () => {
     setDataAuditLoading(true);
@@ -1017,6 +1118,19 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   }, []);
 
+  const generateDataAuditPdf = useCallback(async () => {
+    setDataAuditExporting(true);
+    try {
+      const exportReport = await apiGet<DataAuditExportReport>('/api/admin/data-audit/export');
+      const fileName = await downloadDataAuditReportPdf(exportReport);
+      flash('success', `Downloaded ${fileName}.`);
+    } catch (e) {
+      flash('error', e instanceof ApiError ? e.message : 'Could not generate the Data Audit PDF.');
+    } finally {
+      setDataAuditExporting(false);
+    }
+  }, [flash]);
+
   useEffect(() => {
     if (tab !== 'dataAudit') {
       return;
@@ -1038,7 +1152,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     email: '',
     phone: '',
     company: 'BMS',
-    userType: 'Basic' as 'Basic' | 'External' | 'Administrator',
+    userType: 'Basic' as UserTypeOption,
     address: '',
     addressType: 'Work',
     city: '',
@@ -1072,6 +1186,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [userBulkBusy, setUserBulkBusy] = useState(false);
   const [userDirectorySearch, setUserDirectorySearch] = useState('');
   const [userDepartmentFilter, setUserDepartmentFilter] = useState('');
+  const [userActiveTab, setUserActiveTab] = useState<'Active' | 'Inactive'>('Active');
 
   // Roles
   const [selectedRoleId, setSelectedRoleId] = useState<number | ''>('');
@@ -1201,6 +1316,62 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       flash(result.succeeded ? 'success' : 'error', result.message);
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Test failed.');
+    }
+  };
+
+  const handleCatAiSave = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const saved = await apiPutJson<{
+        apiKey?: string;
+        apiKeyConfigured?: boolean;
+        model?: string;
+        baseUrl?: string;
+        deployment?: string;
+        apiVersion?: string;
+        systemPrompt?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxToolRounds?: number;
+      }>('/api/admin/catai-settings', {
+        apiKey: catAiKeyReplace.trim() || undefined,
+        model: catAiDraft.model,
+        baseUrl: catAiDraft.baseUrl,
+        deployment: catAiDraft.deployment,
+        apiVersion: catAiDraft.apiVersion,
+        systemPrompt: catAiDraft.systemPrompt,
+        temperature: catAiDraft.temperature,
+        maxTokens: catAiDraft.maxTokens,
+        maxToolRounds: catAiDraft.maxToolRounds,
+      });
+      setCatAiDraft({
+        apiKey: saved.apiKey ?? '',
+        apiKeyConfigured: saved.apiKeyConfigured === true,
+        model: saved.model ?? catAiDraft.model,
+        baseUrl: saved.baseUrl ?? catAiDraft.baseUrl,
+        deployment: saved.deployment ?? catAiDraft.deployment,
+        apiVersion: saved.apiVersion ?? catAiDraft.apiVersion,
+        systemPrompt: saved.systemPrompt ?? catAiDraft.systemPrompt,
+        temperature: typeof saved.temperature === 'number' ? saved.temperature : catAiDraft.temperature,
+        maxTokens: typeof saved.maxTokens === 'number' ? saved.maxTokens : catAiDraft.maxTokens,
+        maxToolRounds: typeof saved.maxToolRounds === 'number' ? saved.maxToolRounds : catAiDraft.maxToolRounds,
+      });
+      setCatAiKeyReplace('');
+      flash('success', 'CatAI settings were encrypted and saved.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'CatAI save failed.');
+    }
+  };
+
+  const handleCatAiTest = async () => {
+    try {
+      const result = await apiPostJson<{ succeeded: boolean; message: string }>(
+        '/api/admin/catai-settings/test',
+        {},
+      );
+      flash(result.succeeded ? 'success' : 'error', result.message);
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'CatAI test failed.');
     }
   };
 
@@ -2203,6 +2374,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
 
     let rows = admin.users;
+    // Active / Inactive tabs read from soft-delete flag (IsActive inverted as isDeleted).
+    rows = rows.filter((u) => (userActiveTab === 'Active' ? u.isDeleted !== true : u.isDeleted === true));
+
     const deptSel = userDepartmentFilter.trim();
     if (deptSel !== '') {
       const want = deptSel.toLowerCase();
@@ -2241,7 +2415,23 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       const fb = (b.firstName ?? '').trim();
       return fa.localeCompare(fb, undefined, { sensitivity: 'base' });
     });
-  }, [admin, userDepartmentFilter, userDirectorySearch]);
+  }, [admin, userActiveTab, userDepartmentFilter, userDirectorySearch]);
+
+  const userActiveCounts = useMemo(() => {
+    const counts = { total: 0, active: 0, inactive: 0 };
+    if (!admin) {
+      return counts;
+    }
+    for (const u of admin.users) {
+      counts.total += 1;
+      if (u.isDeleted === true) {
+        counts.inactive += 1;
+      } else {
+        counts.active += 1;
+      }
+    }
+    return counts;
+  }, [admin]);
 
   useEffect(() => {
     if (selectedUserId === '' || !admin) {
@@ -2687,6 +2877,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
         return;
       }
       setUserDepartmentFilter('CAT');
+      setUserActiveTab(u.isDeleted === true ? 'Inactive' : 'Active');
       setUserDirectorySearch('');
       setSelectedUserId(userId);
       setTab('users');
@@ -2701,6 +2892,47 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     // applyUserToForm closes over admin/flash; user list is the dependency that matters here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [admin, flash],
+  );
+
+  const openClientFromDataAudit = useCallback(
+    (check: DataAuditCheck, row: (string | null)[]) => {
+      const clientId = auditRowClientId(check, row);
+      if (clientId == null || !admin) {
+        return;
+      }
+      const c = admin.clients.find((x) => x.clientID === clientId);
+      if (!c) {
+        flash('error', `Client ${clientId} was not found in the Clients list.`);
+        return;
+      }
+      setClientActiveTab(c.isActive === false ? 'Inactive' : 'Active');
+      setClientBuFilter('');
+      setClientBcFilter('');
+      setClientSearch((c.clientName ?? '').trim() || String(clientId));
+      setSelectedClientId(clientId);
+      applyClientToForm(c);
+      setTab('clients');
+      window.setTimeout(() => {
+        document.getElementById(`admin-client-row-${clientId}`)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }, 80);
+    },
+    // applyClientToForm closes over clientStatusOf; client list is the dependency that matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [admin, flash],
+  );
+
+  const openProjectFromDataAudit = useCallback(
+    (check: DataAuditCheck, row: (string | null)[]) => {
+      const projectId = auditRowProjectId(check, row);
+      if (projectId == null) {
+        return;
+      }
+      navigate(`/projects/${projectId}`);
+    },
+    [navigate],
   );
 
   // Prefill UserGroup edit panel when arriving from Project Info (selectUserGroup query).
@@ -3386,6 +3618,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       <section className={'card admin-card' + (tab === 'services' ? ' admin-card--services' : '')}>
         <div className="admin-tabs" role="tablist" aria-label="Admin sections">
           {tabBtn('server', 'Server')}
+          {isAdministrator ? tabBtn('catai', 'CatAI') : null}
           {tabBtn('businessUnits', 'Business Unit')}
           {tabBtn('businessClasses', 'Business Class')}
           {tabBtn('clientTypes', 'Client Type')}
@@ -3472,10 +3705,134 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           </form>
         </div>
 
+        {isAdministrator ? (
+          <div id="admin-tab-catai" className={'admin-tab-panel' + (tab === 'catai' ? ' active' : '')}>
+            <h2>CatAI</h2>
+            <form className="admin-edit-card project-panel-tab-card" onSubmit={(e) => void handleCatAiSave(e)}>
+              <div className="form-grid">
+                <label htmlFor="catai-base">Base URL</label>
+                <input
+                  id="catai-base"
+                  value={catAiDraft.baseUrl}
+                  onChange={(e) => setCatAiDraft({ ...catAiDraft, baseUrl: e.target.value })}
+                  placeholder="https://....openai.azure.com"
+                />
+
+                <label htmlFor="catai-deployment">Deployment</label>
+                <input
+                  id="catai-deployment"
+                  value={catAiDraft.deployment}
+                  onChange={(e) => setCatAiDraft({ ...catAiDraft, deployment: e.target.value })}
+                />
+
+                <label htmlFor="catai-model">Model</label>
+                <input
+                  id="catai-model"
+                  value={catAiDraft.model}
+                  onChange={(e) => setCatAiDraft({ ...catAiDraft, model: e.target.value })}
+                />
+
+                <label htmlFor="catai-apiversion">API version</label>
+                <input
+                  id="catai-apiversion"
+                  value={catAiDraft.apiVersion}
+                  onChange={(e) => setCatAiDraft({ ...catAiDraft, apiVersion: e.target.value })}
+                />
+
+                <label htmlFor="catai-temp">Temperature</label>
+                <input
+                  id="catai-temp"
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={catAiDraft.temperature}
+                  onChange={(e) =>
+                    setCatAiDraft({ ...catAiDraft, temperature: Number(e.target.value) || 0 })
+                  }
+                />
+
+                <label htmlFor="catai-maxtokens">Max tokens</label>
+                <input
+                  id="catai-maxtokens"
+                  type="number"
+                  min={64}
+                  max={8000}
+                  value={catAiDraft.maxTokens}
+                  onChange={(e) =>
+                    setCatAiDraft({ ...catAiDraft, maxTokens: Number(e.target.value) || 1500 })
+                  }
+                />
+
+                <label htmlFor="catai-maxrounds">Max tool rounds</label>
+                <input
+                  id="catai-maxrounds"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={catAiDraft.maxToolRounds}
+                  onChange={(e) =>
+                    setCatAiDraft({ ...catAiDraft, maxToolRounds: Number(e.target.value) || 5 })
+                  }
+                />
+
+                <label htmlFor="catai-key">API key</label>
+                <div>
+                  <input
+                    id="catai-key"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={
+                      catAiDraft.apiKeyConfigured
+                        ? 'Configured (enter a new key to replace)'
+                        : 'Enter API key'
+                    }
+                    value={catAiKeyReplace}
+                    onChange={(e) => setCatAiKeyReplace(e.target.value)}
+                  />
+                  {catAiDraft.apiKeyConfigured ? (
+                    <p className="field-help">Current key (masked): {catAiDraft.apiKey || '••••'}</p>
+                  ) : (
+                    <p className="field-help">No API key configured yet.</p>
+                  )}
+                </div>
+
+                <label htmlFor="catai-prompt">System prompt</label>
+                <textarea
+                  id="catai-prompt"
+                  rows={6}
+                  value={catAiDraft.systemPrompt}
+                  onChange={(e) => setCatAiDraft({ ...catAiDraft, systemPrompt: e.target.value })}
+                />
+              </div>
+              <div className="button-row">
+                <button type="submit" className="primary-button">
+                  Save CatAI settings
+                </button>
+                <button type="button" className="secondary-button" onClick={() => void handleCatAiTest()}>
+                  Test connection
+                </button>
+              </div>
+              <p className="field-help">
+                Settings are stored encrypted under App_Data and override appsettings without rewriting the config
+                file on disk. Leave the API key blank when saving to keep the existing key.
+              </p>
+            </form>
+          </div>
+        ) : null}
+
         <div id="admin-tab-users" className={'admin-tab-panel' + (tab === 'users' ? ' active' : '')}>
           <div className="page-header-top admin-users-toolbar">
             <h2>
-              <span className="admin-users-count-num">{admin.users.length}</span> Users
+              <span className="admin-users-count-num">{userActiveCounts.total}</span> Users
+              <span className="admin-client-count-chips">
+                <span className="admin-client-count-chip admin-client-count-chip--active">
+                  Active <strong>{userActiveCounts.active}</strong>
+                </span>
+                <span className="admin-client-count-chip admin-client-count-chip--inactive">
+                  Inactive <strong>{userActiveCounts.inactive}</strong>
+                </span>
+              </span>
               {userDepartmentCounts.length > 0 ? (
                 <span className="admin-dept-count-chips">
                   {userDepartmentCounts.map((d) => {
@@ -3548,18 +3905,35 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   autoComplete="off"
                 />
               </div>
+              <div className="admin-client-tabs" role="tablist" aria-label="User status">
+                {(['Active', 'Inactive'] as const).map((statusTab) => (
+                  <button
+                    key={statusTab}
+                    type="button"
+                    role="tab"
+                    aria-selected={userActiveTab === statusTab}
+                    className={'admin-client-tab' + (userActiveTab === statusTab ? ' selected' : '')}
+                    onClick={() => setUserActiveTab(statusTab)}
+                  >
+                    {statusTab}
+                    <span className="admin-client-tab-count">
+                      {statusTab === 'Active' ? userActiveCounts.active : userActiveCounts.inactive}
+                    </span>
+                  </button>
+                ))}
+              </div>
               <div
                 id="admin-user-pick-list"
                 className="admin-user-pick-list"
                 role="listbox"
-                aria-label="Users"
+                aria-label={`${userActiveTab} users`}
                 aria-activedescendant={selectedUserId === '' ? undefined : `admin-user-row-${selectedUserId}`}
               >
                 {filteredUsersForDirectory.length === 0 ? (
                   <div className="admin-user-pick-empty" role="status">
                     {admin.users.length === 0
                       ? 'No users loaded.'
-                      : 'No users match your filters.'}
+                      : `No ${userActiveTab.toLowerCase()} users match your filters.`}
                   </div>
                 ) : (
                   filteredUsersForDirectory.map((u) => {
@@ -3729,11 +4103,13 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   onChange={(e) =>
                     setUserForm({ ...userForm, userType: normalizeUserType(e.target.value) })
                   }
-                  aria-label="User type (Basic, External, or Administrator)"
+                  aria-label="User type (Basic, External, Administrator, Manager, or Analyst)"
                 >
                   <option value="Basic">Basic</option>
                   <option value="External">External</option>
                   <option value="Administrator">Administrator</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Analyst">Analyst</option>
                 </select>
                 <label>Address type</label>
                 <select
@@ -5145,10 +5521,19 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             <button
               type="button"
               className="primary-button"
-              disabled={dataAuditLoading}
+              disabled={dataAuditLoading || dataAuditExporting}
               onClick={() => void loadDataAudit()}
             >
               {dataAuditLoading ? 'Running…' : dataAudit ? 'Refresh report' : 'Run report'}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={dataAuditLoading || dataAuditExporting}
+              onClick={() => void generateDataAuditPdf()}
+              title="Download a PDF with section summaries and findings by Analytics Lead"
+            >
+              {dataAuditExporting ? 'Generating…' : 'Generate report'}
             </button>
           </div>
           {dataAuditError ? (
@@ -5223,6 +5608,14 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                           <p className="field-help">
                             Double-click a row to open that user on the Users tab (CAT filter applied).
                           </p>
+                        ) : selected.checkId.startsWith('clients-') ? (
+                          <p className="field-help">
+                            Double-click a row to open that client on the Clients tab with the form filled in.
+                          </p>
+                        ) : selected.checkId.startsWith('projects-') ? (
+                          <p className="field-help">
+                            Double-click a row to open that project with the project info filled in.
+                          </p>
                         ) : (
                           <p className="field-help">
                             Double-click a row with a user group (UGID) to open that group on the UserGroup tab.
@@ -5246,24 +5639,39 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                               {selected.rows.map((row, ri) => {
                                 const ugid = auditRowUgid(selected, row);
                                 const userId = auditRowUserId(selected, row);
-                                const canOpenGroup = ugid != null;
+                                const clientId = auditRowClientId(selected, row);
+                                const projectId = auditRowProjectId(selected, row);
+                                const canOpenProject =
+                                  selected.checkId.startsWith('projects-') && projectId != null;
+                                const canOpenGroup = !canOpenProject && ugid != null;
                                 const canOpenUser =
                                   selected.checkId === 'user-groups-cat-users-without-membership' &&
                                   userId != null;
-                                const canJump = canOpenGroup || canOpenUser;
+                                const canOpenClient =
+                                  selected.checkId.startsWith('clients-') && clientId != null;
+                                const canJump =
+                                  canOpenProject || canOpenGroup || canOpenUser || canOpenClient;
                                 return (
                                   <tr
                                     key={`${selected.checkId}-${ri}`}
                                     className={canJump ? 'admin-data-audit-row--jump' : undefined}
                                     title={
-                                      canOpenUser
-                                        ? `Double-click to open user ${userId} on the Users tab`
-                                        : canOpenGroup
-                                          ? `Double-click to open user group ${ugid} on the UserGroup tab`
-                                          : undefined
+                                      canOpenProject
+                                        ? `Double-click to open project ${projectId}`
+                                        : canOpenClient
+                                          ? `Double-click to open client ${clientId} on the Clients tab`
+                                          : canOpenUser
+                                            ? `Double-click to open user ${userId} on the Users tab`
+                                            : canOpenGroup
+                                              ? `Double-click to open user group ${ugid} on the UserGroup tab`
+                                              : undefined
                                     }
                                     onDoubleClick={() => {
-                                      if (canOpenUser) {
+                                      if (canOpenProject) {
+                                        openProjectFromDataAudit(selected, row);
+                                      } else if (canOpenClient) {
+                                        openClientFromDataAudit(selected, row);
+                                      } else if (canOpenUser) {
                                         openUserFromDataAudit(selected, row);
                                       } else if (canOpenGroup) {
                                         openUserGroupFromDataAudit(selected, row);

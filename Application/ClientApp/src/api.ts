@@ -104,6 +104,30 @@ export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
+export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
+  const token = await refreshCsrf();
+  const res = await fetch(path, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-XSRF-TOKEN': token,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw await ApiError.fromResponse(res);
+  }
+
+  const raw = await res.text();
+  if (!raw) {
+    return undefined as T;
+  }
+
+  return JSON.parse(raw) as T;
+}
+
 export async function apiDelete(path: string): Promise<void> {
   const token = await refreshCsrf();
   const res = await fetch(path, {

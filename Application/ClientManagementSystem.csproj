@@ -17,6 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.Storage.Blobs" Version="12.24.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="QuestPDF" Version="2024.12.3" />
   </ItemGroup>
 
   <ItemGroup>

@@ -42,6 +42,11 @@ public static class SqlParameterFactory
         Value = string.IsNullOrWhiteSpace(value) ? DBNull.Value : value
     };
 
+    public static SqlParameter NVarCharMax(string name, string? value) => new(name, SqlDbType.NVarChar, -1)
+    {
+        Value = value is null ? DBNull.Value : value
+    };
+
     public static SqlParameter Decimal(string name, decimal? value) => new(name, SqlDbType.Decimal)
     {
         Precision = 18,

@@ -76,6 +76,7 @@ public interface IAdminService
 
     // ---- Data audit -----------------------------------------------------
     Task<DataAuditReport> GetDataAuditReportAsync(CancellationToken cancellationToken = default);
+    Task<DataAuditExportReport> GetDataAuditExportAsync(CancellationToken cancellationToken = default);
 
     // ---- Activity log ---------------------------------------------------
     Task<IReadOnlyList<ActivityLog>> GetActivityForEntityAsync(string entityType, int entityId, int top = 100, CancellationToken cancellationToken = default);

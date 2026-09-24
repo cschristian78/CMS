@@ -853,6 +853,9 @@ public sealed class AdminService : IAdminService
     public Task<DataAuditReport> GetDataAuditReportAsync(CancellationToken cancellationToken = default)
         => _dataAudit.GetReportAsync(cancellationToken);
 
+    public Task<DataAuditExportReport> GetDataAuditExportAsync(CancellationToken cancellationToken = default)
+        => _dataAudit.GetExportAsync(cancellationToken);
+
     public Task<IReadOnlyList<ActivityLog>> GetActivityForEntityAsync(string entityType, int entityId, int top = 100, CancellationToken cancellationToken = default)
         => _admin.GetActivityForEntityAsync(entityType, entityId, top, cancellationToken);
 
@@ -943,7 +946,7 @@ public sealed class AdminService : IAdminService
 
             if (!IsAllowedUserType(r.UserType))
             {
-                errors.Add($"Line {r.LineNumber}: UserType must be Basic, External, or Administrator.");
+                errors.Add($"Line {r.LineNumber}: UserType must be Basic, External, Administrator, Manager, or Analyst.");
             }
         }
 
@@ -1344,16 +1347,13 @@ public sealed class AdminService : IAdminService
     private static bool IsAllowedUserType(string? value)
     {
         var raw = (value ?? "Basic").Trim();
-        if (string.IsNullOrWhiteSpace(raw)
+        return string.IsNullOrWhiteSpace(raw)
             || string.Equals(raw, "Basic", StringComparison.OrdinalIgnoreCase)
             || string.Equals(raw, "Internal", StringComparison.OrdinalIgnoreCase)
             || string.Equals(raw, "External", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(raw, "Administrator", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return false;
+            || string.Equals(raw, "Administrator", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(raw, "Manager", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(raw, "Analyst", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeUserType(string? value)
@@ -1367,6 +1367,16 @@ public sealed class AdminService : IAdminService
         if (string.Equals(raw, "Administrator", StringComparison.OrdinalIgnoreCase))
         {
             return "Administrator";
+        }
+
+        if (string.Equals(raw, "Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Manager";
+        }
+
+        if (string.Equals(raw, "Analyst", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Analyst";
         }
 
         // Legacy Internal maps to Basic; blank / unknown also default to Basic.

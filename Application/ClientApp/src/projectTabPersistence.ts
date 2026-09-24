@@ -38,6 +38,7 @@ export interface ProjectSlice {
   renewalDate: string | null;
   dueDate: string | null;
   statusID: number;
+  isFeeBasedRevenue: boolean;
   revenueAmount: number | null;
   revenueEffectiveDate: string | null;
   revenueChangeReason: string | null;
@@ -65,6 +66,7 @@ export function pickProjectSlice(m: {
   renewalDate?: string | null;
   dueDate?: string | null;
   statusID: number;
+  isFeeBasedRevenue?: boolean;
   revenueAmount?: number | null;
   revenueEffectiveDate?: string | null;
   revenueChangeReason?: string | null;
@@ -77,6 +79,7 @@ export function pickProjectSlice(m: {
     renewalDate: toApiDateValue(m.renewalDate),
     dueDate: toApiDateValue(m.dueDate),
     statusID: m.statusID ?? 0,
+    isFeeBasedRevenue: !!m.isFeeBasedRevenue,
     revenueAmount: m.revenueAmount ?? null,
     revenueEffectiveDate: toApiDateValue(m.revenueEffectiveDate),
     revenueChangeReason: (m.revenueChangeReason ?? '').trim() || null,
@@ -126,6 +129,7 @@ export function projectSliceEqual(a: ProjectSlice, b: ProjectSlice): boolean {
     (a.renewalDate ?? '') === (b.renewalDate ?? '') &&
     (a.dueDate ?? '') === (b.dueDate ?? '') &&
     (a.statusID ?? 0) === (b.statusID ?? 0) &&
+    !!a.isFeeBasedRevenue === !!b.isFeeBasedRevenue &&
     Number(a.revenueAmount ?? 0) === Number(b.revenueAmount ?? 0) &&
     (a.revenueEffectiveDate ?? '') === (b.revenueEffectiveDate ?? '') &&
     (a.revenueChangeReason ?? '') === (b.revenueChangeReason ?? '')
@@ -177,6 +181,9 @@ export function describeProjectChanges(base: ProjectSlice, curr: ProjectSlice): 
   }
   if ((base.statusID ?? 0) !== (curr.statusID ?? 0)) {
     changes.push('Project Status');
+  }
+  if (!!base.isFeeBasedRevenue !== !!curr.isFeeBasedRevenue) {
+    changes.push('Fee-based revenue');
   }
   if (
     Number(base.revenueAmount ?? 0) !== Number(curr.revenueAmount ?? 0) ||

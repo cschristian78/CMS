@@ -147,7 +147,7 @@ public sealed class AdminRepository : IAdminRepository
             BEGIN
                 ALTER TABLE dbo.tUser
                     ADD CONSTRAINT CK_tUser_UserType
-                    CHECK (UserType IN (N'Basic', N'External', N'Administrator'));
+                    CHECK (UserType IN (N'Basic', N'External', N'Administrator', N'Manager', N'Analyst'));
             END;
             """;
 
@@ -179,8 +179,8 @@ public sealed class AdminRepository : IAdminRepository
                 SET NOCOUNT ON;
                 SET XACT_ABORT ON;
 
-                IF @UserType NOT IN ('Basic', 'External', 'Administrator')
-                    THROW 50003, 'UserType must be Basic, External, or Administrator.', 1;
+                IF @UserType NOT IN ('Basic', 'External', 'Administrator', 'Manager', 'Analyst')
+                    THROW 50003, 'UserType must be Basic, External, Administrator, Manager, or Analyst.', 1;
 
                 IF EXISTS (SELECT 1 FROM dbo.tUser WHERE Email = @Email AND IsActive = 1)
                     THROW 50004, 'Email already exists.', 1;

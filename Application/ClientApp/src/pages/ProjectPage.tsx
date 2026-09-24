@@ -108,6 +108,8 @@ interface ProjectFormModel {
   statusID: number;
   /** When true, project is Online / currently in progress (green-dot on Home). */
   isOnline?: boolean;
+  /** When true, project revenue is fee-based. */
+  isFeeBasedRevenue?: boolean;
 
   // Revenue entry (writes a row to dbo.tProjectRevenue)
   revenueAmount?: number | null;
@@ -3478,19 +3480,34 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
               </select>
 
               <label htmlFor="revenueAmount">Revenue</label>
-              <input
-                id="revenueAmount"
-                type="number"
-                step="0.01"
-                min="0"
-                value={model.revenueAmount ?? ''}
-                onChange={(e) =>
-                  setModel({
-                    ...model,
-                    revenueAmount: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-              />
+              <div className="project-number-with-online">
+                <input
+                  id="revenueAmount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={model.revenueAmount ?? ''}
+                  onChange={(e) =>
+                    setModel({
+                      ...model,
+                      revenueAmount: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
+                />
+                <span className="project-online-toggle">
+                  <input
+                    id="isFeeBasedRevenue"
+                    type="checkbox"
+                    checked={!!model.isFeeBasedRevenue}
+                    onChange={(e) =>
+                      setModel({ ...model, isFeeBasedRevenue: e.target.checked })
+                    }
+                  />{' '}
+                  <label htmlFor="isFeeBasedRevenue" className="project-online-toggle-label">
+                    Fee-based revenue
+                  </label>
+                </span>
+              </div>
 
               <label htmlFor="revenueEffectiveDate">Revenue Effective Date</label>
               <input

@@ -2197,6 +2197,7 @@ BEGIN
         ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tProject_ModifiedDate DEFAULT (SYSUTCDATETIME()),
         IsActive                     BIT                  NOT NULL CONSTRAINT DF_tProject_IsActive DEFAULT (1),
         IsOnline                     BIT                  NOT NULL CONSTRAINT DF_tProject_IsOnline DEFAULT (0),
+        IsFeeBasedRevenue            BIT                  NOT NULL CONSTRAINT DF_tProject_IsFeeBasedRevenue DEFAULT (0),
         CONSTRAINT PK_tProject PRIMARY KEY CLUSTERED (ProjectID)
         );
 
@@ -2222,6 +2223,25 @@ BEGIN
     BEGIN
         ALTER TABLE dbo.tProject
             ADD IsOnline BIT NOT NULL CONSTRAINT DF_tProject_IsOnline DEFAULT (0);
+    END;
+END;
+GO
+/*
+  Adds IsFeeBasedRevenue (BIT) to dbo.tProject for the Project Info fee-based
+  revenue checkbox. Idempotent for existing installs.
+*/
+CREATE OR ALTER PROCEDURE usp_AlterTable_tProject_AddIsFeeBasedRevenue
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF OBJECT_ID('dbo.tProject', 'U') IS NULL
+        THROW 50001, 'dbo.tProject does not exist. Run usp_CreateTable_tProject first.', 1;
+
+    IF COL_LENGTH('dbo.tProject', 'IsFeeBasedRevenue') IS NULL
+    BEGIN
+        ALTER TABLE dbo.tProject
+            ADD IsFeeBasedRevenue BIT NOT NULL CONSTRAINT DF_tProject_IsFeeBasedRevenue DEFAULT (0);
     END;
 END;
 GO
@@ -2375,7 +2395,7 @@ BEGIN
         IsActive                     BIT                  NOT NULL CONSTRAINT DF_tUser_IsActive DEFAULT (1),
         CONSTRAINT PK_tUser PRIMARY KEY CLUSTERED (UserID),
         CONSTRAINT UQ_tUser_Email UNIQUE (Email),
-        CONSTRAINT CK_tUser_UserType CHECK (UserType IN ('Basic','External','Administrator'))
+        CONSTRAINT CK_tUser_UserType CHECK (UserType IN ('Basic','External','Administrator','Manager','Analyst'))
 		)
     END;
 END;
@@ -2446,8 +2466,8 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF @UserType NOT IN ('Basic', 'External', 'Administrator')
-        THROW 50003, 'UserType must be Basic, External, or Administrator.', 1;
+    IF @UserType NOT IN ('Basic', 'External', 'Administrator', 'Manager', 'Analyst')
+        THROW 50003, 'UserType must be Basic, External, Administrator, Manager, or Analyst.', 1;
 
     IF EXISTS (SELECT 1 FROM dbo.tUser WHERE Email = @Email AND IsActive = 1)
         THROW 50004, 'Email already exists.', 1;
@@ -5880,6 +5900,8 @@ BEGIN
     EXEC dbo.usp_CreateTable_tService;
     EXEC dbo.usp_CreateTable_tProject;
     EXEC dbo.usp_AlterTable_tProject_AddIsOnline;  -- adds IsOnline for in-progress indicator (idempotent)
+    IF OBJECT_ID(N'dbo.usp_AlterTable_tProject_AddIsFeeBasedRevenue', N'P') IS NOT NULL
+        EXEC dbo.usp_AlterTable_tProject_AddIsFeeBasedRevenue;  -- fee-based revenue flag (idempotent)
 
     ------------------------------------------------------------------
     -- 4. Ref / detail tables (depend on entities above)

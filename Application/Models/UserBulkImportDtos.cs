@@ -28,9 +28,9 @@ public sealed class UserImportRowDto
     [MaxLength(100)]
     public string Title { get; set; } = string.Empty;
 
-    /// <summary>'Internal' or 'External' per <c>CK_tUser_UserType</c>.</summary>
+    /// <summary>'Basic', 'External', 'Administrator', 'Manager', or 'Analyst' per <c>CK_tUser_UserType</c>.</summary>
     [MaxLength(20)]
-    public string UserType { get; set; } = "Internal";
+    public string UserType { get; set; } = "Basic";
 
     /// <summary>Maps to <c>dbo.tUser.IsActive</c>. New users default to active (1) when the
     /// column is omitted from the CSV.</summary>

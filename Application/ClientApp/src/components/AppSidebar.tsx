@@ -20,6 +20,14 @@ function HomeIcon() {
   );
 }
 
+function ProjectListIcon() {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </svg>
+  );
+}
+
 function PlusIcon() {
   return (
     <svg {...iconProps} aria-hidden="true">
@@ -65,6 +73,14 @@ const navItems: NavItemDef[] = [
     icon: <HomeIcon />,
     isActive: (p) => p === '/',
     onNavigate: () => setCatAppMode('hub'),
+  },
+  {
+    to: '/cms',
+    label: 'Project List',
+    icon: <ProjectListIcon />,
+    modes: ['cm'],
+    isActive: (p) => p === '/cms',
+    onNavigate: () => setCatAppMode('cm'),
   },
   {
     to: '/tms/dashboard',

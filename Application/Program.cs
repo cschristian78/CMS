@@ -72,6 +72,7 @@ builder.Services
     });
 
 builder.Services.AddSingleton<ISecureConnectionSettingsStore, SecureConnectionSettingsStore>();
+builder.Services.AddSingleton<ICatAiSettingsStore, CatAiSettingsStore>();
 builder.Services.AddSingleton<IUserPhotoStorage>(sp =>
 {
     var env = sp.GetRequiredService<IWebHostEnvironment>();
@@ -103,6 +104,7 @@ builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IHomeRepository, HomeRepository>();
 builder.Services.AddScoped<ITmsRepository, TmsRepository>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
+builder.Services.AddScoped<ICatAiConversationRepository, CatAiConversationRepository>();
 
 builder.Services.AddScoped<IClientService, ClientService>();
 builder.Services.AddScoped<IProjectService, ClientManagementSystem.Services.ProjectService>();
@@ -113,6 +115,10 @@ builder.Services.AddScoped<ITmsService, TmsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<HomeClientProjectBulkImportService>();
 builder.Services.AddScoped<IHomeService, HomeService>();
+builder.Services.AddScoped<ICatAiSettingsResolver, CatAiSettingsResolver>();
+builder.Services.AddScoped<IProjectReportService, ProjectReportService>();
+builder.Services.AddScoped<ICatAiToolService, CatAiToolService>();
+builder.Services.AddScoped<ICatAiChatService, CatAiChatService>();
 builder.Services.AddHttpClient();
 
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
@@ -206,11 +212,14 @@ try
     var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
     projects.EnsureProjectNoteSchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectCalendarSchemaAsync().GetAwaiter().GetResult();
+    projects.EnsureProjectFeeBasedRevenueSchemaAsync().GetAwaiter().GetResult();
+    var catAiConversations = scope.ServiceProvider.GetRequiredService<ICatAiConversationRepository>();
+    catAiConversations.EnsureSchemaAsync().GetAwaiter().GetResult();
 }
 catch (Exception ex)
 {
     var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    logger.LogWarning(ex, "Could not ensure login/user-type/note/calendar schema at startup. It will retry on first use.");
+    logger.LogWarning(ex, "Could not ensure login/user-type/note/calendar/fee-based/CatAI schema at startup. It will retry on first use.");
 }
 
 app.Run();

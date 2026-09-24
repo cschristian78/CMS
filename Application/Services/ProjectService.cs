@@ -109,6 +109,7 @@ public sealed class ProjectService : IProjectService
             DueDate = project.DueDate,
             StatusID = project.StatusID,
             IsOnline = project.IsOnline,
+            IsFeeBasedRevenue = project.IsFeeBasedRevenue,
             ClientBusinessUnitID = project.BusinessUnitID,
             ClientBusinessUnitName = project.BusinessUnitName,
             ClientBusinessClassID = project.BusinessClassID > 0 ? project.BusinessClassID : null,
@@ -179,7 +180,8 @@ public sealed class ProjectService : IProjectService
             RenewalDate = model.RenewalDate,
             DueDate = model.DueDate,
             StatusID = model.StatusID > 0 ? model.StatusID : 1,
-            IsOnline = model.IsOnline
+            IsOnline = model.IsOnline,
+            IsFeeBasedRevenue = model.IsFeeBasedRevenue
         };
 
         var existing = project.ProjectID > 0

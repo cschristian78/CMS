@@ -42,6 +42,7 @@ public interface IProjectRepository
     // Notes
     Task EnsureProjectNoteSchemaAsync(CancellationToken cancellationToken = default);
     Task EnsureProjectCalendarSchemaAsync(CancellationToken cancellationToken = default);
+    Task EnsureProjectFeeBasedRevenueSchemaAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
@@ -90,4 +91,13 @@ public interface IProjectRepository
 
     /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
     Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets the active project ref's UserGroupID without replacing services.</summary>
+    Task AssignUserGroupAsync(int projectId, int userGroupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears the active project ref's UserGroupID.</summary>
+    Task UnassignUserGroupAsync(int projectId, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates <c>dbo.tProject.RenewalDate</c> without replacing services.</summary>
+    Task UpdateRenewalDateAsync(int projectId, DateTime renewalDate, CancellationToken cancellationToken = default);
 }

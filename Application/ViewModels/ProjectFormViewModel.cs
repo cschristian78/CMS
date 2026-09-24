@@ -80,6 +80,10 @@ public sealed class ProjectFormViewModel : IJsonOnDeserialized
     [Display(Name = "Online")]
     public bool IsOnline { get; set; }
 
+    /// <summary>When true, project revenue is fee-based.</summary>
+    [Display(Name = "Fee-based revenue")]
+    public bool IsFeeBasedRevenue { get; set; }
+
     /* ---- Revenue entry (writes a row to dbo.tProjectRevenue) ---- */
 
     [Display(Name = "Revenue")]
