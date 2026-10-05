@@ -682,9 +682,8 @@ interface ServiceBulkCommitResult {
 type TabId =
   | 'server'
   | 'catai'
+  | 'correspondence'
   | 'users'
-  | 'roles'
-  | 'groups'
   | 'projectTypes'
   | 'businessUnits'
   | 'businessClasses'
@@ -692,6 +691,49 @@ type TabId =
   | 'clients'
   | 'services'
   | 'dataAudit';
+
+type CorrespondenceOption = { value: string; text: string };
+
+type CorrespondenceDraft = {
+  enabled: boolean;
+  sequence: string;
+  dayOfWeek: string;
+  sendTimeLocal: string;
+  timeZoneId: string;
+  recipientType: string;
+  communicationType: string;
+  ccAddress: string;
+  recipientOptions: CorrespondenceOption[];
+  sequenceOptions: CorrespondenceOption[];
+  communicationOptions: CorrespondenceOption[];
+  dayOfWeekOptions: string[];
+};
+
+const DEFAULT_CORRESPONDENCE_DRAFT: CorrespondenceDraft = {
+  enabled: true,
+  sequence: 'Weekly',
+  dayOfWeek: 'Monday',
+  sendTimeLocal: '07:30',
+  timeZoneId: 'Eastern Standard Time',
+  recipientType: 'EachCatMember',
+  communicationType: 'CatMemberProjectStatus',
+  ccAddress: 'Scott.Christian@bmsgroup.com',
+  recipientOptions: [
+    { value: 'AnalyticsLead', text: 'Analytics Lead' },
+    { value: 'EachCatMember', text: 'Each Cat Member' },
+  ],
+  sequenceOptions: [{ value: 'Weekly', text: 'Weekly' }],
+  communicationOptions: [
+    {
+      value: 'CatMemberProjectStatus',
+      text: 'CAT member project status (Online assigned projects, tasks, % complete, time tracking)',
+    },
+  ],
+  dayOfWeekOptions: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+};
+
+/** Nested tabs inside the Admin Users section. */
+type UsersSubTab = 'users' | 'roles' | 'groups';
 
 /** Nested tabs inside the Admin Services section. */
 type ServicesSubTab = 'groups' | 'categories' | 'services';
@@ -793,6 +835,22 @@ function auditRowClientId(check: DataAuditCheck, row: (string | null)[]): number
   }
   const n = Number(String(row[idx] ?? '').trim());
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function isClientsMissingProjectCheck(check: DataAuditCheck): boolean {
+  const id = (check.checkId ?? '').toLowerCase();
+  const title = (check.title ?? '').trim().toLowerCase();
+  return id === 'clients-missing-project' || title === 'clients with no project';
+}
+
+function auditRowClientLabel(check: DataAuditCheck, row: (string | null)[]): string {
+  const idx = check.columns.findIndex((c) => c.trim().toLowerCase() === 'client');
+  const name = idx >= 0 ? String(row[idx] ?? '').trim() : '';
+  if (name && name !== '-' && name !== '—') {
+    return name;
+  }
+  const clientId = auditRowClientId(check, row);
+  return clientId != null ? `Client ${clientId}` : 'this client';
 }
 
 function auditRowProjectId(check: DataAuditCheck, row: (string | null)[]): number | null {
@@ -960,7 +1018,12 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab') || 'server';
-  const tab: TabId = rawTab === 'serviceCategories' ? 'services' : (rawTab as TabId);
+  const tab: TabId =
+    rawTab === 'roles' || rawTab === 'groups'
+      ? 'users'
+      : rawTab === 'serviceCategories'
+        ? 'services'
+        : (rawTab as TabId);
 
   const setTab = (t: TabId) => {
     setSearchParams((prev) => {
@@ -970,11 +1033,33 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     });
   };
 
+  const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(() => {
+    if (rawTab === 'roles') {
+      return 'roles';
+    }
+    if (rawTab === 'groups') {
+      return 'groups';
+    }
+    return 'users';
+  });
+
   const [servicesSubTab, setServicesSubTab] = useState<ServicesSubTab>(() =>
     rawTab === 'serviceCategories' ? 'categories' : 'groups',
   );
 
   useEffect(() => {
+    if (rawTab === 'roles' || rawTab === 'groups') {
+      setUsersSubTab(rawTab);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('tab', 'users');
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (rawTab !== 'serviceCategories') {
       return;
     }
@@ -1015,6 +1100,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   });
   const [catAiKeyReplace, setCatAiKeyReplace] = useState('');
   const [catAiLoaded, setCatAiLoaded] = useState(false);
+  const [correspondenceDraft, setCorrespondenceDraft] = useState<CorrespondenceDraft>(DEFAULT_CORRESPONDENCE_DRAFT);
+  const [correspondenceLoaded, setCorrespondenceLoaded] = useState(false);
+  const [correspondenceBusy, setCorrespondenceBusy] = useState(false);
 
   const reload = useCallback(async () => {
     const data = await apiGet<AdminModel>('/api/admin');
@@ -1034,6 +1122,13 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [dataAuditExporting, setDataAuditExporting] = useState(false);
   const [dataAuditError, setDataAuditError] = useState<string | null>(null);
   const [expandedAuditCheckId, setExpandedAuditCheckId] = useState<string | null>(null);
+  const [dataAuditClientMenu, setDataAuditClientMenu] = useState<{
+    clientId: number;
+    clientName: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [dataAuditClientBusy, setDataAuditClientBusy] = useState(false);
   const [auditGroupHighlight, setAuditGroupHighlight] = useState<AuditGroupHighlight | null>(null);
   const [auditGroupHighlightMessage, setAuditGroupHighlightMessage] = useState<string | null>(null);
   const groupEditPanelRef = useRef<HTMLDivElement | null>(null);
@@ -1096,6 +1191,64 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     // flash is stable enough for this admin page; avoid re-fetch loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdministrator, tab, catAiLoaded, loadCatAiSettings]);
+
+  const loadCorrespondenceSettings = useCallback(async () => {
+    const data = await apiGet<{
+      enabled?: boolean;
+      sequence?: string;
+      dayOfWeek?: string;
+      sendTimeLocal?: string;
+      timeZoneId?: string;
+      recipientType?: string;
+      communicationType?: string;
+      ccAddress?: string;
+      recipientOptions?: CorrespondenceOption[];
+      sequenceOptions?: CorrespondenceOption[];
+      communicationOptions?: CorrespondenceOption[];
+      dayOfWeekOptions?: string[];
+    }>('/api/admin/correspondence-settings');
+    setCorrespondenceDraft({
+      enabled: data.enabled !== false,
+      sequence: data.sequence ?? DEFAULT_CORRESPONDENCE_DRAFT.sequence,
+      dayOfWeek: data.dayOfWeek ?? DEFAULT_CORRESPONDENCE_DRAFT.dayOfWeek,
+      sendTimeLocal: data.sendTimeLocal ?? DEFAULT_CORRESPONDENCE_DRAFT.sendTimeLocal,
+      timeZoneId: data.timeZoneId ?? DEFAULT_CORRESPONDENCE_DRAFT.timeZoneId,
+      recipientType: data.recipientType ?? DEFAULT_CORRESPONDENCE_DRAFT.recipientType,
+      communicationType: data.communicationType ?? DEFAULT_CORRESPONDENCE_DRAFT.communicationType,
+      ccAddress: data.ccAddress ?? DEFAULT_CORRESPONDENCE_DRAFT.ccAddress,
+      recipientOptions:
+        data.recipientOptions && data.recipientOptions.length > 0
+          ? data.recipientOptions
+          : DEFAULT_CORRESPONDENCE_DRAFT.recipientOptions,
+      sequenceOptions:
+        data.sequenceOptions && data.sequenceOptions.length > 0
+          ? data.sequenceOptions
+          : DEFAULT_CORRESPONDENCE_DRAFT.sequenceOptions,
+      communicationOptions:
+        data.communicationOptions && data.communicationOptions.length > 0
+          ? data.communicationOptions
+          : DEFAULT_CORRESPONDENCE_DRAFT.communicationOptions,
+      dayOfWeekOptions:
+        data.dayOfWeekOptions && data.dayOfWeekOptions.length > 0
+          ? data.dayOfWeekOptions
+          : DEFAULT_CORRESPONDENCE_DRAFT.dayOfWeekOptions,
+    });
+    setCorrespondenceLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'correspondence' || correspondenceLoaded) {
+      return;
+    }
+    void (async () => {
+      try {
+        await loadCorrespondenceSettings();
+      } catch (err) {
+        flash('error', err instanceof ApiError ? err.message : 'Could not load correspondence settings.');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, correspondenceLoaded, loadCorrespondenceSettings]);
 
   const loadDataAudit = useCallback(async () => {
     setDataAuditLoading(true);
@@ -1375,6 +1528,68 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   };
 
+  const handleCorrespondenceSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setCorrespondenceBusy(true);
+    try {
+      const saved = await apiPutJson<{
+        enabled?: boolean;
+        sequence?: string;
+        dayOfWeek?: string;
+        sendTimeLocal?: string;
+        timeZoneId?: string;
+        recipientType?: string;
+        communicationType?: string;
+        ccAddress?: string;
+        recipientOptions?: CorrespondenceOption[];
+        sequenceOptions?: CorrespondenceOption[];
+        communicationOptions?: CorrespondenceOption[];
+        dayOfWeekOptions?: string[];
+      }>('/api/admin/correspondence-settings', {
+        enabled: correspondenceDraft.enabled,
+        sequence: correspondenceDraft.sequence,
+        dayOfWeek: correspondenceDraft.dayOfWeek,
+        sendTimeLocal: correspondenceDraft.sendTimeLocal,
+        timeZoneId: correspondenceDraft.timeZoneId,
+        recipientType: correspondenceDraft.recipientType,
+        communicationType: correspondenceDraft.communicationType,
+        ccAddress: correspondenceDraft.ccAddress,
+      });
+      setCorrespondenceDraft((prev) => ({
+        ...prev,
+        enabled: saved.enabled !== false,
+        sequence: saved.sequence ?? prev.sequence,
+        dayOfWeek: saved.dayOfWeek ?? prev.dayOfWeek,
+        sendTimeLocal: saved.sendTimeLocal ?? prev.sendTimeLocal,
+        timeZoneId: saved.timeZoneId ?? prev.timeZoneId,
+        recipientType: saved.recipientType ?? prev.recipientType,
+        communicationType: saved.communicationType ?? prev.communicationType,
+        ccAddress: saved.ccAddress ?? prev.ccAddress,
+        recipientOptions:
+          saved.recipientOptions && saved.recipientOptions.length > 0
+            ? saved.recipientOptions
+            : prev.recipientOptions,
+        sequenceOptions:
+          saved.sequenceOptions && saved.sequenceOptions.length > 0
+            ? saved.sequenceOptions
+            : prev.sequenceOptions,
+        communicationOptions:
+          saved.communicationOptions && saved.communicationOptions.length > 0
+            ? saved.communicationOptions
+            : prev.communicationOptions,
+        dayOfWeekOptions:
+          saved.dayOfWeekOptions && saved.dayOfWeekOptions.length > 0
+            ? saved.dayOfWeekOptions
+            : prev.dayOfWeekOptions,
+      }));
+      flash('success', 'Correspondence schedule was saved.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Correspondence save failed.');
+    } finally {
+      setCorrespondenceBusy(false);
+    }
+  };
+
   const clearUserForm = () => {
     setUserForm({
       userID: 0,
@@ -1637,6 +1852,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       setUserBulkRows(result.rows);
       setUserBulkSkippedEmpty(result.skippedEmptyRows);
       setUserBulkWizardOpen(true);
+      setUsersSubTab('users');
       setTab('users');
       if (result.rows.length === 0) {
         flash('error', 'No importable rows were found (every data row was missing Email).');
@@ -2760,10 +2976,13 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       setPendingGroupMembers([]);
       setSelectedMemberRowKey('');
       setIsCreatingGroup(false);
-      if (groupListUseSearchResults) {
-        setGroupSearchResults((prev) => prev.filter((g) => g.ugid !== targetId));
-      }
+      setAuditGroupHighlight(null);
+      setAuditGroupHighlightMessage(null);
+      clearGroupTableSearch();
       await reload();
+      if (dataAudit != null) {
+        await loadDataAudit();
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Delete failed.';
       if (/active projects/i.test(message) || /cannot be deleted/i.test(message)) {
@@ -2835,7 +3054,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       setGroupSearchNoMatch(false);
       setGroupListUseSearchResults(true);
 
-      setTab('groups');
+      setUsersSubTab('groups');
+      setTab('users');
       selectUserGroupByNumber(ugid, filterRow);
       setAuditGroupHighlight(hint?.highlight ?? 'members');
       setAuditGroupHighlightMessage(hint?.message ?? check.description);
@@ -2880,6 +3100,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       setUserActiveTab(u.isDeleted === true ? 'Inactive' : 'Active');
       setUserDirectorySearch('');
       setSelectedUserId(userId);
+      setUsersSubTab('users');
       setTab('users');
       void applyUserToForm(u);
       window.setTimeout(() => {
@@ -2892,6 +3113,57 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     // applyUserToForm closes over admin/flash; user list is the dependency that matters here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [admin, flash],
+  );
+
+  const setAuditClientInactive = useCallback(
+    async (clientId: number, clientName: string) => {
+      setDataAuditClientMenu(null);
+      setDataAuditClientBusy(true);
+      try {
+        await apiPostJson(`/api/admin/clients/${clientId}/soft-delete`, {});
+        flash('success', `"${clientName}" was set to Inactive.`);
+        await reload();
+        await loadDataAudit();
+      } catch (err) {
+        flash('error', err instanceof ApiError ? err.message : 'Could not set the client inactive.');
+      } finally {
+        setDataAuditClientBusy(false);
+      }
+    },
+    [flash, loadDataAudit, reload],
+  );
+
+  const deleteAuditClient = useCallback(
+    async (clientId: number, clientName: string) => {
+      setDataAuditClientMenu(null);
+      if (
+        !window.confirm(
+          `Permanently delete "${clientName}" from the database?\n\nThis removes the client and related client references. This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+      setDataAuditClientBusy(true);
+      try {
+        await apiPostJson(`/api/admin/clients/${clientId}/delete`, {});
+        flash('success', `"${clientName}" was deleted.`);
+        await reload();
+        await loadDataAudit();
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : 'Delete failed.';
+        if (/active projects/i.test(message) || /cannot be deleted/i.test(message)) {
+          setClientDeleteBlockedMessage(
+            message ||
+              'This client cannot be deleted because it is associated with active projects. Please remove the project before deleting the client.',
+          );
+          return;
+        }
+        flash('error', message);
+      } finally {
+        setDataAuditClientBusy(false);
+      }
+    },
+    [flash, loadDataAudit, reload],
   );
 
   const openClientFromDataAudit = useCallback(
@@ -2940,7 +3212,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     if (prefilledGroupFromQueryRef.current) {
       return;
     }
-    if (tab !== 'groups' || !admin) {
+    if (tab !== 'users' || usersSubTab !== 'groups' || !admin) {
       return;
     }
     const raw = searchParams.get('selectUserGroup');
@@ -2954,7 +3226,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     prefilledGroupFromQueryRef.current = true;
     const row = (admin.userGroupSummaries ?? []).find((g) => g.ugid === ugid);
     selectUserGroupByNumber(ugid, row);
-  }, [admin, searchParams, selectUserGroupByNumber, tab]);
+  }, [admin, searchParams, selectUserGroupByNumber, tab, usersSubTab]);
 
   const addMemberToGroup = () => {
     if (!groupEditName.trim()) {
@@ -3615,7 +3887,13 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
         </p>
       </section>
 
-      <section className={'card admin-card' + (tab === 'services' ? ' admin-card--services' : '')}>
+      <section
+        className={
+          'card admin-card' +
+          (tab === 'services' ? ' admin-card--services' : '') +
+          (tab === 'users' ? ' admin-card--users' : '')
+        }
+      >
         <div className="admin-tabs" role="tablist" aria-label="Admin sections">
           {tabBtn('server', 'Server')}
           {isAdministrator ? tabBtn('catai', 'CatAI') : null}
@@ -3625,8 +3903,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           {tabBtn('clients', 'Clients')}
           {tabBtn('projectTypes', 'Project Types')}
           {tabBtn('users', 'Users')}
-          {tabBtn('roles', 'User Role')}
-          {tabBtn('groups', 'UserGroup')}
+          {tabBtn('correspondence', 'Correspondence')}
           {tabBtn('dataAudit', 'Data Audit')}
           {tabBtn('services', 'Services')}
         </div>
@@ -3697,10 +3974,17 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </button>
             </div>
             <p id="srv-db-help" className="field-help">
-              Server is chosen from the approved list above; database is user-defined and is sent exactly as typed
-              when you click <strong>Test and Save</strong> or <strong>Test Connection Only</strong>. Server,
-              database, username, and password are saved in an encrypted file under App_Data. The default
-              configuration uses Windows Integrated Security with no username or password.
+              Default target is <strong>vmus-sql-099</strong> / <strong>BMS_CMS</strong>. Server is chosen from the
+              approved list; database is typed exactly as stored on SQL Server.
+              <br />
+              <strong>Windows Integrated Security</strong> (recommended) connects as the <em>web app process
+              identity</em> — the IIS application-pool account for CMS-Dev1, or your Windows user when running
+              locally under Kestrel — <em>not</em> the person signed into the browser. That account needs a SQL
+              login on <code>vmus-sql-099</code> with rights to <code>BMS_CMS</code> (typically the{' '}
+              <code>app_CMS_Execute</code> role).
+              <br />
+              To use a SQL login instead, uncheck Integrated Security and enter Username and Password. Settings are
+              encrypted under <code>App_Data</code> after a successful <strong>Test and Save</strong>.
             </p>
           </form>
         </div>
@@ -3821,9 +4105,194 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           </div>
         ) : null}
 
+        <div
+          id="admin-tab-correspondence"
+          className={'admin-tab-panel' + (tab === 'correspondence' ? ' active' : '')}
+        >
+          <h2>Correspondence</h2>
+          <p className="field-help">
+            Configure when CMS sends scheduled communications and who receives them. The report content for each
+            communication type will be defined next; this tab stores the schedule and recipient options.
+          </p>
+          <form
+            className="admin-edit-card project-panel-tab-card"
+            onSubmit={(e) => void handleCorrespondenceSave(e)}
+          >
+            <div className="form-grid">
+              <label htmlFor="corr-enabled">Enabled</label>
+              <span>
+                <input
+                  id="corr-enabled"
+                  type="checkbox"
+                  checked={correspondenceDraft.enabled}
+                  onChange={(e) =>
+                    setCorrespondenceDraft({ ...correspondenceDraft, enabled: e.target.checked })
+                  }
+                />{' '}
+                Send this correspondence on the schedule below
+              </span>
+
+              <label htmlFor="corr-sequence">Sequence</label>
+              <select
+                id="corr-sequence"
+                value={correspondenceDraft.sequence}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, sequence: e.target.value })
+                }
+              >
+                {correspondenceDraft.sequenceOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.text}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="corr-day">Day</label>
+              <select
+                id="corr-day"
+                value={correspondenceDraft.dayOfWeek}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, dayOfWeek: e.target.value })
+                }
+              >
+                {correspondenceDraft.dayOfWeekOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="corr-time">Send time</label>
+              <input
+                id="corr-time"
+                type="time"
+                value={correspondenceDraft.sendTimeLocal}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, sendTimeLocal: e.target.value })
+                }
+                aria-describedby="corr-time-help"
+              />
+
+              <label htmlFor="corr-tz">Time zone</label>
+              <select
+                id="corr-tz"
+                value={correspondenceDraft.timeZoneId}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, timeZoneId: e.target.value })
+                }
+              >
+                <option value="Eastern Standard Time">Eastern (EDT / EST)</option>
+                <option value="Central Standard Time">Central (CDT / CST)</option>
+                <option value="Mountain Standard Time">Mountain (MDT / MST)</option>
+                <option value="Pacific Standard Time">Pacific (PDT / PST)</option>
+                <option value="UTC">UTC</option>
+              </select>
+
+              <label htmlFor="corr-recipient">Addressed to</label>
+              <select
+                id="corr-recipient"
+                value={correspondenceDraft.recipientType}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, recipientType: e.target.value })
+                }
+              >
+                {correspondenceDraft.recipientOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.text}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="corr-comm">What to send</label>
+              <select
+                id="corr-comm"
+                value={correspondenceDraft.communicationType}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, communicationType: e.target.value })
+                }
+              >
+                {correspondenceDraft.communicationOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.text}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="corr-cc">CC</label>
+              <input
+                id="corr-cc"
+                type="email"
+                value={correspondenceDraft.ccAddress}
+                onChange={(e) =>
+                  setCorrespondenceDraft({ ...correspondenceDraft, ccAddress: e.target.value })
+                }
+                placeholder="Scott.Christian@bmsgroup.com"
+              />
+            </div>
+            <div className="button-row">
+              <button type="submit" className="primary-button" disabled={correspondenceBusy}>
+                {correspondenceBusy ? 'Saving…' : 'Save schedule'}
+              </button>
+            </div>
+            <p id="corr-time-help" className="field-help">
+              Default schedule: every <strong>Monday</strong> at <strong>7:30 AM Eastern</strong>, weekly, addressed to{' '}
+              <strong>Each Cat Member</strong>, with you on CC. The email body will cover{' '}
+              <strong>Online</strong> assigned projects only (tasks, completion %, time tracking) and will be added in a
+              follow-up change; saving here only stores the schedule and options under <code>App_Data</code>.
+            </p>
+          </form>
+        </div>
+
         <div id="admin-tab-users" className={'admin-tab-panel' + (tab === 'users' ? ' active' : '')}>
+          <h2>Users</h2>
+          <p className="field-help">
+            Manage users, user roles, and user groups from one place.
+          </p>
+          <div className="admin-tabs admin-users-subtabs" role="tablist" aria-label="Users sections">
+            <button
+              type="button"
+              role="tab"
+              id="admin-users-tab-directory"
+              aria-selected={usersSubTab === 'users'}
+              aria-controls="admin-users-panel-directory"
+              className={usersSubTab === 'users' ? 'active' : ''}
+              onClick={() => setUsersSubTab('users')}
+            >
+              Add / Edit Users
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="admin-users-tab-roles"
+              aria-selected={usersSubTab === 'roles'}
+              aria-controls="admin-users-panel-roles"
+              className={usersSubTab === 'roles' ? 'active' : ''}
+              onClick={() => setUsersSubTab('roles')}
+            >
+              User Role
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="admin-users-tab-groups"
+              aria-selected={usersSubTab === 'groups'}
+              aria-controls="admin-users-panel-groups"
+              className={usersSubTab === 'groups' ? 'active' : ''}
+              onClick={() => setUsersSubTab('groups')}
+            >
+              User Group
+            </button>
+          </div>
+
+          <div
+            id="admin-users-panel-directory"
+            role="tabpanel"
+            aria-labelledby="admin-users-tab-directory"
+            hidden={usersSubTab !== 'users'}
+            className={'admin-tab-panel admin-users-subpanel' + (usersSubTab === 'users' ? ' active' : '')}
+          >
           <div className="page-header-top admin-users-toolbar">
-            <h2>
+            <h3 className="admin-subheading">
               <span className="admin-users-count-num">{userActiveCounts.total}</span> Users
               <span className="admin-client-count-chips">
                 <span className="admin-client-count-chip admin-client-count-chip--active">
@@ -3850,7 +4319,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   })}
                 </span>
               ) : null}
-            </h2>
+            </h3>
             <div className="page-header-actions">
               <input
                 id="admin-user-bulk-csv"
@@ -4208,10 +4677,16 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </form>
           </div>
-        </div>
+          </div>
 
-        <div id="admin-tab-roles" className={'admin-tab-panel' + (tab === 'roles' ? ' active' : '')}>
-          <h2>User Role</h2>
+          <div
+            id="admin-users-panel-roles"
+            role="tabpanel"
+            aria-labelledby="admin-users-tab-roles"
+            hidden={usersSubTab !== 'roles'}
+            className={'admin-tab-panel admin-users-subpanel' + (usersSubTab === 'roles' ? ' active' : '')}
+          >
+          <h3 className="admin-subheading">User Role</h3>
           <div className="admin-layout">
             <div>
               <select
@@ -4273,10 +4748,16 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               </div>
             </form>
           </div>
-        </div>
+          </div>
 
-        <div id="admin-tab-groups" className={'admin-tab-panel' + (tab === 'groups' ? ' active' : '')}>
-          <h2>UserGroup</h2>
+          <div
+            id="admin-users-panel-groups"
+            role="tabpanel"
+            aria-labelledby="admin-users-tab-groups"
+            hidden={usersSubTab !== 'groups'}
+            className={'admin-tab-panel admin-users-subpanel' + (usersSubTab === 'groups' ? ' active' : '')}
+          >
+          <h3 className="admin-subheading">User Group</h3>
           <div className="admin-usergroup-toolbar">
             <div className="admin-search-row">
               <input
@@ -4634,6 +5115,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                 </div>
               </form>
             </div>
+          </div>
           </div>
         </div>
 
@@ -5608,6 +6090,11 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                           <p className="field-help">
                             Double-click a row to open that user on the Users tab (CAT filter applied).
                           </p>
+                        ) : isClientsMissingProjectCheck(selected) ? (
+                          <p className="field-help">
+                            Right-click a row to set the client Inactive or delete the client. Double-click a row to
+                            open that client on the Clients tab.
+                          </p>
                         ) : selected.checkId.startsWith('clients-') ? (
                           <p className="field-help">
                             Double-click a row to open that client on the Clients tab with the form filled in.
@@ -5618,7 +6105,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                           </p>
                         ) : (
                           <p className="field-help">
-                            Double-click a row with a user group (UGID) to open that group on the UserGroup tab.
+                            Double-click a row with a user group (UGID) to open that group on the Users → User Group tab.
                           </p>
                         )}
                         <div className="admin-usergroup-table-wrap admin-data-audit-table-wrap">
@@ -5649,22 +6136,51 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                                   userId != null;
                                 const canOpenClient =
                                   selected.checkId.startsWith('clients-') && clientId != null;
+                                const canActOnMissingProject =
+                                  isClientsMissingProjectCheck(selected) && clientId != null;
                                 const canJump =
                                   canOpenProject || canOpenGroup || canOpenUser || canOpenClient;
                                 return (
                                   <tr
                                     key={`${selected.checkId}-${ri}`}
-                                    className={canJump ? 'admin-data-audit-row--jump' : undefined}
+                                    className={
+                                      canJump
+                                        ? 'admin-data-audit-row--jump' +
+                                          (canActOnMissingProject ? ' admin-data-audit-row--menu' : '')
+                                        : canActOnMissingProject
+                                          ? 'admin-data-audit-row--menu'
+                                          : undefined
+                                    }
                                     title={
-                                      canOpenProject
+                                      canActOnMissingProject
+                                        ? `Right-click for client actions. Double-click to open client ${clientId} on the Clients tab`
+                                        : canOpenProject
                                         ? `Double-click to open project ${projectId}`
                                         : canOpenClient
                                           ? `Double-click to open client ${clientId} on the Clients tab`
                                           : canOpenUser
                                             ? `Double-click to open user ${userId} on the Users tab`
                                             : canOpenGroup
-                                              ? `Double-click to open user group ${ugid} on the UserGroup tab`
+                                              ? `Double-click to open user group ${ugid} on the Users → User Group tab`
                                               : undefined
+                                    }
+                                    onContextMenu={
+                                      canActOnMissingProject
+                                        ? (e) => {
+                                            e.preventDefault();
+                                            if (clientId == null) {
+                                              return;
+                                            }
+                                            const menuWidth = 240;
+                                            const menuHeight = 96;
+                                            setDataAuditClientMenu({
+                                              clientId,
+                                              clientName: auditRowClientLabel(selected, row),
+                                              x: Math.max(8, Math.min(e.clientX, window.innerWidth - menuWidth)),
+                                              y: Math.max(8, Math.min(e.clientY, window.innerHeight - menuHeight)),
+                                            });
+                                          }
+                                        : undefined
                                     }
                                     onDoubleClick={() => {
                                       if (canOpenProject) {
@@ -6096,6 +6612,43 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {dataAuditClientMenu ? (
+        <>
+          <button
+            type="button"
+            className="admin-context-menu-backdrop"
+            aria-label="Close client actions"
+            onClick={() => setDataAuditClientMenu(null)}
+          />
+          <div
+            className="admin-context-menu admin-context-menu--blue"
+            role="menu"
+            style={{ top: dataAuditClientMenu.y, left: dataAuditClientMenu.x }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="admin-context-menu__item"
+              disabled={dataAuditClientBusy}
+              onClick={() =>
+                void setAuditClientInactive(dataAuditClientMenu.clientId, dataAuditClientMenu.clientName)
+              }
+            >
+              Set Client Status Inactive
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="admin-context-menu__item"
+              disabled={dataAuditClientBusy}
+              onClick={() => void deleteAuditClient(dataAuditClientMenu.clientId, dataAuditClientMenu.clientName)}
+            >
+              Delete Client
+            </button>
+          </div>
+        </>
       ) : null}
 
       {clientContextMenu ? (

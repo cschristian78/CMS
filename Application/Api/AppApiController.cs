@@ -15,7 +15,7 @@ public sealed class AppApiController : ControllerBase
     public ActionResult<object> GetConfig([FromServices] IOptions<EmailOptions> emailOptions)
     {
         var publicBaseUrl = (emailOptions.Value.PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
-        return Ok(new { publicBaseUrl });
+        return Ok(new { publicBaseUrl, buildNumber = ClientManagementSystem.AppBuild.Number });
     }
 
     /// <summary>

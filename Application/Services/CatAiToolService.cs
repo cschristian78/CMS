@@ -595,7 +595,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 }),
             Tool(
                 "create_renewal_project",
-                "Create an active Renewal (RNWL) project for a client. Resolves Data Audit: clients-missing-renewal-project. Optionally assign a user group and renewal date. Ends the renewal-project wizard on success.",
+                "Create an active Renewal (RNWL) project for a client. Also covers Data Audit: clients-missing-project. Optionally assign a user group and renewal date. Ends the renewal-project wizard on success.",
                 new
                 {
                     type = "object",

@@ -75,17 +75,24 @@ public sealed class SecureConnectionSettingsStore : ISecureConnectionSettingsSto
 
     public async Task<ConnectionTestResult> TestConnectionAsync(ServerConnectionSettings settings, CancellationToken cancellationToken = default)
     {
+        var usingIntegrated = settings.UseIntegratedSecurity || !settings.HasSqlCredentials;
         try
         {
             Validate(settings);
             var connectionString = BuildConnectionString(settings);
             await using var connection = new SqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
-            return ConnectionTestResult.Success($"Connected to {settings.Server}/{settings.Database}.");
+            var authLabel = usingIntegrated
+                ? "Windows Integrated Security (app process identity)"
+                : $"SQL login '{settings.UserName}'";
+            return ConnectionTestResult.Success($"Connected to {settings.Server}/{settings.Database} using {authLabel}.");
         }
         catch (Exception ex)
         {
-            return ConnectionTestResult.Failure($"Connection failed: {ex.Message}");
+            var hint = usingIntegrated
+                ? " Windows Integrated Security uses the account that runs this web app (IIS app-pool identity or the user running Kestrel), not the browser signed-in user. Grant that account a SQL login on this server with access to the database, or uncheck Integrated Security and supply a SQL username/password."
+                : " Verify the SQL username/password and that the login can open the selected database.";
+            return ConnectionTestResult.Failure($"Connection failed: {ex.Message}.{hint}");
         }
     }
 

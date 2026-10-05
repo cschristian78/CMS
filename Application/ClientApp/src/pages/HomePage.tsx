@@ -19,6 +19,7 @@ import {
   type HomeListFilters,
 } from '../workflows/homeClientProjectListWorkflow';
 import { formatCalendarDateDisplay } from '../utils/dateInput';
+import { APP_BUILD_NUMBER } from '../appBuild';
 import { runProjectReportWorkflow, type ProjectReportRunMode } from '../project/generateProjectReportWorkflow';
 
 function normalizeColumnName(name: string): string {
@@ -1070,6 +1071,9 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         <h1>Client Management System</h1>
         <p>
           Manage clients, projects, advisory services, administrative data, and dashboard reporting.
+        </p>
+        <p className="home-build" aria-label="Application build">
+          Build {APP_BUILD_NUMBER}
         </p>
         <p className="hero-feedback">
           <a

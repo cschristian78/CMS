@@ -64,6 +64,23 @@ public sealed class TmsWeekSaveResult
     public string Message { get; set; } = string.Empty;
 }
 
+/// <summary>Rollup of project + non-client hours for a CAT user across common periods.</summary>
+public sealed class TmsHoursSummary
+{
+    public int UserID { get; set; }
+    public decimal ThisWeekHours { get; set; }
+    public decimal LastWeekHours { get; set; }
+    public decimal MonthHours { get; set; }
+    public decimal YtdHours { get; set; }
+    public DateTime ThisWeekStart { get; set; }
+    public DateTime ThisWeekEnd { get; set; }
+    public DateTime LastWeekStart { get; set; }
+    public DateTime LastWeekEnd { get; set; }
+    public DateTime MonthStart { get; set; }
+    public DateTime YtdStart { get; set; }
+    public DateTime AsOfDate { get; set; }
+}
+
 public static class TmsOtherTimeCategories
 {
     public static readonly IReadOnlyList<string> All =

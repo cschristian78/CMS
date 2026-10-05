@@ -73,6 +73,7 @@ builder.Services
 
 builder.Services.AddSingleton<ISecureConnectionSettingsStore, SecureConnectionSettingsStore>();
 builder.Services.AddSingleton<ICatAiSettingsStore, CatAiSettingsStore>();
+builder.Services.AddSingleton<ICorrespondenceSettingsStore, CorrespondenceSettingsStore>();
 builder.Services.AddSingleton<IUserPhotoStorage>(sp =>
 {
     var env = sp.GetRequiredService<IWebHostEnvironment>();

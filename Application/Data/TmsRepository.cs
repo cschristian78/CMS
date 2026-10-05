@@ -325,6 +325,91 @@ public sealed class TmsRepository : ITmsRepository
         Notes = r.TryGetNullableString("Notes"),
     };
 
+    public async Task<TmsHoursSummary> GetHoursSummaryAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureUserTimeEntrySchemaAsync(cancellationToken);
+
+        var today = DateTime.Today;
+        var thisWeekStart = StartOfWeekMonday(today);
+        var thisWeekEnd = thisWeekStart.AddDays(6);
+        var lastWeekStart = thisWeekStart.AddDays(-7);
+        var lastWeekEnd = thisWeekStart.AddDays(-1);
+        var monthStart = new DateTime(today.Year, today.Month, 1);
+        var ytdStart = new DateTime(today.Year, 1, 1);
+
+        const string sql = """
+            SELECT
+                CAST(ISNULL(SUM(CASE WHEN x.WorkDate >= @ThisWeekStart AND x.WorkDate <= @ThisWeekEnd THEN x.Hours ELSE 0 END), 0) AS DECIMAL(18,2)) AS ThisWeekHours,
+                CAST(ISNULL(SUM(CASE WHEN x.WorkDate >= @LastWeekStart AND x.WorkDate <= @LastWeekEnd THEN x.Hours ELSE 0 END), 0) AS DECIMAL(18,2)) AS LastWeekHours,
+                CAST(ISNULL(SUM(CASE WHEN x.WorkDate >= @MonthStart AND x.WorkDate <= @AsOfDate THEN x.Hours ELSE 0 END), 0) AS DECIMAL(18,2)) AS MonthHours,
+                CAST(ISNULL(SUM(CASE WHEN x.WorkDate >= @YtdStart AND x.WorkDate <= @AsOfDate THEN x.Hours ELSE 0 END), 0) AS DECIMAL(18,2)) AS YtdHours
+              FROM (
+                    SELECT te.WorkDate, te.Hours
+                      FROM dbo.tProjectTimeEntry AS te
+                     WHERE te.UserID = @UserID
+                       AND te.IsActive = 1
+                       AND te.Hours > 0
+                       AND te.WorkDate >= @YtdStart
+                       AND te.WorkDate <= @ThisWeekEnd
+                    UNION ALL
+                    SELECT ute.WorkDate, ute.Hours
+                      FROM dbo.tUserTimeEntry AS ute
+                     WHERE ute.UserID = @UserID
+                       AND ute.IsActive = 1
+                       AND ute.Hours > 0
+                       AND ute.WorkDate >= @YtdStart
+                       AND ute.WorkDate <= @ThisWeekEnd
+                   ) AS x;
+            """;
+
+        var rows = await _db.QueryTextAsync(
+            sql,
+            static r => new TmsHoursSummary
+            {
+                ThisWeekHours = r.GetNullableDecimal("ThisWeekHours") ?? 0m,
+                LastWeekHours = r.GetNullableDecimal("LastWeekHours") ?? 0m,
+                MonthHours = r.GetNullableDecimal("MonthHours") ?? 0m,
+                YtdHours = r.GetNullableDecimal("YtdHours") ?? 0m,
+            },
+            [
+                SqlParameterFactory.Int("@UserID", userId),
+                SqlParameterFactory.Date("@ThisWeekStart", thisWeekStart),
+                SqlParameterFactory.Date("@ThisWeekEnd", thisWeekEnd),
+                SqlParameterFactory.Date("@LastWeekStart", lastWeekStart),
+                SqlParameterFactory.Date("@LastWeekEnd", lastWeekEnd),
+                SqlParameterFactory.Date("@MonthStart", monthStart),
+                SqlParameterFactory.Date("@YtdStart", ytdStart),
+                SqlParameterFactory.Date("@AsOfDate", today),
+            ],
+            cancellationToken);
+
+        var totals = rows.Count > 0 ? rows[0] : new TmsHoursSummary();
+        return new TmsHoursSummary
+        {
+            UserID = userId,
+            ThisWeekHours = totals.ThisWeekHours,
+            LastWeekHours = totals.LastWeekHours,
+            MonthHours = totals.MonthHours,
+            YtdHours = totals.YtdHours,
+            ThisWeekStart = thisWeekStart,
+            ThisWeekEnd = thisWeekEnd,
+            LastWeekStart = lastWeekStart,
+            LastWeekEnd = lastWeekEnd,
+            MonthStart = monthStart,
+            YtdStart = ytdStart,
+            AsOfDate = today,
+        };
+    }
+
+    private static DateTime StartOfWeekMonday(DateTime date)
+    {
+        var d = date.Date;
+        var diff = ((int)d.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        return d.AddDays(-diff);
+    }
+
     public async Task<TmsReportResponse> GetReportAsync(
         int year,
         int? userId,

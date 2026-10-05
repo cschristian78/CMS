@@ -51,6 +51,16 @@ type WeekResponse = {
   otherCategories: string[];
 };
 
+type HoursSummary = {
+  userID: number;
+  thisWeekHours: number;
+  lastWeekHours: number;
+  monthHours: number;
+  ytdHours: number;
+};
+
+type TmsTimeTab = 'client' | 'nonClient';
+
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 const DEFAULT_OTHER = [
   'Meetings',
@@ -97,6 +107,31 @@ function formatHours(n: number): string {
     return '';
   }
   return String(Math.round(n * 100) / 100);
+}
+
+function formatSummaryHours(n: number): string {
+  const value = Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+    maximumFractionDigits: 2,
+  });
+}
+
+function normalizeHoursSummary(raw: Record<string, unknown> | null | undefined): HoursSummary | null {
+  if (!raw) {
+    return null;
+  }
+  const userID = Number(raw.userID ?? raw.UserID ?? 0);
+  if (!Number.isFinite(userID) || userID <= 0) {
+    return null;
+  }
+  return {
+    userID,
+    thisWeekHours: Number(raw.thisWeekHours ?? raw.ThisWeekHours ?? 0) || 0,
+    lastWeekHours: Number(raw.lastWeekHours ?? raw.LastWeekHours ?? 0) || 0,
+    monthHours: Number(raw.monthHours ?? raw.MonthHours ?? 0) || 0,
+    ytdHours: Number(raw.ytdHours ?? raw.YtdHours ?? 0) || 0,
+  };
 }
 
 function normalizeCatUser(raw: Record<string, unknown>): CatUser | null {
@@ -147,6 +182,8 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
   const [activeTab, setActiveTab] = useState<TmsTimeTab>('client');
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<number>>(() => new Set());
   const [canSelectAnyUser, setCanSelectAnyUser] = useState(false);
+  const [hoursSummary, setHoursSummary] = useState<HoursSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   const weekDays = useMemo(
     () => DAY_LABELS.map((label, i) => ({ label, date: addDays(weekStart, i), ymd: toYmd(addDays(weekStart, i)) })),
@@ -251,6 +288,25 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
     };
   }, [flash]);
 
+  const loadHoursSummary = useCallback(async () => {
+    if (selectedUserId === '' || selectedUserId <= 0) {
+      setHoursSummary(null);
+      return;
+    }
+
+    setLoadingSummary(true);
+    try {
+      const data = await apiGet<Record<string, unknown>>(
+        `/api/tms/hours-summary?userId=${encodeURIComponent(String(selectedUserId))}`,
+      );
+      setHoursSummary(normalizeHoursSummary(data));
+    } catch {
+      setHoursSummary(null);
+    } finally {
+      setLoadingSummary(false);
+    }
+  }, [selectedUserId]);
+
   const loadWeek = useCallback(async () => {
     if (selectedUserId === '' || selectedUserId <= 0) {
       setProjects([]);
@@ -346,6 +402,10 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
   useEffect(() => {
     void loadWeek();
   }, [loadWeek]);
+
+  useEffect(() => {
+    void loadHoursSummary();
+  }, [loadHoursSummary]);
 
   const setProjectHours = (projectId: number, calendarItemID: number, ymd: string, hours: string) => {
     setProjectCells((prev) => ({
@@ -460,7 +520,7 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
         otherEntries,
       });
       flash('success', result.message ?? 'Time week saved.');
-      await loadWeek();
+      await Promise.all([loadWeek(), loadHoursSummary()]);
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Could not save time week.');
     } finally {
@@ -583,6 +643,37 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
 
         {selectedUserId !== '' ? (
           <>
+            <div className="tms-hours-summary" aria-live="polite">
+              <div className="tms-hours-summary-card">
+                <span className="tms-hours-summary-label">This week</span>
+                <strong className="tms-hours-summary-value">
+                  {loadingSummary && !hoursSummary ? '…' : formatSummaryHours(hoursSummary?.thisWeekHours ?? 0)}
+                  <span className="tms-hours-summary-unit">h</span>
+                </strong>
+              </div>
+              <div className="tms-hours-summary-card">
+                <span className="tms-hours-summary-label">Last week</span>
+                <strong className="tms-hours-summary-value">
+                  {loadingSummary && !hoursSummary ? '…' : formatSummaryHours(hoursSummary?.lastWeekHours ?? 0)}
+                  <span className="tms-hours-summary-unit">h</span>
+                </strong>
+              </div>
+              <div className="tms-hours-summary-card">
+                <span className="tms-hours-summary-label">This month</span>
+                <strong className="tms-hours-summary-value">
+                  {loadingSummary && !hoursSummary ? '…' : formatSummaryHours(hoursSummary?.monthHours ?? 0)}
+                  <span className="tms-hours-summary-unit">h</span>
+                </strong>
+              </div>
+              <div className="tms-hours-summary-card">
+                <span className="tms-hours-summary-label">YTD</span>
+                <strong className="tms-hours-summary-value">
+                  {loadingSummary && !hoursSummary ? '…' : formatSummaryHours(hoursSummary?.ytdHours ?? 0)}
+                  <span className="tms-hours-summary-unit">h</span>
+                </strong>
+              </div>
+            </div>
+
             <div className="admin-tabs tms-time-tabs" role="tablist" aria-label="Time entry views">
               <button
                 type="button"

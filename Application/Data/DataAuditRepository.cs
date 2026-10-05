@@ -46,10 +46,10 @@ public sealed class DataAuditRepository : IDataAuditRepository
     [
         new()
         {
-            CheckId = "clients-missing-renewal-project",
-            ToolName = "data_audit_clients_missing_renewal_project",
-            Title = "Clients with no renewal project",
-            Description = "Active clients (ClientStatus = Active) that have no active project with project type Renewal (RNWL).",
+            CheckId = "clients-missing-project",
+            ToolName = "data_audit_clients_missing_project",
+            Title = "Clients with no project",
+            Description = "Active clients (ClientStatus = Active) that have no active project of any type.",
         },
         new()
         {
@@ -134,10 +134,10 @@ public sealed class DataAuditRepository : IDataAuditRepository
 
         return checkId.Trim().ToLowerInvariant() switch
         {
-            "clients-missing-renewal-project" => await BuildCheckAsync(
-                "clients-missing-renewal-project",
-                "Clients with no renewal project",
-                "Active clients (ClientStatus = Active) that have no active project with project type Renewal (RNWL).",
+            "clients-missing-project" => await BuildCheckAsync(
+                "clients-missing-project",
+                "Clients with no project",
+                "Active clients (ClientStatus = Active) that have no active project of any type.",
                 """
                 SELECT
                     CAST(c.ClientID AS nvarchar(20)),
@@ -156,11 +156,8 @@ public sealed class DataAuditRepository : IDataAuditRepository
                             INNER JOIN dbo.tProject AS p
                                ON p.ProjectID = pr.ProjectID
                               AND p.IsActive = 1
-                            INNER JOIN dbo.tProjectType AS pt
-                               ON pt.ProjectTypeID = pr.ProjectTypeID
                             WHERE cr.ClientID = c.ClientID
                               AND cr.IsActive = 1
-                              AND UPPER(LTRIM(RTRIM(pt.ProjectTypeCode))) = N'RNWL'
                        )
                  ORDER BY c.ClientName, c.ClientID;
                 """,
@@ -609,7 +606,7 @@ public sealed class DataAuditRepository : IDataAuditRepository
             """;
 
         await CollectAsync(
-            "clients-missing-renewal-project",
+            "clients-missing-project",
             "clients",
             "Clients",
             $"""
@@ -628,11 +625,8 @@ public sealed class DataAuditRepository : IDataAuditRepository
                         INNER JOIN dbo.tProject AS p
                            ON p.ProjectID = pr.ProjectID
                           AND p.IsActive = 1
-                        INNER JOIN dbo.tProjectType AS pt
-                           ON pt.ProjectTypeID = pr.ProjectTypeID
                         WHERE cr.ClientID = c.ClientID
                           AND cr.IsActive = 1
-                          AND UPPER(LTRIM(RTRIM(pt.ProjectTypeCode))) = N'RNWL'
                    )
              ORDER BY c.ClientName, c.ClientID;
             """);

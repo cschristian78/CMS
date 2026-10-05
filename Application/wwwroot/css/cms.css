@@ -396,6 +396,15 @@ main.page-shell.page-shell--hub-wide {
     outline: none;
 }
 
+.app-hub-build {
+    margin: 0.65rem 0 0;
+    text-align: center;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
 .login-gate-overlay {
     z-index: 3000;
     background: rgba(4, 7, 12, 0.72);
@@ -861,6 +870,51 @@ main.page-shell.page-shell--hub-wide {
     margin: 0.75rem 0 1rem;
 }
 
+.tms-hours-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin: 1rem 0 0.35rem;
+}
+
+.tms-hours-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: rgba(15, 23, 42, 0.03);
+}
+
+.tms-hours-summary-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.tms-hours-summary-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1.2;
+}
+
+.tms-hours-summary-unit {
+    margin-left: 0.15rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+@media (max-width: 720px) {
+    .tms-hours-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 .tms-time-tabs {
     margin: 1rem 0 0.75rem;
 }
@@ -1043,6 +1097,22 @@ main.page-shell--client-workflow > .alert {
 
 .hero-feedback {
     margin-top: 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.85rem 1.25rem;
+}
+
+.home-build {
+    display: block;
+    width: 100%;
+    margin: 0.85rem auto 0;
+    text-align: center;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
 }
 
 .home-send-feedback-link {
@@ -1730,6 +1800,25 @@ textarea {
     max-width: 62.5vw;
 }
 
+.home-modal-dialog.project-note-edit-dialog {
+    width: 66.6667vw; /* 2/3 of the screen */
+    max-width: 66.6667vw;
+}
+
+.project-note-edit-dialog .form-grid {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0.65rem 0.85rem;
+    margin-top: 0.75rem;
+}
+
+.project-note-edit-dialog textarea {
+    width: 100%;
+    max-width: 100%;
+    min-height: 12rem;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
 .home-modal-dialog.project-data-file-edit-dialog {
     width: min(42rem, 92vw);
     max-width: 92vw;
@@ -1814,7 +1903,8 @@ textarea {
     max-width: 100%;
 }
 
-.card.admin-card.admin-card--services {
+.card.admin-card.admin-card--services,
+.card.admin-card.admin-card--users {
     min-height: auto;
 }
 
@@ -1933,6 +2023,25 @@ textarea {
 
 .admin-context-menu__item--danger {
     color: #b91c1c;
+}
+
+.admin-context-menu--blue {
+    background: #1d5aa5;
+    border-color: #163e73;
+    color: #ffffff;
+}
+
+.admin-context-menu--blue .admin-context-menu__item,
+.admin-context-menu--blue .admin-context-menu__item--danger {
+    color: #ffffff;
+}
+
+.admin-context-menu--blue .admin-context-menu__item:hover,
+.admin-context-menu--blue .admin-context-menu__item:focus-visible,
+.admin-context-menu--blue .admin-context-menu__item:active {
+    background: transparent;
+    color: #ffe14a;
+    outline: none;
 }
 
 /* Home project list: Generate Report context menu (match table header dark blue) */
@@ -2401,21 +2510,25 @@ textarea {
     display: block;
 }
 
-.admin-card--services #admin-tab-services.admin-tab-panel.active {
+.admin-card--services #admin-tab-services.admin-tab-panel.active,
+.admin-card--users #admin-tab-users.admin-tab-panel.active {
     min-height: auto;
 }
 
-.admin-services-subtabs {
+.admin-services-subtabs,
+.admin-users-subtabs {
     margin: 0.75rem 0 1rem;
 }
 
-.admin-card--services .admin-services-subpanel {
+.admin-card--services .admin-services-subpanel,
+.admin-card--users .admin-users-subpanel {
     display: none;
     min-height: 0;
     margin-top: 0.25rem;
 }
 
-.admin-card--services .admin-services-subpanel.active {
+.admin-card--services .admin-services-subpanel.active,
+.admin-card--users .admin-users-subpanel.active {
     display: block;
 }
 
@@ -2847,6 +2960,10 @@ textarea {
 
 .admin-data-audit-row--jump {
     cursor: pointer;
+}
+
+.admin-data-audit-row--menu {
+    cursor: context-menu;
 }
 
 .admin-data-audit-row--jump:hover {
@@ -3678,6 +3795,28 @@ button.home-online-dot.home-online-dot--on {
 .project-services-select-actions {
     margin: 0.5rem 0 0.75rem;
     gap: 0.5rem;
+}
+
+/* Notes tab: keep Edit + Delete on one line in the actions column. */
+.project-note-actions-cell {
+    width: 1%;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.project-note-row-actions {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.project-note-row-actions .secondary-button,
+.project-note-row-actions .danger-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .home-modal-overlay {

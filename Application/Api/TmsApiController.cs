@@ -63,6 +63,39 @@ public sealed class TmsApiController : ControllerBase
         }
     }
 
+    [HttpGet("hours-summary")]
+    public async Task<ActionResult<TmsHoursSummary>> GetHoursSummaryAsync(
+        [FromQuery] int userId,
+        CancellationToken cancellationToken)
+    {
+        if (userId <= 0)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid user",
+                Detail = "userId must be a positive CAT user id.",
+            });
+        }
+
+        try
+        {
+            userId = await ResolveRequestedUserIdAsync(userId, cancellationToken);
+            return Ok(await _tms.GetHoursSummaryAsync(userId, cancellationToken));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "TMS hours summary rejected", Detail = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "TMS hours summary failed for UserID {UserID}.", userId);
+            return Problem(
+                detail: ex.Message,
+                title: "TMS hours summary failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
     [HttpGet("week")]
     public async Task<ActionResult<TmsWeekResponse>> GetWeekAsync(
         [FromQuery] int userId,

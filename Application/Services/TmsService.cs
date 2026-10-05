@@ -20,6 +20,10 @@ public interface ITmsService
         int year,
         int? userId,
         CancellationToken cancellationToken = default);
+
+    Task<TmsHoursSummary> GetHoursSummaryAsync(
+        int userId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class TmsService : ITmsService
@@ -49,6 +53,19 @@ public sealed class TmsService : ITmsService
         int? userId,
         CancellationToken cancellationToken = default)
         => _tms.GetReportAsync(year, userId, cancellationToken);
+
+    public async Task<TmsHoursSummary> GetHoursSummaryAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(userId));
+        }
+
+        await EnsureCatUserAsync(userId, cancellationToken);
+        return await _tms.GetHoursSummaryAsync(userId, cancellationToken);
+    }
 
     public async Task<TmsWeekResponse> GetWeekAsync(
         int userId,

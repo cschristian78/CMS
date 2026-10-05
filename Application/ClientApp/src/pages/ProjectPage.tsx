@@ -9,7 +9,7 @@ import {
 import { formatBusinessClassDisplay } from '../utils/businessClassDisplay';
 import { formatCalendarDateDisplay, toApiDateValue, toInputDateValue } from '../utils/dateInput';
 import type { FlashFn } from '../App';
-import { ApiError, apiDelete, apiGet, apiGetBlob, apiPostFormData, apiPostJson } from '../api';
+import { ApiError, apiDelete, apiGet, apiGetBlob, apiPostFormData, apiPostJson, apiPutJson } from '../api';
 import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
 import ProjectAnalysisProfileTab from '../components/ProjectAnalysisProfileTab';
 import { runProjectReportWorkflow } from '../project/generateProjectReportWorkflow';
@@ -658,6 +658,13 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const projectFilesInputRef = useRef<HTMLInputElement | null>(null);
   const projectDataDropDepthRef = useRef(0);
   const [projectDataDropActive, setProjectDataDropActive] = useState(false);
+  const [noteEditDraft, setNoteEditDraft] = useState<{
+    noteID: number;
+    noteType: string;
+    noteText: string;
+    isPinned: boolean;
+  } | null>(null);
+  const [noteEditBusy, setNoteEditBusy] = useState(false);
   const [noteDraft, setNoteDraft] = useState<{ noteType: string; noteText: string; isPinned: boolean }>({
     noteType: 'General',
     noteText: '',
@@ -2138,6 +2145,70 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     }
   };
 
+  const openNoteEdit = (note: ProjectNoteRow) => {
+    setNoteEditDraft({
+      noteID: note.noteID,
+      noteType: note.noteType || 'General',
+      noteText: note.noteText ?? '',
+      isPinned: !!note.isPinned,
+    });
+  };
+
+  const closeNoteEdit = () => {
+    if (noteEditBusy) {
+      return;
+    }
+    setNoteEditDraft(null);
+  };
+
+  const handleSaveNoteEdit = async () => {
+    if (!noteEditDraft) {
+      return;
+    }
+    const text = noteEditDraft.noteText.trim();
+    if (!text) {
+      flash('error', 'Note text is required.');
+      return;
+    }
+
+    // Pending (unsaved) notes use negative IDs — update local queue only.
+    if (noteEditDraft.noteID < 0) {
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.noteID === noteEditDraft.noteID
+            ? { ...n, noteText: text, noteType: noteEditDraft.noteType, isPinned: noteEditDraft.isPinned }
+            : n,
+        ),
+      );
+      setNoteEditDraft(null);
+      flash('success', 'Queued note updated.');
+      return;
+    }
+
+    setNoteEditBusy(true);
+    try {
+      await apiPutJson(`/api/projects/notes/${noteEditDraft.noteID}`, {
+        noteID: noteEditDraft.noteID,
+        projectID: projectId ?? 0,
+        userID: 0,
+        noteType: noteEditDraft.noteType,
+        noteText: text,
+        isPinned: noteEditDraft.isPinned,
+      });
+      if (projectId !== undefined) {
+        const refreshed = await apiGet<ProjectNoteRow[]>(`/api/projects/${projectId}/notes`);
+        setNotes(refreshed);
+        setBaselineNotes(JSON.parse(JSON.stringify(refreshed)) as ProjectNoteRow[]);
+      }
+      setNoteEditDraft(null);
+      flash('success', 'Note updated.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not update note.');
+    } finally {
+      setNoteEditBusy(false);
+    }
+  };
+
   const handleDeleteNote = async (noteId: number) => {
     if (!window.confirm('Delete this note?')) {
       return;
@@ -2764,6 +2835,55 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
   return (
     <>
+      {noteEditDraft ? (
+        <div
+          className="home-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="project-note-edit-title"
+          onClick={closeNoteEdit}
+        >
+          <div
+            className="home-modal-dialog project-note-edit-dialog"
+            onClick={(e: MouseEvent) => e.stopPropagation()}
+          >
+            <h2 id="project-note-edit-title" className="home-modal-title">
+              Edit note
+            </h2>
+            <p className="home-modal-body">Update the text for this project note.</p>
+            <div className="form-grid">
+              <label htmlFor="note-edit-text">Note</label>
+              <textarea
+                id="note-edit-text"
+                value={noteEditDraft.noteText}
+                rows={6}
+                onChange={(e) => setNoteEditDraft({ ...noteEditDraft, noteText: e.target.value })}
+                disabled={noteEditBusy}
+                autoFocus
+              />
+            </div>
+            <div className="home-modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={closeNoteEdit}
+                disabled={noteEditBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void handleSaveNoteEdit()}
+                disabled={noteEditBusy || !noteEditDraft.noteText.trim()}
+              >
+                {noteEditBusy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {calendarEditDraft ?
         <div
           className="home-modal-overlay"
@@ -4131,8 +4251,8 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             {renderTabTitle('Notes')}
             <div className="admin-edit-card project-panel-tab-card">
             <p className="field-help">
-              Project notes are stored in <code>dbo.tProjectNote</code>. Add a note below, or delete existing rows from
-              the list.
+              Project notes are stored in <code>dbo.tProjectNote</code>. Add a note below, or edit / delete existing rows
+              from the list.
               {!isEdit
                 ? ' On a new project, notes are queued here and saved when you click Save Project.'
                 : null}
@@ -4207,14 +4327,23 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                       </td>
                       <td>{n.noteText ?? ''}</td>
                       <td>{n.userFullName ?? ''}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="danger-button"
-                          onClick={() => void handleDeleteNote(n.noteID)}
-                        >
-                          Delete
-                        </button>
+                      <td className="project-note-actions-cell">
+                        <div className="project-note-row-actions">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openNoteEdit(n)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() => void handleDeleteNote(n.noteID)}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

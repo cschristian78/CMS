@@ -27,4 +27,8 @@ public interface ITmsRepository
         int year,
         int? userId,
         CancellationToken cancellationToken = default);
+
+    Task<TmsHoursSummary> GetHoursSummaryAsync(
+        int userId,
+        CancellationToken cancellationToken = default);
 }
