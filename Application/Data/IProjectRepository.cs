@@ -43,6 +43,8 @@ public interface IProjectRepository
     Task EnsureProjectNoteSchemaAsync(CancellationToken cancellationToken = default);
     Task EnsureProjectCalendarSchemaAsync(CancellationToken cancellationToken = default);
     Task EnsureProjectFeeBasedRevenueSchemaAsync(CancellationToken cancellationToken = default);
+    Task EnsureProjectFileCategorySchemaAsync(CancellationToken cancellationToken = default);
+    Task EnsureProjectFileApprovalSchemaAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default);
     Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
@@ -80,6 +82,11 @@ public interface IProjectRepository
         string? description,
         string? versionLabel,
         DateTime? dataAsOf,
+        CancellationToken cancellationToken = default);
+    Task UpdateFileApprovalStatusAsync(
+        int projectFileId,
+        string approvalStatus,
+        int actingUserId,
         CancellationToken cancellationToken = default);
     Task SetFileCurrentAsync(int projectFileId, bool isCurrent, CancellationToken cancellationToken = default);
     Task SoftDeleteFileAsync(int projectFileId, CancellationToken cancellationToken = default);

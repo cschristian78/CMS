@@ -23,6 +23,7 @@ public sealed class ProjectService : IProjectService
     private readonly IDashboardRepository _dashboard;
     private readonly IProjectBlobStorage _blobs;
     private readonly ICalendarOwnerNotificationService _calendarOwnerNotifications;
+    private readonly IFileNoteNotificationService _fileNoteNotifications;
     private readonly ILogger<ProjectService>? _logger;
 
     public ProjectService(
@@ -33,6 +34,7 @@ public sealed class ProjectService : IProjectService
         IDashboardRepository dashboard,
         IProjectBlobStorage blobs,
         ICalendarOwnerNotificationService calendarOwnerNotifications,
+        IFileNoteNotificationService fileNoteNotifications,
         ILogger<ProjectService>? logger = null)
     {
         _projects = projects;
@@ -42,6 +44,7 @@ public sealed class ProjectService : IProjectService
         _dashboard = dashboard;
         _blobs = blobs;
         _calendarOwnerNotifications = calendarOwnerNotifications;
+        _fileNoteNotifications = fileNoteNotifications;
         _logger = logger;
     }
 
@@ -393,14 +396,109 @@ public sealed class ProjectService : IProjectService
     public Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default)
         => _projects.ListNotesAsync(projectId, cancellationToken);
 
-    public Task<int> AddNoteAsync(ProjectNote note, int actingUserId = 0, CancellationToken cancellationToken = default)
+    public async Task<int> AddNoteAsync(ProjectNote note, int actingUserId = 0, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(note);
+
         if (actingUserId > 0)
         {
             note.UserID = actingUserId;
         }
 
-        return _projects.AddNoteAsync(note, cancellationToken);
+        var isFileNote = note.ProjectFileID is > 0;
+        if (isFileNote)
+        {
+            note.NoteType = FileNoteKinds.Normalize(note.NoteType);
+        }
+
+        var noteId = await _projects.AddNoteAsync(note, cancellationToken);
+        note.NoteID = noteId;
+
+        if (!isFileNote)
+        {
+            return noteId;
+        }
+
+        var project = await _projects.GetAsync(note.ProjectID, cancellationToken);
+        var file = await _projects.GetFileAsync(note.ProjectFileID!.Value, cancellationToken);
+        if (project is null || file is null || file.ProjectID != note.ProjectID)
+        {
+            return noteId;
+        }
+
+        var approvalStatus = FileNoteKinds.ApprovalStatusForKind(note.NoteType);
+        if (approvalStatus is not null)
+        {
+            try
+            {
+                await _projects.UpdateFileApprovalStatusAsync(
+                    file.ProjectFileID,
+                    approvalStatus,
+                    note.UserID,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(
+                    ex,
+                    "Could not update approval status for ProjectFileID {FileId} after note {NoteId}.",
+                    file.ProjectFileID,
+                    noteId);
+            }
+        }
+
+        var mentionIds = ParseMentionedUserIds(note);
+        if (note.NotifyCatTeam || note.NotifyAll || mentionIds.Count > 0)
+        {
+            var authorName = note.UserFullName;
+            if (string.IsNullOrWhiteSpace(authorName) && note.UserID > 0)
+            {
+                var contacts = await _admin.GetUserContactInfoByIdsAsync([note.UserID], cancellationToken);
+                authorName = contacts.FirstOrDefault()?.FullName;
+            }
+
+            await _fileNoteNotifications.TryNotifyAsync(
+                project,
+                file,
+                note,
+                authorName ?? string.Empty,
+                note.NotifyCatTeam,
+                note.NotifyAll,
+                mentionIds,
+                cancellationToken);
+        }
+
+        return noteId;
+    }
+
+    private static List<int> ParseMentionedUserIds(ProjectNote note)
+    {
+        var ids = new HashSet<int>();
+        if (note.MentionedUserIdList is { Length: > 0 })
+        {
+            foreach (var id in note.MentionedUserIdList)
+            {
+                if (id > 0)
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(note.MentionedUserIDs))
+        {
+            foreach (var part in note.MentionedUserIDs.Split(
+                         ',',
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && id > 0)
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+
+        return ids.ToList();
     }
 
     public Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default)

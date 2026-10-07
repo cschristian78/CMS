@@ -6,5 +6,5 @@ namespace ClientManagementSystem;
 /// </summary>
 public static class AppBuild
 {
-    public const string Number = "1.2.0";
+    public const string Number = "1.3.0";
 }

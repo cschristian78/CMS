@@ -2,10 +2,10 @@
 ## Analyst Training Manual
 
 **Audience:** CAT analysts (Analyst I, Analyst II, and Analytics Leads)  
-**Build:** 1.2.0  
-**Date:** 24 September 2026
+**Build:** 1.3.0  
+**Date:** 5 October 2026
 
-This manual is for CAT analysts who use the Cat Management System (CMS) to manage client projects, keep the analytics calendar current, and enter time. Confirm you are on **Build 1.2.0** — the same label appears at the bottom of the hub Home screen (**Select Application**) and on the Client Management Home page. Follow the steps in order the first time you train, then use Section 10 as a day-to-day checklist. Changes since the previous build are in Appendix B.
+This manual is for CAT analysts who use the Cat Management System (CMS) to manage client projects, keep the analytics calendar current, and enter time. Confirm you are on **Build 1.3.0** — the same label appears at the bottom of the hub Home screen (**Select Application**, under **Get Help**) and on the Client Management Home page (above **Send Feedback**). Follow the steps in order the first time you train, then use Section 10 as a day-to-day checklist. Changes since the previous build are in Appendix B.
 
 ---
 
@@ -61,7 +61,7 @@ This manual is for CAT analysts who use the Cat Management System (CMS) to manag
     - 10.1 Glossary
     - 10.2 Common tasks checklist
 Appendix A. Technologies used
-Appendix B. What’s new in this build (1.2.0 vs 1.1)
+Appendix B. What’s new in this build (1.3.0 vs 1.2.0)
 
 ---
 
@@ -110,7 +110,7 @@ A welcome message with your name confirms you are in. Your session lasts about 1
 
 **Confirm you are on this manual’s build**
 
-After sign-in you land on the hub Home screen (**Select Application**). At the bottom, under **Get Help**, the application shows **Build 1.2.0**. The Client Management Home page (after **Open CM**) shows the same **Build 1.2.0** next to **Send Feedback**.
+After sign-in you land on the hub Home screen (**Select Application**). At the bottom, under **Get Help**, the application shows **Build 1.3.0**. After **Open CM**, the Client Management Home page shows the same **Build 1.3.0** above **Send Feedback**.
 
 If the number does not match this document, you are on a different build — use **Get Help** for the PDF that belongs to the running application, or ask for the matching manual.
 
@@ -149,7 +149,7 @@ Use this tile to open the CatAI assistant (Section 8). Treat answers as a starti
 Under the tiles:
 
 - **Get Help** opens this training manual (PDF).
-- **Build 1.2.0** is the application build. It must match the **Build** on the cover of this document.
+- **Build 1.3.0** is the application build. It must match the **Build** on the cover of this document.
 
 **How they connect**
 
@@ -164,7 +164,7 @@ Under the tiles:
 2. You return to the Select Application hub.
 3. Choose **Open CM**, **Open TM**, or **Open CatAI**.
 
-You can also go directly to TM from the hub, or stay in CM and open a project from the project list. The sidebar remembers whether you last used CM or TM and shows the matching menu. CatAI is opened from the hub tile, not from the CM sidebar.
+You can also go directly to TM from the hub, or stay in CM and open a project from the project list. The sidebar remembers whether you last used CM or TM. If you open CatAI or Admin after working in CM, you may still see **Project List**, **New Project**, and **Dashboard**. Click **Home** to return to the hub. CatAI itself is opened from the hub tile, not from a dedicated CM menu item.
 
 ### 1.4 How to move around
 
@@ -191,7 +191,7 @@ CatAI does not have its own sidebar items. Open it from the hub **Open CatAI** t
 | **Dashboard** | Opens the project portfolio and client-health dashboard |
 | **Admin** | Opens the Admin console — not typical analyst work |
 
-After you choose **Open CM**, the main page is titled **Client Management System**. At the top you will see summary tiles (active projects, revenue, online projects). Below that is the **Client / Project list**, which is the usual place to find and open your work (Section 2). **Build 1.2.0** appears next to **Send Feedback**.
+After you choose **Open CM**, the main page is titled **Client Management System**. **Build 1.3.0** appears under the subtitle, then **Send Feedback**. Summary tiles (active projects, revenue, online projects) sit above the **Client / Project list**, which is the usual place to find and open your work (Section 2).
 
 #### In Time Management
 
@@ -208,7 +208,7 @@ After you choose **Open TM**, the main page is weekly time entry. Time entry is 
 - **Home** always means the application hub, not the CM project list. To get back to the project list, choose **Home**, then **Open CM**, or click **Project List** while you are in CM.
 - **Dashboard** is a different screen in each workspace: project analytics in CM, time and utilization in TM.
 - **CatAI** is a hub tile (**Open CatAI**), not a CM menu item.
-- Confirm **Build 1.2.0** on the hub before you train from this document.
+- Confirm **Build 1.3.0** on the hub (under **Get Help**) or on CM Home before you train from this document.
 
 ### 1.5 Your role on a project
 
@@ -264,7 +264,7 @@ Open **Client Management** from the hub. The Home page is titled **Client Manage
 
 The subtitle reads: *Manage clients, projects, advisory services, administrative data, and dashboard reporting.*
 
-A **Send Feedback** link is available on this page if you need to report an issue or suggestion.
+**Build 1.3.0** appears under the subtitle. A **Send Feedback** link is below that if you need to report an issue or suggestion.
 
 ### 2.1 Summary tiles
 
@@ -289,6 +289,7 @@ The grid is titled **Client / Project list**. Each row is a client/project combi
 - **Double-click a row** to open or create a project for that client.
 - **Right-click a row** for report options (Section 2.5).
 - Click a **column header** to sort.
+- Click the **Online** / **Offline** dot on a row to toggle the project in or out of the working set without opening it. Tooltips read **Online - click to set Offline** and **Offline - click to set online**.
 
 Do not use **Bulk import** or **Delete** on this page unless a lead or administrator has asked you to. Those actions are covered in Section 9.
 
@@ -325,7 +326,7 @@ Your last filter choices are remembered for the session, so returning to Home us
 1. Filter until you can see the row.
 2. Select the row and click **Edit**, or **double-click** the row.
 3. In the **Open or create project** window:
-   - Click **Open existing project** to edit that project.
+   - Click **Open project** to edit that project.
    - Click **Create new project** only if you intend to start a new project for that client.
    - Click **Cancel** to stay on Home.
 
@@ -392,7 +393,7 @@ A directory of active clients appears on the left so you can search and open an 
 2. Change the fields that need correction.
 3. Click **Save Client**.
 
-**Do not** use **Soft-delete** or **Restore Client** unless a lead or administrator has instructed you to. Soft-delete hides the client from active lists; it is not a routine analyst action.
+**Do not** use **Soft-Delete Client** or **Restore Client** unless a lead or administrator has instructed you to. Soft-delete hides the client from active lists; it is not a routine analyst action.
 
 ---
 
@@ -448,7 +449,7 @@ Open **Project Info** to maintain the header of the project.
 
 The green or grey **online dot** next to the checkbox matches the dot on Home and in TM.
 
-**Soft-delete / Restore** sit in the footer danger zone. Do not use them unless instructed (Section 9).
+**Soft-Delete** / **Restore** sit in the footer danger zone (edit mode also has **Close**). Do not use delete/restore unless instructed (Section 9).
 
 ### 4.3 Client Info tab
 
@@ -540,11 +541,13 @@ Delete a note only when it is obsolete or was entered on the wrong project.
 - **Cancel** — reverts unsaved edits on that tab
 - **Unsaved changes** hint when the tab is dirty
 
-The **Online** checkbox on Project Info is the exception: it saves as soon as you toggle it.
+The **Online** checkbox on Project Info is the exception: it saves as soon as you toggle it. You can also toggle Online from the Home grid (Section 2.2).
+
+If more than one tab has unsaved work, you may see **Confirm upcoming changes** and **Save all listed changes**.
 
 If you navigate away with unsaved tab changes, you can lose work. Save the tab you are on before you switch to TM or another project.
 
-Footer actions also include soft-delete and restore. Leave those to a lead or administrator.
+Footer actions in edit mode include **Close**, **Soft-Delete**, and **Restore**. Leave delete/restore to a lead or administrator.
 
 ### 4.10 Project Summary
 
@@ -666,8 +669,9 @@ Enter time as **yourself**. For analysts, **CAT user** is locked to your signed-
 2. The page title is **TM Time Management**.
 3. Confirm **CAT user** shows your name (read-only unless you are an Administrator).
 4. Set the week with **Previous week**, **This week**, or **Next week**. Weeks run **Monday–Sunday**. The range and your name appear next to the buttons.
-5. Enter hours on **Client Time** and/or **Non-Client Time**.
-6. Click **Save time**. Both tabs save together for that user and week.
+5. Check the hours strip: **This week**, **Last week**, **This month**, and **YTD**. These totals update after you **Save time**.
+6. Enter hours on **Client Time** and/or **Non-Client Time**.
+7. Click **Save time**. Both tabs save together for that user and week.
 
 Shortcuts on the page: **Workload dashboard** (TM Dashboard) and **Back to home** (hub).
 
@@ -755,9 +759,11 @@ Filters:
 - **Year**
 - **CAT user** — one person, or **All CAT users**
 
-KPIs include total hours, project vs other, utilization, capacity, client/project counts, and incomplete weeks.
+KPIs include total hours, project vs other, utilization, capacity, client/project counts, and incomplete weeks. Many KPIs show a **YoY** comparison. Use **Refresh** after you change filters.
 
 Charts and tables cover hours by analyst, project vs other mix, categories, clients, projects, monthly trends (including prior year), top tasks, exact vs allocated, and **Incomplete weeks (< 32h logged)**.
+
+Click a chart slice to open a detail grid (**Label**, **Detail**, **Project h**, **Other h**, **Hours**). Use **Open** to jump to that project’s Time tracker. Click **Clear** or choose another slice when you are done. *Select a chart slice to inspect detail.* appears until you click a chart.
 
 Exports:
 
@@ -803,13 +809,13 @@ This is the preferred way to email a full project pack. For a **single data file
 
 In CM, click **Dashboard**. The page title is **Dashboard**. This is the portfolio view, not the TM utilization view.
 
-Global filters include **Business Unit**, **Business Class**, **Project Status**, **Client Status**, and a date range.
+Global filters include **Business Unit**, **Business Class**, **Project Status**, **Client Status**, and a date range. KPI tiles at the top show **Projects**, **Clients** / **Active clients**, **Latest revenue**, and **Hours**. Use **Refresh** after you change filters.
 
 Tabs:
 
 | Tab | What you will see |
 | --- | --- |
-| **Executive Overview** | Renewal timeline, revenue tiers, aging, inactive projects; export Executive PDF |
+| **Executive Overview** | Renewal timeline, revenue tiers, aging, inactive projects; **Export PDF** |
 | **Project Portfolio & Pipeline** | Begin-month / pipeline charts, project type views |
 | **Service Coverage** | Service matrix by client or project |
 | **Client Health** | Status and revenue health |
@@ -820,33 +826,33 @@ Use this to answer “what is in flight?”, “what is aging?”, and “which 
 
 1. Click a chart segment or bar.
 2. A drill-down grid lists the underlying projects.
-3. Open a row to **Edit Project**.
+3. Open a row with **Edit**.
+4. Click **Clear chart filter** (or change filters) to return to the full dashboard.
 
-Clear the drill (or change filters) to return to the full dashboard. If you filter to a lead, business unit, or status on Home, confirm you are looking at the same slice on the dashboard before you draw conclusions.
+If you filter to a lead, business unit, or status on Home, confirm you are looking at the same slice on the dashboard before you draw conclusions.
 
 ---
 
 ## 8. CatAI (live)
 
-> **Status (Build 1.2.0):** CatAI **is live**. It is connected to the LLM. You can send questions, keep conversation history, use tool lookups, and run create wizards. This is no longer a preview and is not waiting on a future release.
+> **Status (Build 1.3.0):** CatAI **is live**. It is connected to the LLM. You can send questions, keep conversation history, use tool lookups, and run create wizards.
 
-CatAI is a third application on the **Select Application** hub, next to Client Management and Time Management. It is **not** in the Client Management sidebar. You must be signed in to use it.
+CatAI is a third application on the **Select Application** hub, next to Client Management and Time Management. Open it from the hub tile (**Open CatAI**). You must be signed in.
 
-The hub tile title is **CatAI**. The description reads: *Ask questions about clients, projects, and work in natural language.* Click **Open CatAI**.
-
-The greeting explains that chat **remembers prior messages**. Use **New chat** when you want a clean slate. You can ask about clients, projects, or user groups, or say you want to create a renewal project or user group.
+The greeting explains that chat **remembers prior messages**. Use **New chat** when you want a clean slate. Returning to CatAI usually reopens your most recent saved chat.
 
 **How to use it**
 
 1. Click **Home** (if you are not already on the hub).
 2. Click **Open CatAI**.
 3. Choose a saved chat under **Chats**, or click **New chat**.
-4. Type in **Message** and click **Send**.
-5. Follow-up questions stay in the same thread. **Sources used** may list tools CatAI called (for example to look up a client or project).
+4. Type in **Message** and click **Send**. While CatAI looks up data you may see **CatAI is looking things up…** or **Sending…**.
+5. Follow-up questions stay in the same thread. **Sources used** may list tools CatAI called. Links in replies are clickable.
+6. To remove a conversation, click **×** (**Delete chat**) on that row.
 
 **Wizards**
 
-If you ask to create a **renewal project** or a **user group**, CatAI may start a guided **Wizard**. Answer each prompt, or click **Cancel wizard** to return to normal chat.
+If you ask to create a **renewal project** or a **user group**, CatAI may start a guided **Wizard**. A **Wizard active** banner appears. Answer each prompt, or click **Cancel wizard** to return to normal chat. Saved chats in a wizard show a **Wizard ·** prefix.
 
 **What to remember**
 
@@ -868,19 +874,18 @@ The application currently does not block Admin or delete actions. That does not 
 | --- | --- |
 | **Server** | Database connection settings |
 | **CatAI** (Admin) | LLM connection settings — administrators only |
+| **Correspondence** | Schedule and recipients for upcoming automated communications — not typical analyst work |
 | **Business Unit** / **Business Class** / **Client Type** / **Project Types** | Reference data for the whole firm |
-| **Users** | User records, photos, bulk import, hard delete |
-| **User Role** | Role catalog (Analyst I, Analytics Lead, and so on) |
-| **UserGroup** | Creating groups and assigning members — ask a lead to add you to a team |
+| **Users** | Contains **Add / Edit Users**, **User Role**, and **User Group** — photos, bulk import, hard delete |
 | **Clients** (Admin) | Firm-wide client maintenance and bulk import |
-| **Services** / **Service Category** | Service catalog |
+| **Services** | Contains **Service Groups**, **Service Category**, and **Services** |
 | **Data Audit** | Linkage checks (missing groups, missing Analytics Lead) — operations/lead use |
 
 **Home and project actions to avoid**
 
 - **Bulk import** of clients/projects from CSV
 - **Delete** / **Hard delete** on the Home grid (permanent)
-- **Soft-delete** of clients or projects, except when instructed
+- **Soft-Delete** of clients or projects, except when instructed
 - Entering **another CAT user’s** time (analysts cannot; only Administrators can pick another user)
 - Changing **user group** membership or dropping a group from a live project
 - Deleting calendar tasks that already have time
@@ -899,7 +904,7 @@ If you opened Admin by accident, click **Home** and return to CM or TM.
 | **CMS / Cat Management System** | This application |
 | **CM** | Client Management — clients, projects, calendar, files, reports |
 | **TM** | Time Management — weekly hours and utilization |
-| **Build 1.2.0** | Application and manual build. Shown on the hub under **Get Help** and on CM Home next to **Send Feedback** |
+| **Build 1.3.0** | Application and manual build. Shown on the hub under **Get Help** and on CM Home above **Send Feedback** |
 | **Hub / Select Application** | First screen after sign-in; choose CM, TM, or CatAI. Sidebar **Home** always returns here |
 | **Get Help** | Hub link that opens this training manual (PDF) |
 | **Sign in to launch** | CAT email + password gate. First launch creates your password |
@@ -927,7 +932,7 @@ If you opened Admin by accident, click **Home** and return to CM or TM.
 **Start of day**
 
 - [ ] **Sign in to launch** with your CAT email
-- [ ] Confirm the hub shows **Build 1.2.0**
+- [ ] Confirm the hub (or CM Home) shows **Build 1.3.0**
 - [ ] Open the hub → **Open CM** (or sidebar **Project List**)
 - [ ] Confirm Home is filtered the way you want (default is **Online**)
 - [ ] Filter **Analytics Lead** or **Client** if you are focusing on a book of work
@@ -997,29 +1002,28 @@ SQL Server, ASP.NET Core, and the React browser application are the core. Azure 
 
 ---
 
-## Appendix B. What’s new in this build (1.2.0 vs 1.1)
+## Appendix B. What’s new in this build (1.3.0 vs 1.2.0)
 
-This appendix summarizes user-facing changes between **Build 1.1** (the previous training manual, September 2026) and **Build 1.2.0**. Confirm **Build 1.2.0** on the hub Home screen before you use this list.
+This appendix summarizes user-facing changes between **Build 1.2.0** (24 September 2026) and **Build 1.3.0**. Confirm **Build 1.3.0** on the hub (under **Get Help**) or on CM Home before you use this list.
 
-| Area | Previous build (1.1) | This build (1.2.0) |
+| Area | Previous build (1.2.0) | This build (1.3.0) |
 | --- | --- | --- |
-| **Build number** | Document version only (1.1). No build label in the UI | **Build 1.2.0** on the hub (under **Get Help**) and on CM Home (next to **Send Feedback**). This manual uses the same number |
-| **Sign-in** | No login. Anyone who could open the app could use it | **Sign in to launch** for active CAT users. First launch creates a password; later visits use **Launch**. **Sign out** is on the hub |
-| **Help** | No in-app manual link | **Get Help** on the hub opens this training manual (PDF) |
-| **Who is signed in** | Not shown | Avatar stack and **Also in CMS** on every page after sign-in |
-| **Hub** | CM, TM, and CatAI tiles | Same three tiles, plus **Get Help** and **Build 1.2.0**. The extra “Choose an application to continue” line is no longer on the earth hero |
-| **CM navigation** | Sidebar **Home** returned to the hub only | **Project List** opens the Client / Project grid without going back through the hub |
-| **Time entry** | You picked any **CAT user** from a dropdown | Analysts are **locked to their signed-in account**. Administrators can still pick another CAT user. **Save time** is still immediate (no submit/approve) |
-| **CatAI** | Preview chat, **not** connected to an LLM | Live assistant: saved **Chats**, **New chat**, tool lookups (**Sources used**), and wizards to create a renewal project or user group |
-| **Admin** | No CatAI settings tab | **CatAI** tab (administrators) for connection settings. Data Audit includes **Logins** |
+| **Build number** | **Build 1.2.0** | **Build 1.3.0** on the hub under **Get Help** and on CM Home above **Send Feedback** |
+| **CM Home grid** | Online status was view-only on the list | Click the Online/Offline **dot** on a row to toggle without opening the project |
+| **Open project dialog** | Button labeled **Open existing project** | Button labeled **Open project** |
+| **Time entry** | Week navigation and grids only | Hours strip: **This week**, **Last week**, **This month**, **YTD** |
+| **TM Dashboard** | Charts and CSV export | **YoY** on KPIs, **Refresh**, click a chart for a detail grid and **Open** a project |
+| **PM Dashboard** | **Export Executive PDF**; drill to **Edit Project** | **Export PDF**; drill uses **Edit**; **Clear chart filter**; KPI row for projects, clients, revenue, hours |
+| **CatAI** | Live chat, New chat, wizards | Reopens last chat; **Delete chat**; **CatAI is looking things up…**; **Wizard active** banner; clickable links in replies |
+| **Admin** | Separate User Role / UserGroup / Service Category tabs | **Users** and **Services** are grouped. New **Correspondence** tab for scheduled communications (content still being defined) |
 
 **What did not change**
 
-- Project tabs (Client Info, Project Info, Project Data, Services, Analysis Profile, Calendar, Time tracker, Revenue history, Notes)
-- Calendar **Notify Team** and automatic owner emails
+- Sign-in, **Get Help**, presence (**Also in CMS**), hub tiles
+- Project tabs and Calendar **Notify Team**
 - Project report / Generate Report & Send
-- TM Client Time vs Non-Client Time and the TM Dashboard
+- Analysts locked to their own TM user (Administrators can still pick another)
 
 ---
 
-*End of Analyst Training Manual, Build 1.2.0*
+*End of Analyst Training Manual, Build 1.3.0*

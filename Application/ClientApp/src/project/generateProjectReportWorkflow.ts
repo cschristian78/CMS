@@ -87,6 +87,7 @@ function formatProjectDataCategory(category?: string | null): string {
     ExposureData: 'Exposure',
     LossData: 'Loss',
     ClaimsData: 'Claims',
+    ClientDeliverable: 'Client Deliverable',
     CorrespondenceData: 'Correspondence',
     SubmissionData: 'Submission',
   };

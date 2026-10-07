@@ -12,7 +12,7 @@ public sealed class ProjectFile
     public string BlobPath { get; set; } = string.Empty;
     public string BlobUrl { get; set; } = string.Empty;
 
-    /// <summary>SourceData | ExposureData | LossData | ClaimsData | CorrespondenceData | SubmissionData</summary>
+    /// <summary>SourceData | ExposureData | LossData | ClaimsData | ClientDeliverable | CorrespondenceData | SubmissionData</summary>
     public string Category { get; set; } = "SourceData";
 
     public string? Description { get; set; }
@@ -25,6 +25,13 @@ public sealed class ProjectFile
 
     /// <summary>Process-Active flag: file marked for processing (multiple may be Active on a project).</summary>
     public bool IsCurrent { get; set; }
+
+    /// <summary>None | PendingReview | Approved | ChangesRequested — file notes approval workflow.</summary>
+    public string ApprovalStatus { get; set; } = FileApprovalStatuses.None;
+
+    public int? ApprovalUpdatedByUserID { get; set; }
+    public string? ApprovalUpdatedByName { get; set; }
+    public DateTime? ApprovalUpdatedDate { get; set; }
 
     public int UploadedByUserID { get; set; }
     public string? UploadedByName { get; set; }

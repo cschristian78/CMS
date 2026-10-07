@@ -125,6 +125,7 @@ builder.Services.AddHttpClient();
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<ICalendarOwnerNotificationService, CalendarOwnerNotificationService>();
+builder.Services.AddScoped<IFileNoteNotificationService, FileNoteNotificationService>();
 builder.Services.AddSingleton<IProjectAnalysisProfileStore, FileProjectAnalysisProfileStore>();
 builder.Services.AddScoped<IProjectAnalysisProfileService, ProjectAnalysisProfileService>();
 
@@ -214,13 +215,15 @@ try
     projects.EnsureProjectNoteSchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectCalendarSchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectFeeBasedRevenueSchemaAsync().GetAwaiter().GetResult();
+    projects.EnsureProjectFileCategorySchemaAsync().GetAwaiter().GetResult();
+    projects.EnsureProjectFileApprovalSchemaAsync().GetAwaiter().GetResult();
     var catAiConversations = scope.ServiceProvider.GetRequiredService<ICatAiConversationRepository>();
     catAiConversations.EnsureSchemaAsync().GetAwaiter().GetResult();
 }
 catch (Exception ex)
 {
     var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    logger.LogWarning(ex, "Could not ensure login/user-type/note/calendar/fee-based/CatAI schema at startup. It will retry on first use.");
+    logger.LogWarning(ex, "Could not ensure login/user-type/note/calendar/fee-based/project-file/approval/CatAI schema at startup. It will retry on first use.");
 }
 
 app.Run();

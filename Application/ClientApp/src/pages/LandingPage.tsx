@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { APP_BUILD_NUMBER } from '../appBuild';
 import { setCatAppMode } from '../catAppMode';
 
 export default function LandingPage() {
@@ -75,6 +76,9 @@ export default function LandingPage() {
           <a href="/api/app/help-manual" target="_blank" rel="noopener noreferrer">
             Get Help
           </a>
+        </p>
+        <p className="app-hub-build" aria-label="Application build">
+          Build {APP_BUILD_NUMBER}
         </p>
       </div>
     </div>

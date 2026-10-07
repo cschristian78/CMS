@@ -486,6 +486,21 @@ public sealed class ProjectRepository : IProjectRepository
             BEGIN
                 ALTER TABLE dbo.tProjectNote ADD CalendarItemTitle NVARCHAR(200) NULL;
             END;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'ProjectFileID') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote ADD ProjectFileID INT NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'ProjectFileName') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote ADD ProjectFileName NVARCHAR(260) NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'MentionedUserIDs') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote ADD MentionedUserIDs NVARCHAR(500) NULL;
+            END;
             """;
 
         const string addCreatedByFkSql = """
@@ -520,6 +535,23 @@ public sealed class ProjectRepository : IProjectRepository
             END;
             """;
 
+        const string addFileFkSql = """
+            IF OBJECT_ID(N'dbo.tProjectNote', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'ProjectFileID') IS NULL
+                RETURN;
+
+            IF OBJECT_ID(N'dbo.FK_tProjectNote_ProjectFileID', N'F') IS NULL
+               AND OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectNote
+                    ADD CONSTRAINT FK_tProjectNote_ProjectFileID
+                    FOREIGN KEY (ProjectFileID) REFERENCES dbo.tProjectFile (ProjectFileID)
+                    ON DELETE SET NULL;
+            END;
+            """;
+
         const string addIndexSql = """
             SET QUOTED_IDENTIFIER ON;
 
@@ -540,6 +572,19 @@ public sealed class ProjectRepository : IProjectRepository
                     ON dbo.tProjectNote (CalendarItemID)
                     WHERE CalendarItemID IS NOT NULL;
             END;
+
+            IF COL_LENGTH(N'dbo.tProjectNote', N'ProjectFileID') IS NOT NULL
+               AND NOT EXISTS (
+                SELECT 1
+                  FROM sys.indexes
+                 WHERE name = N'IX_tProjectNote_ProjectFileID'
+                   AND object_id = OBJECT_ID(N'dbo.tProjectNote')
+            )
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_tProjectNote_ProjectFileID
+                    ON dbo.tProjectNote (ProjectFileID)
+                    WHERE ProjectFileID IS NOT NULL;
+            END;
             """;
 
         const string procSql = """
@@ -553,6 +598,9 @@ public sealed class ProjectRepository : IProjectRepository
                 @CreatedByUserID              INT = NULL,
                 @CalendarItemID               INT = NULL,
                 @CalendarItemTitle            NVARCHAR(200) = NULL,
+                @ProjectFileID                INT = NULL,
+                @ProjectFileName              NVARCHAR(260) = NULL,
+                @MentionedUserIDs             NVARCHAR(500) = NULL,
                 @NewNoteID                    INT OUTPUT
             AS
             BEGIN
@@ -570,7 +618,10 @@ public sealed class ProjectRepository : IProjectRepository
                         IsPinned,
                         CreatedByUserID,
                         CalendarItemID,
-                        CalendarItemTitle
+                        CalendarItemTitle,
+                        ProjectFileID,
+                        ProjectFileName,
+                        MentionedUserIDs
                     )
                     VALUES (
                         @ProjectRefID,
@@ -580,7 +631,10 @@ public sealed class ProjectRepository : IProjectRepository
                         @IsPinned,
                         @CreatedByUserID,
                         @CalendarItemID,
-                        @CalendarItemTitle
+                        @CalendarItemTitle,
+                        @ProjectFileID,
+                        @ProjectFileName,
+                        @MentionedUserIDs
                     );
 
                     SET @NewNoteID = SCOPE_IDENTITY();
@@ -603,6 +657,7 @@ public sealed class ProjectRepository : IProjectRepository
         await _db.ExecuteTextAsync(addColumnsSql, cancellationToken: cancellationToken);
         await _db.ExecuteTextAsync(addCreatedByFkSql, cancellationToken: cancellationToken);
         await _db.ExecuteTextAsync(addCalendarFkSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(addFileFkSql, cancellationToken: cancellationToken);
         await _db.ExecuteTextAsync(addIndexSql, cancellationToken: cancellationToken);
         await _db.ExecuteTextAsync(procSql, cancellationToken: cancellationToken);
     }
@@ -623,12 +678,18 @@ public sealed class ProjectRepository : IProjectRepository
                 pn.IsPinned,
                 pn.CalendarItemID,
                 pn.CalendarItemTitle,
+                pn.ProjectFileID,
+                ProjectFileName = COALESCE(
+                    NULLIF(LTRIM(RTRIM(pn.ProjectFileName)), N''),
+                    NULLIF(LTRIM(RTRIM(pf.OriginalFileName)), N'')),
+                pn.MentionedUserIDs,
                 pn.CreatedDate,
                 pn.ModifiedDate
               FROM dbo.tProjectNote AS pn
               INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = pn.ProjectRefID AND pr.IsActive = 1
               INNER JOIN dbo.tProject AS p ON p.ProjectID = pr.ProjectID
               LEFT JOIN dbo.tUser AS u ON u.UserID = pn.CreatedByUserID
+              LEFT JOIN dbo.tProjectFile AS pf ON pf.ProjectFileID = pn.ProjectFileID
              WHERE p.ProjectID = @ProjectID
                AND pn.IsActive = 1
              ORDER BY pn.NoteDate DESC, pn.NoteID DESC;
@@ -657,6 +718,21 @@ public sealed class ProjectRepository : IProjectRepository
         var calendarItemTitle = string.IsNullOrWhiteSpace(note.CalendarItemTitle)
             ? null
             : note.CalendarItemTitle.Trim();
+        var projectFileId = note.ProjectFileID is > 0 ? note.ProjectFileID : null;
+        var projectFileName = string.IsNullOrWhiteSpace(note.ProjectFileName)
+            ? null
+            : note.ProjectFileName.Trim();
+        if (projectFileName is { Length: > 260 })
+        {
+            projectFileName = projectFileName[..260];
+        }
+
+        var mentioned = NormalizeMentionedUserIds(note);
+        if (projectFileId is not null)
+        {
+            note.NoteType = FileNoteKinds.Normalize(note.NoteType);
+        }
+
         var output = SqlParameterFactory.OutputInt("@NewNoteID");
         await _db.ExecuteWithOutputIntAsync(
             "dbo.usp_ProjectNote_Create",
@@ -670,10 +746,14 @@ public sealed class ProjectRepository : IProjectRepository
                 SqlParameterFactory.Int("@CreatedByUserID", createdByUserId),
                 SqlParameterFactory.Int("@CalendarItemID", calendarItemId),
                 SqlParameterFactory.NVarChar("@CalendarItemTitle", 200, calendarItemTitle),
+                SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.NVarChar("@ProjectFileName", 260, projectFileName),
+                SqlParameterFactory.NVarChar("@MentionedUserIDs", 500, mentioned),
                 output
             ],
             "@NewNoteID",
             cancellationToken);
+        note.MentionedUserIDs = mentioned;
 
         return Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
     }
@@ -713,6 +793,315 @@ public sealed class ProjectRepository : IProjectRepository
             """;
 
         await _db.ExecuteTextAsync(sql, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Allows ClientDeliverable on tProjectFile.Category (CHECK + create/update procs).
+    /// Older DBs silently remapped unknown categories to SourceData.
+    /// </summary>
+    public async Task EnsureProjectFileCategorySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        const string constraintSql = """
+            IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NULL
+                RETURN;
+
+            IF EXISTS (
+                SELECT 1
+                  FROM sys.check_constraints
+                 WHERE name = N'CK_tProjectFile_Category'
+                   AND parent_object_id = OBJECT_ID(N'dbo.tProjectFile')
+                   AND definition LIKE N'%ClientDeliverable%')
+                RETURN;
+
+            IF EXISTS (
+                SELECT 1
+                  FROM sys.check_constraints
+                 WHERE name = N'CK_tProjectFile_Category'
+                   AND parent_object_id = OBJECT_ID(N'dbo.tProjectFile'))
+            BEGIN
+                ALTER TABLE dbo.tProjectFile DROP CONSTRAINT CK_tProjectFile_Category;
+            END;
+
+            ALTER TABLE dbo.tProjectFile WITH NOCHECK
+                ADD CONSTRAINT CK_tProjectFile_Category
+                    CHECK (Category IN (
+                        'SourceData',
+                        'ExposureData',
+                        'LossData',
+                        'ClaimsData',
+                        'ClientDeliverable',
+                        'CorrespondenceData',
+                        'SubmissionData'));
+            """;
+
+        const string createProcSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectFile_Create
+                @ProjectRefID      INT,
+                @OriginalFileName  NVARCHAR(260),
+                @ContentType       NVARCHAR(150) = NULL,
+                @ByteLength        BIGINT,
+                @BlobPath          NVARCHAR(500),
+                @BlobUrl           NVARCHAR(1000),
+                @Category          VARCHAR(40) = 'SourceData',
+                @Description       NVARCHAR(1000) = NULL,
+                @VersionLabel      NVARCHAR(40) = NULL,
+                @DataAsOf          DATE = NULL,
+                @IsCurrent         BIT = 0,
+                @UploadedByUserID  INT,
+                @ActingUserID      INT,
+                @NewProjectFileID  INT OUTPUT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                IF NULLIF(LTRIM(RTRIM(@OriginalFileName)), N'') IS NULL
+                    THROW 50001, 'OriginalFileName is required.', 1;
+
+                IF NULLIF(LTRIM(RTRIM(@BlobPath)), N'') IS NULL
+                    THROW 50002, 'BlobPath is required.', 1;
+
+                IF @Category NOT IN (
+                        'SourceData',
+                        'ExposureData',
+                        'LossData',
+                        'ClaimsData',
+                        'ClientDeliverable',
+                        'CorrespondenceData',
+                        'SubmissionData')
+                    SET @Category = 'SourceData';
+
+                IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID AND IsActive = 1)
+                    THROW 50003, 'ProjectRef not found or inactive.', 1;
+
+                SET @Description = NULLIF(LTRIM(RTRIM(@Description)), N'');
+                SET @VersionLabel = NULLIF(LTRIM(RTRIM(@VersionLabel)), N'');
+                SET @IsCurrent = ISNULL(@IsCurrent, 0);
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    INSERT INTO dbo.tProjectFile
+                    (
+                        ProjectRefID, OriginalFileName, ContentType, ByteLength,
+                        BlobPath, BlobUrl, Category, Description, VersionLabel, DataAsOf, IsCurrent, UploadedByUserID
+                    )
+                    VALUES
+                    (
+                        @ProjectRefID,
+                        LTRIM(RTRIM(@OriginalFileName)),
+                        @ContentType,
+                        @ByteLength,
+                        LTRIM(RTRIM(@BlobPath)),
+                        LTRIM(RTRIM(@BlobUrl)),
+                        @Category,
+                        @Description,
+                        @VersionLabel,
+                        @DataAsOf,
+                        @IsCurrent,
+                        @UploadedByUserID
+                    );
+
+                    SET @NewProjectFileID = SCOPE_IDENTITY();
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'ProjectFile',
+                        @EntityID   = @NewProjectFileID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Insert';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END
+            """;
+
+        const string updateProcSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectFile_UpdateMetadata
+                @ProjectFileID INT,
+                @Category      VARCHAR(40) = NULL,
+                @Description   NVARCHAR(1000) = NULL,
+                @VersionLabel  NVARCHAR(40) = NULL,
+                @DataAsOf      DATE = NULL,
+                @ActingUserID  INT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                IF NOT EXISTS (SELECT 1 FROM dbo.tProjectFile WHERE ProjectFileID = @ProjectFileID AND IsActive = 1)
+                    THROW 50001, 'Project file not found or inactive.', 1;
+
+                IF @Category IS NOT NULL
+                   AND @Category NOT IN (
+                        'SourceData',
+                        'ExposureData',
+                        'LossData',
+                        'ClaimsData',
+                        'ClientDeliverable',
+                        'CorrespondenceData',
+                        'SubmissionData')
+                    SET @Category = 'SourceData';
+
+                SET @Description = NULLIF(LTRIM(RTRIM(@Description)), N'');
+                SET @VersionLabel = NULLIF(LTRIM(RTRIM(@VersionLabel)), N'');
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    UPDATE dbo.tProjectFile
+                       SET Category = COALESCE(@Category, Category),
+                           Description = @Description,
+                           VersionLabel = @VersionLabel,
+                           DataAsOf = @DataAsOf,
+                           ModifiedDate = SYSUTCDATETIME()
+                     WHERE ProjectFileID = @ProjectFileID
+                       AND IsActive = 1;
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'ProjectFile',
+                        @EntityID   = @ProjectFileID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Update';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END
+            """;
+
+        await _db.ExecuteTextAsync(constraintSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(createProcSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(updateProcSql, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Adds file approval status columns and refreshes list/get procs to return them.</summary>
+    public async Task EnsureProjectFileApprovalSchemaAsync(CancellationToken cancellationToken = default)
+    {
+        const string columnsSql = """
+            IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tProjectFile', N'ApprovalStatus') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectFile
+                    ADD ApprovalStatus VARCHAR(40) NOT NULL
+                        CONSTRAINT DF_tProjectFile_ApprovalStatus DEFAULT ('None');
+            END;
+
+            IF COL_LENGTH(N'dbo.tProjectFile', N'ApprovalUpdatedByUserID') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectFile ADD ApprovalUpdatedByUserID INT NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.tProjectFile', N'ApprovalUpdatedDate') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tProjectFile ADD ApprovalUpdatedDate DATETIME2(0) NULL;
+            END;
+            """;
+
+        const string listProcSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectFile_ListByProject
+                @ProjectID INT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+
+                SELECT
+                    f.ProjectFileID,
+                    p.ProjectID,
+                    f.ProjectRefID,
+                    f.OriginalFileName,
+                    f.ContentType,
+                    f.ByteLength,
+                    f.BlobPath,
+                    f.BlobUrl,
+                    f.Category,
+                    f.Description,
+                    f.VersionLabel,
+                    f.DataAsOf,
+                    f.IsCurrent,
+                    f.ApprovalStatus,
+                    f.ApprovalUpdatedByUserID,
+                    ApprovalUpdatedByName = CASE
+                        WHEN au.UserID IS NULL THEN NULL
+                        ELSE LTRIM(RTRIM(CONCAT(au.FirstName, N' ', au.LastName)))
+                    END,
+                    f.ApprovalUpdatedDate,
+                    f.UploadedByUserID,
+                    UploadedByName = CASE
+                        WHEN u.UserID IS NULL THEN NULL
+                        ELSE LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName)))
+                    END,
+                    f.IsActive,
+                    f.CreatedDate,
+                    f.ModifiedDate
+                  FROM dbo.tProjectFile AS f
+                  INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = f.ProjectRefID AND pr.IsActive = 1
+                  INNER JOIN dbo.tProject AS p ON p.ProjectID = pr.ProjectID
+                  LEFT JOIN dbo.tUser AS u ON u.UserID = f.UploadedByUserID
+                  LEFT JOIN dbo.tUser AS au ON au.UserID = f.ApprovalUpdatedByUserID
+                 WHERE p.ProjectID = @ProjectID
+                   AND f.IsActive = 1
+                 ORDER BY f.IsCurrent DESC, f.CreatedDate DESC, f.ProjectFileID DESC;
+            END
+            """;
+
+        const string getProcSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_ProjectFile_GetById
+                @ProjectFileID INT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+
+                SELECT
+                    f.ProjectFileID,
+                    p.ProjectID,
+                    f.ProjectRefID,
+                    f.OriginalFileName,
+                    f.ContentType,
+                    f.ByteLength,
+                    f.BlobPath,
+                    f.BlobUrl,
+                    f.Category,
+                    f.Description,
+                    f.VersionLabel,
+                    f.DataAsOf,
+                    f.IsCurrent,
+                    f.ApprovalStatus,
+                    f.ApprovalUpdatedByUserID,
+                    ApprovalUpdatedByName = CASE
+                        WHEN au.UserID IS NULL THEN NULL
+                        ELSE LTRIM(RTRIM(CONCAT(au.FirstName, N' ', au.LastName)))
+                    END,
+                    f.ApprovalUpdatedDate,
+                    f.UploadedByUserID,
+                    UploadedByName = CASE
+                        WHEN u.UserID IS NULL THEN NULL
+                        ELSE LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName)))
+                    END,
+                    f.IsActive,
+                    f.CreatedDate,
+                    f.ModifiedDate
+                  FROM dbo.tProjectFile AS f
+                  INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = f.ProjectRefID
+                  INNER JOIN dbo.tProject AS p ON p.ProjectID = pr.ProjectID
+                  LEFT JOIN dbo.tUser AS u ON u.UserID = f.UploadedByUserID
+                  LEFT JOIN dbo.tUser AS au ON au.UserID = f.ApprovalUpdatedByUserID
+                 WHERE f.ProjectFileID = @ProjectFileID
+                   AND f.IsActive = 1;
+            END
+            """;
+
+        await _db.ExecuteTextAsync(columnsSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(listProcSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(getProcSql, cancellationToken: cancellationToken);
     }
 
     public async Task EnsureProjectCalendarSchemaAsync(CancellationToken cancellationToken = default)
@@ -1215,19 +1604,23 @@ public sealed class ProjectRepository : IProjectRepository
             cancellationToken);
     }
 
-    public Task<IReadOnlyList<ProjectFile>> ListFilesAsync(
+    public async Task<IReadOnlyList<ProjectFile>> ListFilesAsync(
         int projectId,
         CancellationToken cancellationToken = default)
-        => _db.QueryAsync(
+    {
+        await EnsureProjectFileApprovalSchemaAsync(cancellationToken);
+        return await _db.QueryAsync(
             "dbo.usp_ProjectFile_ListByProject",
             MapProjectFile,
             [SqlParameterFactory.Int("@ProjectID", projectId)],
             cancellationToken);
+    }
 
     public async Task<ProjectFile?> GetFileAsync(
         int projectFileId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureProjectFileApprovalSchemaAsync(cancellationToken);
         var rows = await _db.QueryAsync(
             "dbo.usp_ProjectFile_GetById",
             MapProjectFile,
@@ -1236,9 +1629,37 @@ public sealed class ProjectRepository : IProjectRepository
         return rows.Count == 0 ? null : rows[0];
     }
 
+    public async Task UpdateFileApprovalStatusAsync(
+        int projectFileId,
+        string approvalStatus,
+        int actingUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureProjectFileApprovalSchemaAsync(cancellationToken);
+        var status = FileApprovalStatuses.Normalize(approvalStatus);
+        const string sql = """
+            UPDATE dbo.tProjectFile
+               SET ApprovalStatus = @ApprovalStatus,
+                   ApprovalUpdatedByUserID = @ActingUserID,
+                   ApprovalUpdatedDate = SYSUTCDATETIME(),
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE ProjectFileID = @ProjectFileID
+               AND IsActive = 1;
+            """;
+        await _db.ExecuteTextAsync(
+            sql,
+            [
+                SqlParameterFactory.Int("@ProjectFileID", projectFileId),
+                SqlParameterFactory.VarChar("@ApprovalStatus", 40, status),
+                SqlParameterFactory.Int("@ActingUserID", actingUserId > 0 ? actingUserId : CmsDefaults.ActingUserId)
+            ],
+            cancellationToken);
+    }
+
     public async Task<int> AddFileAsync(ProjectFile file, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(file);
+        await EnsureProjectFileCategorySchemaAsync(cancellationToken);
 
         var projectRefId = file.ProjectRefID > 0
             ? file.ProjectRefID
@@ -1272,7 +1693,7 @@ public sealed class ProjectRepository : IProjectRepository
         return Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
     }
 
-    public Task UpdateFileMetadataAsync(
+    public async Task UpdateFileMetadataAsync(
         int projectFileId,
         string? category,
         string? description,
@@ -1280,8 +1701,9 @@ public sealed class ProjectRepository : IProjectRepository
         DateTime? dataAsOf,
         CancellationToken cancellationToken = default)
     {
+        await EnsureProjectFileCategorySchemaAsync(cancellationToken);
         var normalizedCategory = category is null ? null : NormalizeFileCategory(category);
-        return _db.ExecuteAsync(
+        await _db.ExecuteAsync(
             "dbo.usp_ProjectFile_UpdateMetadata",
             [
                 SqlParameterFactory.Int("@ProjectFileID", projectFileId),
@@ -1363,8 +1785,9 @@ public sealed class ProjectRepository : IProjectRepository
         var value = (category ?? string.Empty).Trim();
         return value switch
         {
-            "SourceData" or "ExposureData" or "LossData" or "ClaimsData" or "CorrespondenceData" or "SubmissionData" => value,
+            "SourceData" or "ExposureData" or "LossData" or "ClaimsData" or "ClientDeliverable" or "CorrespondenceData" or "SubmissionData" => value,
             "Source Data" => "SourceData",
+            "Client Deliverable" => "ClientDeliverable",
             "Exposure Data" => "ExposureData",
             "Loss Data" => "LossData",
             "Claims Data" => "ClaimsData",
@@ -1839,6 +2262,9 @@ public sealed class ProjectRepository : IProjectRepository
         IsPinned = r.GetBooleanOrDefault("IsPinned"),
         CalendarItemID = r.TryGetNullableInt32("CalendarItemID"),
         CalendarItemTitle = r.TryGetNullableString("CalendarItemTitle"),
+        ProjectFileID = r.TryGetNullableInt32("ProjectFileID"),
+        ProjectFileName = r.TryGetNullableString("ProjectFileName"),
+        MentionedUserIDs = r.TryGetNullableString("MentionedUserIDs"),
         CreatedDate = r.GetDateTimeOrDefault("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
     };
@@ -1895,10 +2321,48 @@ public sealed class ProjectRepository : IProjectRepository
         VersionLabel = r.TryGetNullableString("VersionLabel"),
         DataAsOf = r.TryGetNullableDateTime("DataAsOf"),
         IsCurrent = r.TryGetNullableBoolean("IsCurrent") ?? false,
+        ApprovalStatus = FileApprovalStatuses.Normalize(r.TryGetNullableString("ApprovalStatus")),
+        ApprovalUpdatedByUserID = r.TryGetNullableInt32("ApprovalUpdatedByUserID"),
+        ApprovalUpdatedByName = r.TryGetNullableString("ApprovalUpdatedByName"),
+        ApprovalUpdatedDate = r.TryGetNullableDateTime("ApprovalUpdatedDate"),
         UploadedByUserID = r.GetInt32OrDefault("UploadedByUserID"),
         UploadedByName = r.TryGetNullableString("UploadedByName"),
         IsActive = r.TryGetNullableBoolean("IsActive") ?? true,
         CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
         ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
     };
+
+    private static string? NormalizeMentionedUserIds(ProjectNote note)
+    {
+        var ids = new SortedSet<int>();
+        if (note.MentionedUserIdList is { Length: > 0 })
+        {
+            foreach (var id in note.MentionedUserIdList)
+            {
+                if (id > 0)
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(note.MentionedUserIDs))
+        {
+            foreach (var part in note.MentionedUserIDs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && id > 0)
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+
+        if (ids.Count == 0)
+        {
+            return null;
+        }
+
+        var joined = string.Join(',', ids);
+        return joined.Length > 500 ? joined[..500] : joined;
+    }
 }

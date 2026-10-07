@@ -31,7 +31,7 @@ BEGIN
         Category         VARCHAR(40)     NOT NULL
             CONSTRAINT DF_tProjectFile_Category DEFAULT ('SourceData')
             CONSTRAINT CK_tProjectFile_Category
-                CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData')),
+                CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'ClientDeliverable', 'CorrespondenceData', 'SubmissionData')),
         Description      NVARCHAR(1000)  NULL,
         VersionLabel     NVARCHAR(40)    NULL,
         DataAsOf         DATE            NULL,
@@ -110,7 +110,7 @@ BEGIN
 
     ALTER TABLE dbo.tProjectFile WITH NOCHECK
         ADD CONSTRAINT CK_tProjectFile_Category
-            CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData'));
+            CHECK (Category IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'ClientDeliverable', 'CorrespondenceData', 'SubmissionData'));
 
     DECLARE @dfName sysname =
     (
@@ -228,7 +228,7 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@BlobPath)), N'') IS NULL
         THROW 50002, 'BlobPath is required.', 1;
 
-    IF @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData')
+    IF @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'ClientDeliverable', 'CorrespondenceData', 'SubmissionData')
         SET @Category = 'SourceData';
 
     IF NOT EXISTS (SELECT 1 FROM dbo.tProjectRef WHERE ProjectRefID = @ProjectRefID AND IsActive = 1)
@@ -295,7 +295,7 @@ BEGIN
         THROW 50001, 'Project file not found or inactive.', 1;
 
     IF @Category IS NOT NULL
-       AND @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'CorrespondenceData', 'SubmissionData')
+       AND @Category NOT IN ('SourceData', 'ExposureData', 'LossData', 'ClaimsData', 'ClientDeliverable', 'CorrespondenceData', 'SubmissionData')
         SET @Category = 'SourceData';
 
     SET @Description = NULLIF(LTRIM(RTRIM(@Description)), N'');

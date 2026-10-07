@@ -585,6 +585,7 @@ public sealed class ProjectReportService : IProjectReportService
         "ExposureData" => "Exposure",
         "LossData" => "Loss",
         "ClaimsData" => "Claims",
+        "ClientDeliverable" => "Client Deliverable",
         "CorrespondenceData" => "Correspondence",
         "SubmissionData" => "Submission",
         var other when other.Length > 0 => other,

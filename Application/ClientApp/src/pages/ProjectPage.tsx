@@ -12,6 +12,10 @@ import type { FlashFn } from '../App';
 import { ApiError, apiDelete, apiGet, apiGetBlob, apiPostFormData, apiPostJson, apiPutJson } from '../api';
 import ProjectTimeTrackerTab, { type ProjectTimeTrackerHandle } from '../components/ProjectTimeTrackerTab';
 import ProjectAnalysisProfileTab from '../components/ProjectAnalysisProfileTab';
+import ProjectFileNotesPanel, {
+  type FileNoteDraft,
+  type FileNoteKind,
+} from '../components/ProjectFileNotesPanel';
 import { runProjectReportWorkflow } from '../project/generateProjectReportWorkflow';
 import { loadProjectCatCcEmails } from '../project/loadProjectCatCcEmails';
 import {
@@ -254,8 +258,13 @@ interface ProjectNoteRow {
   isPinned: boolean;
   calendarItemID?: number | null;
   calendarItemTitle?: string | null;
+  projectFileID?: number | null;
+  projectFileName?: string | null;
+  mentionedUserIDs?: string | null;
   createdDate?: string | null;
 }
+
+type ProjectDataSubTab = 'list' | 'fileNotes';
 
 interface ProjectFileRow {
   projectFileID: number;
@@ -269,6 +278,10 @@ interface ProjectFileRow {
   dataAsOf?: string | null;
   /** Process-Active: file marked for processing (multiple may be Active). */
   isCurrent?: boolean;
+  approvalStatus?: string | null;
+  approvalUpdatedByUserID?: number | null;
+  approvalUpdatedByName?: string | null;
+  approvalUpdatedDate?: string | null;
   uploadedByUserID: number;
   uploadedByName?: string | null;
   createdDate?: string | null;
@@ -308,6 +321,7 @@ function parseProjectTabParam(value: string | null): ProjectTab | null {
 
 const PROJECT_DATA_CATEGORIES = [
   { value: 'ClaimsData', label: 'Claims Data' },
+  { value: 'ClientDeliverable', label: 'Client Deliverable' },
   { value: 'CorrespondenceData', label: 'Correspondence' },
   { value: 'ExposureData', label: 'Exposure Data' },
   { value: 'LossData', label: 'Loss Data' },
@@ -373,6 +387,13 @@ function normalizeProjectFileRow(raw: unknown): ProjectFileRow | null {
     versionLabel: (o.versionLabel ?? o.VersionLabel ?? null) as string | null,
     dataAsOf: (o.dataAsOf ?? o.DataAsOf ?? null) as string | null,
     isCurrent: !!(o.isCurrent ?? o.IsCurrent),
+    approvalStatus: String(o.approvalStatus ?? o.ApprovalStatus ?? 'None'),
+    approvalUpdatedByUserID: (() => {
+      const n = Number(o.approvalUpdatedByUserID ?? o.ApprovalUpdatedByUserID ?? 0);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
+    approvalUpdatedByName: (o.approvalUpdatedByName ?? o.ApprovalUpdatedByName ?? null) as string | null,
+    approvalUpdatedDate: (o.approvalUpdatedDate ?? o.ApprovalUpdatedDate ?? null) as string | null,
     uploadedByUserID: Number(o.uploadedByUserID ?? o.UploadedByUserID ?? 0),
     uploadedByName: (o.uploadedByName ?? o.UploadedByName ?? null) as string | null,
     createdDate: (o.createdDate ?? o.CreatedDate ?? null) as string | null,
@@ -670,6 +691,18 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     noteText: '',
     isPinned: false,
   });
+  const [projectDataSubTab, setProjectDataSubTab] = useState<ProjectDataSubTab>('list');
+  const [fileNoteDraft, setFileNoteDraft] = useState<FileNoteDraft>({
+    projectFileID: '',
+    noteText: '',
+    noteKind: 'FileComment',
+    isPinned: false,
+    notifyCatTeam: true,
+    notifyAll: false,
+    mentionedUserIds: [],
+  });
+  const [fileNotesBusy, setFileNotesBusy] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(0);
   const [userGroupOptionsForClient, setUserGroupOptionsForClient] = useState<SelectOption[]>([]);
   const [appPublicBaseUrl, setAppPublicBaseUrl] = useState('');
   const [clientBuFilter, setClientBuFilter] = useState<number | ''>('');
@@ -680,6 +713,50 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
   const [calendarEditTempId, setCalendarEditTempId] = useState<string | null>(null);
   const [calendarEditDraft, setCalendarEditDraft] = useState<ProjectCalendarItemDraft | null>(null);
   const [ownerOptions, setOwnerOptions] = useState<UserGroupMemberOption[]>([]);
+
+  const isFileNote = (n: ProjectNoteRow) => {
+    if (Number(n.projectFileID ?? 0) > 0) {
+      return true;
+    }
+    const t = (n.noteType ?? '').trim();
+    return (
+      t === 'File' ||
+      t === 'FileComment' ||
+      t === 'FileApprovalRequest' ||
+      t === 'FileApproved' ||
+      t === 'FileChangesRequested'
+    );
+  };
+  const generalNotes = useMemo(() => notes.filter((n) => !isFileNote(n)), [notes]);
+
+  useEffect(() => {
+    if (selectedProjectFileId === '' || selectedProjectFileId <= 0) {
+      return;
+    }
+    setFileNoteDraft((prev) =>
+      prev.projectFileID === selectedProjectFileId ? prev : { ...prev, projectFileID: selectedProjectFileId },
+    );
+  }, [selectedProjectFileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const me = await apiGet<{ authenticated?: boolean; userID?: number }>('/api/auth/me');
+        if (!cancelled && me?.authenticated) {
+          const id = Number(me.userID ?? 0);
+          if (Number.isFinite(id) && id > 0) {
+            setCurrentUserId(id);
+          }
+        }
+      } catch {
+        /* optional */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applyClientFromRow = useCallback((row: ClientDirectoryRow) => {
     setClientBuFilter(row.businessUnitID ?? '');
@@ -1527,13 +1604,16 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
             pendingProjectFiles.length > 0 ||
             fileDraftsSignature(projectFileDrafts) !== fileDraftsSignature(baselineFileDrafts)
           );
-        case 'notes':
+        case 'notes': {
+          const general = notes.filter((n) => !(Number(n.projectFileID ?? 0) > 0));
+          const baselineGeneral = baselineNotes.filter((n) => !(Number(n.projectFileID ?? 0) > 0));
           return (
             noteDraft.noteText.trim().length > 0 ||
-            notes.some((n) => n.noteID < 0) ||
-            JSON.stringify(notes.filter((n) => n.noteID > 0)) !==
-              JSON.stringify(baselineNotes.filter((n) => n.noteID > 0))
+            general.some((n) => n.noteID < 0) ||
+            JSON.stringify(general.filter((n) => n.noteID > 0)) !==
+              JSON.stringify(baselineGeneral.filter((n) => n.noteID > 0))
           );
+        }
         case 'time':
         case 'revenue':
           return false;
@@ -1608,7 +1688,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           if (noteDraft.noteText.trim()) {
             parts.push('New note draft');
           }
-          const pending = notes.filter((n) => n.noteID < 0).length;
+          const pending = notes.filter(
+            (n) => n.noteID < 0 && !(Number(n.projectFileID ?? 0) > 0),
+          ).length;
           if (pending) {
             parts.push(`${pending} queued note(s)`);
           }
@@ -1754,7 +1836,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
         });
         setNoteDraft({ noteType: 'General', noteText: '', isPinned: false });
       }
-      for (const n of notes.filter((x) => x.noteID < 0 && (x.noteText ?? '').trim())) {
+      for (const n of notes.filter(
+        (x) => x.noteID < 0 && (x.noteText ?? '').trim() && !(Number(x.projectFileID ?? 0) > 0),
+      )) {
         await apiPostJson(`/api/projects/${projectId}/notes`, {
           projectID: projectId,
           userID: 0,
@@ -2014,7 +2098,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
 
       // New project: persist notes queued on the Notes tab.
       if (!isEdit) {
-        const pendingNotes = notes.filter((n) => n.noteID < 0 && (n.noteText ?? '').trim());
+        const pendingNotes = notes.filter(
+          (n) =>
+            n.noteID < 0 &&
+            (n.noteText ?? '').trim() &&
+            !(Number(n.projectFileID ?? 0) > 0),
+        );
         if (pendingNotes.length > 0) {
           try {
             for (const n of pendingNotes) {
@@ -2143,6 +2232,82 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Could not add note.');
     }
+  };
+
+  const handleAddFileNote = async (override?: Partial<FileNoteDraft>) => {
+    const draft = { ...fileNoteDraft, ...override };
+    const fileId = Number(draft.projectFileID);
+    const text = draft.noteText.trim();
+    if (!text) {
+      return;
+    }
+    if (!Number.isFinite(fileId) || fileId <= 0) {
+      flash('error', 'Select a project data file before adding a note.');
+      return;
+    }
+
+    const file = projectFiles.find((f) => f.projectFileID === fileId);
+    const fileName = file?.originalFileName?.trim() || `File ${fileId}`;
+
+    if (!isEdit || projectId === undefined) {
+      flash('error', 'Save the project and upload files before adding file notes.');
+      return;
+    }
+
+    setFileNotesBusy(true);
+    try {
+      await apiPostJson(`/api/projects/${projectId}/notes`, {
+        projectID: projectId,
+        userID: 0,
+        noteType: draft.noteKind,
+        noteText: text,
+        isPinned: draft.isPinned,
+        projectFileID: fileId,
+        projectFileName: fileName,
+        notifyCatTeam: draft.notifyCatTeam,
+        notifyAll: draft.notifyAll,
+        mentionedUserIdList: draft.mentionedUserIds,
+      });
+      setFileNoteDraft((prev) => ({
+        ...prev,
+        noteText: '',
+        isPinned: false,
+        noteKind: 'FileComment',
+        mentionedUserIds: [],
+      }));
+      const [noteRows, fileRows] = await Promise.all([
+        apiGet<ProjectNoteRow[]>(`/api/projects/${projectId}/notes`),
+        apiGet<unknown[]>(`/api/projects/${projectId}/files`),
+      ]);
+      setNotes(noteRows);
+      syncProjectFiles(fileRows, true);
+      flash(
+        'success',
+        draft.notifyCatTeam || draft.notifyAll || draft.mentionedUserIds.length > 0
+          ? 'File note posted and notifications sent.'
+          : 'File note posted.',
+      );
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not add file note.');
+    } finally {
+      setFileNotesBusy(false);
+    }
+  };
+
+  const handleQuickFileApproval = (kind: FileNoteKind) => {
+    const defaults: Record<FileNoteKind, string> = {
+      FileComment: '',
+      FileApprovalRequest: 'Please review this file for approval.',
+      FileApproved: 'Approved.',
+      FileChangesRequested: 'Changes requested — please revise and resubmit.',
+    };
+    const text = fileNoteDraft.noteText.trim() || defaults[kind];
+    void handleAddFileNote({
+      noteKind: kind,
+      noteText: text,
+      notifyCatTeam: true,
+      notifyAll: false,
+    });
   };
 
   const openNoteEdit = (note: ProjectNoteRow) => {
@@ -3658,149 +3823,222 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
           <div id="project-tab-project-data" className={projectTabClass('projectData')}>
             {renderTabTitle(
               'Project Data',
-              <button
-                type="button"
-                className="primary-button"
-                disabled={projectFilesBusy}
-                onClick={() => setShowAddDataForm(true)}
-              >
-                Add Data
-              </button>,
+              projectDataSubTab === 'list' ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={projectFilesBusy}
+                  onClick={() => setShowAddDataForm(true)}
+                >
+                  Add Data
+                </button>
+              ) : null,
             )}
             <div className="admin-edit-card project-panel-tab-card">
-              <p className="field-help">
-                Read-only list of project data files in Azure Blob storage. Double-click a row to edit classification,
-                version, data-as-of date, description, or the <strong>Active</strong> flag (multiple files may be Active).
-                Use <strong>Add Data</strong> or drag files onto the list to upload.
-                {!isEdit
-                  ? ' On a new project, add files first, then click Save Project to create the project and upload them.'
-                  : null}
-              </p>
-              {!isEdit && pendingProjectFiles.length > 0 ? (
-                <p className="field-help project-tab-dirty-hint">
-                  {pendingProjectFiles.length} file(s) queued for upload when you save the project
-                  {pendingProjectFiles.length <= 3
-                    ? `: ${pendingProjectFiles.map((f) => f.name).join(', ')}`
-                    : ''}
-                  .
-                </p>
-              ) : null}
+              <div
+                className="admin-tabs admin-users-subtabs project-data-subtabs"
+                role="tablist"
+                aria-label="Project data sections"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  id="project-data-tab-list"
+                  aria-selected={projectDataSubTab === 'list'}
+                  aria-controls="project-data-panel-list"
+                  className={projectDataSubTab === 'list' ? 'active' : ''}
+                  onClick={() => setProjectDataSubTab('list')}
+                >
+                  Data List
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="project-data-tab-file-notes"
+                  aria-selected={projectDataSubTab === 'fileNotes'}
+                  aria-controls="project-data-panel-file-notes"
+                  className={projectDataSubTab === 'fileNotes' ? 'active' : ''}
+                  onClick={() => setProjectDataSubTab('fileNotes')}
+                >
+                  File Notes &amp; Approvals
+                </button>
+              </div>
 
-              <div className="project-data-browser">
-                <div className="project-data-listbox-panel">
-                  <label id="projectDataFileListLabel">Uploaded files</label>
-                  <div
-                    className={
-                      'project-data-file-table-wrap' +
-                      (projectDataDropActive ? ' project-data-file-table-wrap--drop-active' : '')
-                    }
-                    role="listbox"
-                    aria-labelledby="projectDataFileListLabel"
-                    onDragEnter={handleProjectDataDragEnter}
-                    onDragOver={handleProjectDataDragOver}
-                    onDragLeave={handleProjectDataDragLeave}
-                    onDrop={handleProjectDataDrop}
-                  >
-                    {projectDataDropActive ? (
-                      <div className="project-data-drop-hint" aria-hidden="true">
-                        Drop files to add data
-                      </div>
-                    ) : null}
-                    <table className="project-data-file-table project-data-file-table--readonly">
-                      <thead>
-                        <tr>
-                          <th scope="col">DataSetID</th>
-                          <th scope="col">Classification</th>
-                          <th scope="col">Name</th>
-                          <th scope="col">Version</th>
-                          <th scope="col">Data As Of</th>
-                          <th scope="col">Active</th>
-                          <th scope="col">Download</th>
-                          <th scope="col">Email</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {projectFiles.map((f) => {
-                          const url = f.downloadUrl || f.blobUrl || '';
-                          const selected = selectedProjectFileId === f.projectFileID;
-                          const isActive = !!f.isCurrent;
-                          const emailBusy = projectFileEmailBusyId === f.projectFileID;
-                          return (
-                            <tr
-                              key={f.projectFileID}
-                              className={
-                                'project-data-file-row' +
-                                (selected ? ' project-data-file-row--selected' : '') +
-                                (isActive ? ' project-data-file-row--active' : '')
-                              }
-                              aria-selected={selected}
-                              title={isEdit ? 'Double-click to edit metadata' : undefined}
-                              onClick={() => setSelectedProjectFileId(f.projectFileID)}
-                              onDoubleClick={() => openProjectFileEdit(f.projectFileID)}
-                            >
-                              <td>{f.projectFileID}</td>
-                              <td>{formatProjectDataCategory(f.category)}</td>
-                              <td className="project-data-file-name" title={f.originalFileName}>
-                                {f.originalFileName}
-                              </td>
-                              <td>{normalizeProjectDataVersion(f.versionLabel)}</td>
-                              <td>{formatCalendarDateDisplay(f.dataAsOf) || '—'}</td>
-                              <td className="project-data-file-active-cell">
-                                {isActive ? 'Yes' : 'No'}
-                              </td>
-                              <td>
-                                {url ? (
-                                  <a
-                                    className="project-file-download-url"
-                                    href={url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={url}
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    Download file
-                                  </a>
-                                ) : (
-                                  <span className="project-file-download-url project-file-download-url--empty">
-                                    -
-                                  </span>
-                                )}
-                              </td>
-                              <td>
-                                {url && isEdit ? (
-                                  <button
-                                    type="button"
-                                    className="project-file-download-url"
-                                    disabled={projectFileEmailBusyId !== null}
-                                    title="Create Outlook draft (.eml) with this file attached"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      void handleEmailProjectFile(f);
-                                    }}
-                                  >
-                                    {emailBusy ? 'Creating…' : 'Email file'}
-                                  </button>
-                                ) : (
-                                  <span className="project-file-download-url project-file-download-url--empty">
-                                    -
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    {projectFiles.length === 0 && !projectDataDropActive ? (
-                      <p className="field-help project-data-file-empty">
-                        No project data files uploaded yet. Drag files here or click Add Data.
-                      </p>
-                    ) : null}
+              <div
+                id="project-data-panel-list"
+                role="tabpanel"
+                aria-labelledby="project-data-tab-list"
+                hidden={projectDataSubTab !== 'list'}
+                className={'admin-tab-panel' + (projectDataSubTab === 'list' ? ' active' : '')}
+              >
+                <p className="field-help">
+                  Read-only list of project data files in Azure Blob storage. Double-click a row to edit classification,
+                  version, data-as-of date, description, or the <strong>Active</strong> flag (multiple files may be
+                  Active). Use <strong>Add Data</strong> or drag files onto the list to upload.
+                  {!isEdit
+                    ? ' On a new project, add files first, then click Save Project to create the project and upload them.'
+                    : null}
+                </p>
+                {!isEdit && pendingProjectFiles.length > 0 ? (
+                  <p className="field-help project-tab-dirty-hint">
+                    {pendingProjectFiles.length} file(s) queued for upload when you save the project
+                    {pendingProjectFiles.length <= 3
+                      ? `: ${pendingProjectFiles.map((f) => f.name).join(', ')}`
+                      : ''}
+                    .
+                  </p>
+                ) : null}
+
+                <div className="project-data-browser">
+                  <div className="project-data-listbox-panel">
+                    <label id="projectDataFileListLabel">Uploaded files</label>
+                    <div
+                      className={
+                        'project-data-file-table-wrap' +
+                        (projectDataDropActive ? ' project-data-file-table-wrap--drop-active' : '')
+                      }
+                      role="listbox"
+                      aria-labelledby="projectDataFileListLabel"
+                      onDragEnter={handleProjectDataDragEnter}
+                      onDragOver={handleProjectDataDragOver}
+                      onDragLeave={handleProjectDataDragLeave}
+                      onDrop={handleProjectDataDrop}
+                    >
+                      {projectDataDropActive ? (
+                        <div className="project-data-drop-hint" aria-hidden="true">
+                          Drop files to add data
+                        </div>
+                      ) : null}
+                      <table className="project-data-file-table project-data-file-table--readonly">
+                        <thead>
+                          <tr>
+                            <th scope="col">DataSetID</th>
+                            <th scope="col">Classification</th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Version</th>
+                            <th scope="col">Data As Of</th>
+                            <th scope="col">Active</th>
+                            <th scope="col">Download</th>
+                            <th scope="col">Email</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {projectFiles.map((f) => {
+                            const url = f.downloadUrl || f.blobUrl || '';
+                            const selected = selectedProjectFileId === f.projectFileID;
+                            const isActive = !!f.isCurrent;
+                            const emailBusy = projectFileEmailBusyId === f.projectFileID;
+                            return (
+                              <tr
+                                key={f.projectFileID}
+                                className={
+                                  'project-data-file-row' +
+                                  (selected ? ' project-data-file-row--selected' : '') +
+                                  (isActive ? ' project-data-file-row--active' : '')
+                                }
+                                aria-selected={selected}
+                                title={isEdit ? 'Double-click to edit metadata' : undefined}
+                                onClick={() => setSelectedProjectFileId(f.projectFileID)}
+                                onDoubleClick={() => openProjectFileEdit(f.projectFileID)}
+                              >
+                                <td>{f.projectFileID}</td>
+                                <td>{formatProjectDataCategory(f.category)}</td>
+                                <td className="project-data-file-name" title={f.originalFileName}>
+                                  {f.originalFileName}
+                                </td>
+                                <td>{normalizeProjectDataVersion(f.versionLabel)}</td>
+                                <td>{formatCalendarDateDisplay(f.dataAsOf) || '—'}</td>
+                                <td className="project-data-file-active-cell">
+                                  {isActive ? 'Yes' : 'No'}
+                                </td>
+                                <td>
+                                  {url ? (
+                                    <a
+                                      className="project-file-download-url"
+                                      href={url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title={url}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      Download file
+                                    </a>
+                                  ) : (
+                                    <span className="project-file-download-url project-file-download-url--empty">
+                                      -
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  {url && isEdit ? (
+                                    <button
+                                      type="button"
+                                      className="project-file-download-url"
+                                      disabled={projectFileEmailBusyId !== null}
+                                      title="Create Outlook draft (.eml) with this file attached"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void handleEmailProjectFile(f);
+                                      }}
+                                    >
+                                      {emailBusy ? 'Creating…' : 'Email file'}
+                                    </button>
+                                  ) : (
+                                    <span className="project-file-download-url project-file-download-url--empty">
+                                      -
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {projectFiles.length === 0 && !projectDataDropActive ? (
+                        <p className="field-help project-data-file-empty">
+                          No project data files uploaded yet. Drag files here or click Add Data.
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-
-                {renderTabActions('projectData')}
               </div>
+
+              <div
+                id="project-data-panel-file-notes"
+                role="tabpanel"
+                aria-labelledby="project-data-tab-file-notes"
+                hidden={projectDataSubTab !== 'fileNotes'}
+                className={'admin-tab-panel' + (projectDataSubTab === 'fileNotes' ? ' active' : '')}
+              >
+                <ProjectFileNotesPanel
+                  isEdit={isEdit}
+                  projectFiles={projectFiles}
+                  selectedFileId={
+                    fileNoteDraft.projectFileID !== ''
+                      ? fileNoteDraft.projectFileID
+                      : selectedProjectFileId
+                  }
+                  onSelectFile={(fileId) => {
+                    setFileNoteDraft((prev) => ({ ...prev, projectFileID: fileId }));
+                    if (typeof fileId === 'number' && fileId > 0) {
+                      setSelectedProjectFileId(fileId);
+                    }
+                  }}
+                  notes={notes}
+                  draft={fileNoteDraft}
+                  onDraftChange={setFileNoteDraft}
+                  members={ownerOptions}
+                  currentUserId={currentUserId}
+                  busy={fileNotesBusy}
+                  onSubmit={() => void handleAddFileNote()}
+                  onEdit={openNoteEdit}
+                  onDelete={(noteId) => void handleDeleteNote(noteId)}
+                  onQuickApproval={handleQuickFileApproval}
+                />
+              </div>
+
+              {renderTabActions('projectData')}
             </div>
           </div>
 
@@ -4309,12 +4547,12 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                 </tr>
               </thead>
               <tbody>
-                {notes.length === 0 ? (
+                {generalNotes.length === 0 ? (
                   <tr>
                     <td colSpan={5}>No notes yet.</td>
                   </tr>
                 ) : (
-                  notes.map((n) => (
+                  generalNotes.map((n) => (
                     <tr key={n.noteID}>
                       <td>{formatCalendarDateDisplay(n.noteDate)}</td>
                       <td>
