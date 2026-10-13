@@ -16,6 +16,7 @@ import ProjectFileNotesPanel, {
   type FileNoteDraft,
   type FileNoteKind,
 } from '../components/ProjectFileNotesPanel';
+import { useProjectNotesRealtime } from '../hooks/useProjectNotesRealtime';
 import { runProjectReportWorkflow } from '../project/generateProjectReportWorkflow';
 import { loadProjectCatCcEmails } from '../project/loadProjectCatCcEmails';
 import {
@@ -2426,6 +2427,34 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
     });
   };
 
+  const refreshFileNotesLive = useCallback(async () => {
+    if (!isEdit || projectId === undefined) {
+      return;
+    }
+    try {
+      const [noteRows, fileRows] = await Promise.all([
+        apiGet<ProjectNoteRow[]>(`/api/projects/${projectId}/notes`),
+        apiGet<unknown[]>(`/api/projects/${projectId}/files`),
+      ]);
+      setNotes(noteRows);
+      syncProjectFiles(fileRows as ProjectFileRow[], false);
+    } catch {
+      /* best-effort live refresh */
+    }
+  }, [isEdit, projectId]);
+
+  const { state: fileNotesLiveState } = useProjectNotesRealtime({
+    projectId,
+    enabled: isEdit && activeTab === 'projectData' && projectDataSubTab === 'fileNotes',
+    onNoteChanged: () => {
+      void refreshFileNotesLive();
+    },
+    pollIntervalMs: 8000,
+    onPoll: () => {
+      void refreshFileNotesLive();
+    },
+  });
+
   const handleProjectFilesSelected = (fileList: FileList | null) => {
     setPendingProjectFiles(fileList && fileList.length > 0 ? Array.from(fileList) : []);
   };
@@ -4035,6 +4064,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   onEdit={openNoteEdit}
                   onDelete={(noteId) => void handleDeleteNote(noteId)}
                   onQuickApproval={handleQuickFileApproval}
+                  liveState={fileNotesLiveState}
                 />
               </div>
 

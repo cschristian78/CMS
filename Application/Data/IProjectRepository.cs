@@ -46,6 +46,8 @@ public interface IProjectRepository
     Task EnsureProjectFileCategorySchemaAsync(CancellationToken cancellationToken = default);
     Task EnsureProjectFileApprovalSchemaAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectNote>> ListNotesAsync(int projectId, CancellationToken cancellationToken = default);
+    /// <summary>Project / file context for a note (used for realtime broadcast after update/delete).</summary>
+    Task<(int ProjectId, int? ProjectFileId)?> GetNoteContextAsync(int noteId, CancellationToken cancellationToken = default);
     Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default);
     Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default);

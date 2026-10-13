@@ -120,6 +120,8 @@ interface Props {
   onEdit: (note: FileNoteRow) => void;
   onDelete: (noteId: number) => void;
   onQuickApproval: (kind: FileNoteKind) => void;
+  /** SignalR connection state for this project. */
+  liveState?: 'connected' | 'reconnecting' | 'disconnected';
 }
 
 export default function ProjectFileNotesPanel({
@@ -137,6 +139,7 @@ export default function ProjectFileNotesPanel({
   onEdit,
   onDelete,
   onQuickApproval,
+  liveState = 'disconnected',
 }: Props) {
   const threadRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -227,7 +230,24 @@ export default function ProjectFileNotesPanel({
     <div className="file-notes-panel">
       <p className="field-help">
         Team discussion for a single project data file. Use Notify Cat Team or Notify All to email teammates;
-        type @ to mention someone. Approval kinds update the file&apos;s approval status.
+        type @ to mention someone. Approval kinds update the file&apos;s approval status.{' '}
+        <span
+          className={
+            'file-notes-live' +
+            (liveState === 'connected'
+              ? ' file-notes-live--on'
+              : liveState === 'reconnecting'
+                ? ' file-notes-live--reconnecting'
+                : ' file-notes-live--off')
+          }
+          role="status"
+        >
+          {liveState === 'connected'
+            ? 'Live updates connected'
+            : liveState === 'reconnecting'
+              ? 'Live updates reconnecting'
+              : 'Live updates disconnected'}
+        </span>
       </p>
 
       {!isEdit ? (

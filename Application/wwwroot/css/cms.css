@@ -5395,6 +5395,25 @@ a.link-button:hover,
     gap: 0.75rem;
 }
 
+.file-notes-live {
+    display: inline-block;
+    margin-left: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+
+.file-notes-live--on {
+    color: var(--green);
+}
+
+.file-notes-live--reconnecting {
+    color: var(--amber);
+}
+
+.file-notes-live--off {
+    color: var(--muted);
+}
+
 .file-notes-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);

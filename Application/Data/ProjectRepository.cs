@@ -701,6 +701,43 @@ public sealed class ProjectRepository : IProjectRepository
         ], cancellationToken);
     }
 
+    public async Task<(int ProjectId, int? ProjectFileId)?> GetNoteContextAsync(
+        int noteId,
+        CancellationToken cancellationToken = default)
+    {
+        if (noteId <= 0)
+        {
+            return null;
+        }
+
+        await EnsureProjectNoteSchemaAsync(cancellationToken);
+
+        const string sql = """
+            SELECT TOP (1)
+                p.ProjectID,
+                pn.ProjectFileID
+              FROM dbo.tProjectNote AS pn
+              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectRefID = pn.ProjectRefID
+              INNER JOIN dbo.tProject AS p ON p.ProjectID = pr.ProjectID
+             WHERE pn.NoteID = @NoteID;
+            """;
+
+        var rows = await _db.QueryTextAsync(
+            sql,
+            static r => (
+                ProjectId: r.GetInt32OrDefault("ProjectID"),
+                ProjectFileId: r.TryGetNullableInt32("ProjectFileID")),
+            [SqlParameterFactory.Int("@NoteID", noteId)],
+            cancellationToken);
+
+        if (rows.Count == 0 || rows[0].ProjectId <= 0)
+        {
+            return null;
+        }
+
+        return rows[0];
+    }
+
     public async Task<int> AddNoteAsync(ProjectNote note, CancellationToken cancellationToken = default)
     {
         if (note.ProjectID <= 0)

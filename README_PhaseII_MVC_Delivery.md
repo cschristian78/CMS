@@ -183,3 +183,24 @@ usp_RefreshClientProjectList
 - The project is ready for Visual Studio/.NET SDK build, but this environment did not have the `dotnet` CLI available for a live compilation test.
 - Dashboard view is included so the dashboard tile has a functional destination. The richer visualization work can still be expanded in Phase III.
 - The `tClient.AccountExecutive` and `tClient.AnalyticsLead` fields are `nvarchar(25)` in Phase I, so the UI stores a selected user's display name truncated to 25 characters.
+
+## Real-time updates (SignalR)
+
+File Notes on a project update live for other signed-in users who have that project's File Notes tab open. Posting, editing, or deleting a note calls `IRealtimeNotifier`, which pushes an `update` message through `UpdatesHub` at `/hubs/updates`. The React client (`@microsoft/signalr`) refreshes the thread. A short poll runs only while the hub is disconnected.
+
+The hub requires the existing cookie sign-in. On connect it adds the connection to a group derived from the server user id. `JoinProject` accepts a project id only after the server confirms the project exists; the client cannot choose an arbitrary group name. Anonymous calls to `/hubs/updates` are rejected.
+
+### Transports
+
+The client does not set `skipNegotiation` and does not force WebSockets. SignalR negotiates the best transport. Until Group IT enables the IIS WebSocket Protocol feature, the browser console (`[SignalR] transport in use:`) shows `ServerSentEvents` or `LongPolling`. After that feature is enabled, the same code uses WebSockets automatically. No application change is required.
+
+### web.config
+
+`Application/web.config` turns off static and dynamic compression for the `hubs` path so IIS does not buffer the Server-Sent Events stream. That setting does not depend on the WebSocket module.
+
+### How to verify
+
+1. Sign in as two users and open the same project's File Notes tab. The status line should read **Live updates connected**.
+2. In the browser console, confirm a line like `[SignalR] transport in use: ServerSentEvents` (or `LongPolling` / `WebSockets`).
+3. Post a note from one browser. The other thread should update within about a second without a page refresh.
+4. Call `/hubs/updates` without a session. The negotiate request should be rejected (401).

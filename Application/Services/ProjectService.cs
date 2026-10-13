@@ -24,6 +24,7 @@ public sealed class ProjectService : IProjectService
     private readonly IProjectBlobStorage _blobs;
     private readonly ICalendarOwnerNotificationService _calendarOwnerNotifications;
     private readonly IFileNoteNotificationService _fileNoteNotifications;
+    private readonly IRealtimeNotifier _realtime;
     private readonly ILogger<ProjectService>? _logger;
 
     public ProjectService(
@@ -35,6 +36,7 @@ public sealed class ProjectService : IProjectService
         IProjectBlobStorage blobs,
         ICalendarOwnerNotificationService calendarOwnerNotifications,
         IFileNoteNotificationService fileNoteNotifications,
+        IRealtimeNotifier realtime,
         ILogger<ProjectService>? logger = null)
     {
         _projects = projects;
@@ -45,6 +47,7 @@ public sealed class ProjectService : IProjectService
         _blobs = blobs;
         _calendarOwnerNotifications = calendarOwnerNotifications;
         _fileNoteNotifications = fileNoteNotifications;
+        _realtime = realtime;
         _logger = logger;
     }
 
@@ -419,6 +422,17 @@ public sealed class ProjectService : IProjectService
             return noteId;
         }
 
+        await _realtime.NotifyProjectAsync(
+            new RealtimeUpdate
+            {
+                Kind = "projectNote",
+                ProjectId = note.ProjectID,
+                ChangeType = "created",
+                NoteId = noteId,
+                ProjectFileId = note.ProjectFileID,
+            },
+            cancellationToken);
+
         var project = await _projects.GetAsync(note.ProjectID, cancellationToken);
         var file = await _projects.GetFileAsync(note.ProjectFileID!.Value, cancellationToken);
         if (project is null || file is null || file.ProjectID != note.ProjectID)
@@ -501,11 +515,48 @@ public sealed class ProjectService : IProjectService
         return ids.ToList();
     }
 
-    public Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default)
-        => _projects.UpdateNoteAsync(note, cancellationToken);
+    public async Task<int> UpdateNoteAsync(ProjectNote note, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        var context = await _projects.GetNoteContextAsync(note.NoteID, cancellationToken);
+        var updated = await _projects.UpdateNoteAsync(note, cancellationToken);
+        if (context is { } ctx)
+        {
+            await _realtime.NotifyProjectAsync(
+                new RealtimeUpdate
+                {
+                    Kind = "projectNote",
+                    ProjectId = ctx.ProjectId,
+                    ChangeType = "updated",
+                    NoteId = note.NoteID,
+                    ProjectFileId = ctx.ProjectFileId,
+                },
+                cancellationToken);
+        }
 
-    public Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default)
-        => _projects.DeleteNoteAsync(noteId, cancellationToken);
+        return updated;
+    }
+
+    public async Task<int> DeleteNoteAsync(int noteId, CancellationToken cancellationToken = default)
+    {
+        var context = await _projects.GetNoteContextAsync(noteId, cancellationToken);
+        var deleted = await _projects.DeleteNoteAsync(noteId, cancellationToken);
+        if (context is { } ctx)
+        {
+            await _realtime.NotifyProjectAsync(
+                new RealtimeUpdate
+                {
+                    Kind = "projectNote",
+                    ProjectId = ctx.ProjectId,
+                    ChangeType = "deleted",
+                    NoteId = noteId,
+                    ProjectFileId = ctx.ProjectFileId,
+                },
+                cancellationToken);
+        }
+
+        return deleted;
+    }
 
     public Task<IReadOnlyList<ProjectCalendarItem>> ListCalendarItemsAsync(
         int projectId,

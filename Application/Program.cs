@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ClientManagementSystem.Data;
+using ClientManagementSystem.Hubs;
 using ClientManagementSystem.Models;
 using ClientManagementSystem.Security;
 using ClientManagementSystem.Serialization;
@@ -126,8 +127,15 @@ builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailO
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<ICalendarOwnerNotificationService, CalendarOwnerNotificationService>();
 builder.Services.AddScoped<IFileNoteNotificationService, FileNoteNotificationService>();
+builder.Services.AddSingleton<IRealtimeNotifier, RealtimeNotifier>();
 builder.Services.AddSingleton<IProjectAnalysisProfileStore, FileProjectAnalysisProfileStore>();
 builder.Services.AddScoped<IProjectAnalysisProfileService, ProjectAnalysisProfileService>();
+builder.Services.AddSignalR(options =>
+{
+    // Small client messages (join/leave). Leave transport selection on the default
+    // so Server-Sent Events and long polling work until IIS WebSockets are enabled.
+    options.MaximumReceiveMessageSize = 32 * 1024;
+});
 
 var app = builder.Build();
 
@@ -177,6 +185,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<UpdatesHub>("/hubs/updates");
 
 app.MapControllerRoute(
     name: "home-error",
