@@ -24,6 +24,11 @@ public interface IAdminRepository
     Task<int> AddUserAddressAsync(UserAddress address, CancellationToken cancellationToken = default);
     Task<int> UpdateUserAddressAsync(UserAddress address, CancellationToken cancellationToken = default);
     Task<int> DeleteUserAddressAsync(int addressId, CancellationToken cancellationToken = default);
+    Task EnsureUserAddressMapSchemaAsync(CancellationToken cancellationToken = default);
+    Task<UserMapAddressRow?> GetAddressForGeocodeAsync(int addressId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<UserMapAddressRow>> ListUserMapAddressesAsync(string? department, string addressType, CancellationToken cancellationToken = default);
+    Task SaveAddressGeocodeAsync(int addressId, double? latitude, double? longitude, CancellationToken cancellationToken = default);
+    Task ClearAddressGeocodeAsync(int addressId, CancellationToken cancellationToken = default);
 
     Task<int> SaveUserRoleAsync(UserRole userRole, CancellationToken cancellationToken = default);
 

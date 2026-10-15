@@ -111,6 +111,7 @@ builder.Services.AddScoped<ICatAiConversationRepository, CatAiConversationReposi
 builder.Services.AddScoped<IClientService, ClientService>();
 builder.Services.AddScoped<IProjectService, ClientManagementSystem.Services.ProjectService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IUserAddressMapService, UserAddressMapService>();
 builder.Services.AddScoped<IClientProjectListService, ClientProjectListService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITmsService, TmsService>();

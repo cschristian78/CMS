@@ -2389,6 +2389,8 @@ BEGIN
         Phone                        VARCHAR(30)          NULL,
         Company                      VARCHAR(150)         NULL,
         Department                   VARCHAR(100)         NULL,
+        UserFacts                    NVARCHAR(1000)       NULL,
+        Bio                          NVARCHAR(4000)       NULL,
         UserType                     VARCHAR(20)          NOT NULL,
         CreatedDate                  DATETIME2(0)         NOT NULL CONSTRAINT DF_tUser_CreatedDate  DEFAULT (SYSUTCDATETIME()),
         ModifiedDate                 DATETIME2(0)         NOT NULL CONSTRAINT DF_tUser_ModifiedDate DEFAULT (SYSUTCDATETIME()),
@@ -2397,6 +2399,16 @@ BEGIN
         CONSTRAINT UQ_tUser_Email UNIQUE (Email),
         CONSTRAINT CK_tUser_UserType CHECK (UserType IN ('Basic','External','Administrator','Manager','Analyst'))
 		)
+    END;
+
+    IF COL_LENGTH('dbo.tUser', 'UserFacts') IS NULL
+    BEGIN
+        ALTER TABLE dbo.tUser ADD UserFacts NVARCHAR(1000) NULL;
+    END;
+
+    IF COL_LENGTH('dbo.tUser', 'Bio') IS NULL
+    BEGIN
+        ALTER TABLE dbo.tUser ADD Bio NVARCHAR(4000) NULL;
     END;
 END;
 GO
@@ -2408,6 +2420,8 @@ CREATE OR ALTER PROCEDURE usp_User_Create
     @Phone                        VARCHAR(30) = NULL,
     @Company                      VARCHAR(150) = NULL,
     @Department                   VARCHAR(100) = NULL,
+    @UserFacts                    NVARCHAR(1000) = NULL,
+    @Bio                          NVARCHAR(4000) = NULL,
     @UserType                     VARCHAR(20),
     @ActingUserID                INT,
     @NewUserID                   INT OUTPUT
@@ -2419,8 +2433,8 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
 
-        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserType)
-        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserType);
+        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserFacts, Bio, UserType)
+        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserFacts, @Bio, @UserType);
 
         SET @NewUserID = SCOPE_IDENTITY();
 
@@ -2450,6 +2464,8 @@ CREATE OR ALTER PROCEDURE usp_User_CreateWithPrimaryAddress
     @Phone                        VARCHAR(30) = NULL,
     @Company                      VARCHAR(150) = NULL,
     @Department                   VARCHAR(100) = NULL,
+    @UserFacts                    NVARCHAR(1000) = NULL,
+    @Bio                          NVARCHAR(4000) = NULL,
     @UserType                     VARCHAR(20),
     @AddressType                  VARCHAR(20) = NULL,
     @Address1                     VARCHAR(200) = NULL,
@@ -2477,8 +2493,8 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
 
-        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserType)
-        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserType);
+        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserFacts, Bio, UserType)
+        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserFacts, @Bio, @UserType);
 
         SET @NewUserID = SCOPE_IDENTITY();
 
@@ -2556,6 +2572,8 @@ CREATE OR ALTER PROCEDURE usp_User_Update
     @Phone                        VARCHAR(30) = NULL,
     @Company                      VARCHAR(150) = NULL,
     @Department                   VARCHAR(100) = NULL,
+    @UserFacts                    NVARCHAR(1000) = NULL,
+    @Bio                          NVARCHAR(4000) = NULL,
     @UserType                     VARCHAR(20) = NULL,
     @ActingUserID                INT
 AS
@@ -2578,6 +2596,8 @@ BEGIN
         Phone = COALESCE(@Phone, Phone),
         Company = COALESCE(@Company, Company),
         Department = COALESCE(@Department, Department),
+        UserFacts = @UserFacts,
+        Bio = @Bio,
         UserType = COALESCE(@UserType, UserType),
         ModifiedDate = SYSUTCDATETIME()
          WHERE UserID = @UserID;

@@ -16,6 +16,8 @@ public sealed class AdminService : IAdminService
 {
     private const int UserEmailMaxLength = 150;
     private const int UserNameFieldMaxLength = 50;
+    private const int UserBioMaxWords = 250;
+    private const int UserBioMaxChars = 4000;
 
     private readonly IAdminRepository _admin;
     private readonly IReferenceDataRepository _referenceData;
@@ -23,6 +25,7 @@ public sealed class AdminService : IAdminService
     private readonly IUserPhotoStorage _userPhotos;
     private readonly IDashboardRepository _dashboard;
     private readonly IDataAuditRepository _dataAudit;
+    private readonly IUserAddressMapService _userAddressMap;
 
     public AdminService(
         IAdminRepository admin,
@@ -30,7 +33,8 @@ public sealed class AdminService : IAdminService
         ISecureConnectionSettingsStore settingsStore,
         IUserPhotoStorage userPhotos,
         IDashboardRepository dashboard,
-        IDataAuditRepository dataAudit)
+        IDataAuditRepository dataAudit,
+        IUserAddressMapService userAddressMap)
     {
         _admin = admin;
         _referenceData = referenceData;
@@ -38,6 +42,7 @@ public sealed class AdminService : IAdminService
         _userPhotos = userPhotos;
         _dashboard = dashboard;
         _dataAudit = dataAudit;
+        _userAddressMap = userAddressMap;
     }
 
     /// <summary>Best-effort refresh of <c>dbo.vProject_Current</c> after any admin write
@@ -116,6 +121,12 @@ public sealed class AdminService : IAdminService
         EnsureFieldLength(user.LastName, nameof(user.LastName), UserNameFieldMaxLength);
         EnsureFieldLength(user.Title, nameof(user.Title), 100);
         EnsureFieldLength(user.Department, nameof(user.Department), 100);
+        EnsureFieldLength(user.UserFacts, nameof(user.UserFacts), 1000);
+        EnsureFieldLength(user.Bio, nameof(user.Bio), UserBioMaxChars);
+        if (CountWords(user.Bio) > UserBioMaxWords)
+        {
+            throw new InvalidOperationException($"Bio must be {UserBioMaxWords} words or fewer.");
+        }
 
         if (string.IsNullOrWhiteSpace(user.UserType))
         {
@@ -185,12 +196,12 @@ public sealed class AdminService : IAdminService
             throw new InvalidOperationException("UserID is required to save an address.");
         }
 
-        address.AddressType = string.IsNullOrWhiteSpace(address.AddressType) ? "Work" : address.AddressType.Trim();
+        address.AddressType = NormalizeAddressType(address.AddressType);
         address.Address1 = address.Address1?.Trim() ?? string.Empty;
         address.City = address.City?.Trim() ?? string.Empty;
         address.State = string.IsNullOrWhiteSpace(address.State) ? null : address.State.Trim();
         address.PostalCode = string.IsNullOrWhiteSpace(address.PostalCode) ? null : address.PostalCode.Trim();
-        address.Address2 = string.IsNullOrWhiteSpace(address.Address2) ? null : address.Address2.Trim();
+        address.Address2 = address.Address2?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(address.Country))
         {
@@ -201,11 +212,38 @@ public sealed class AdminService : IAdminService
             address.Country = address.Country.Trim();
         }
 
-        /* usp_User_UpdateAddress updates every tUserAddress row for @UserID; only call it when at least one row exists. */
-        var existing = await _admin.ListUserAddressesAsync(address.UserID, cancellationToken);
-        return existing.Count > 0
+        var addressId = address.AddressID > 0
             ? await _admin.UpdateUserAddressAsync(address, cancellationToken)
             : await _admin.AddUserAddressAsync(address, cancellationToken);
+
+        try
+        {
+            await _userAddressMap.GeocodeStoredAddressAsync(addressId, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // The address is saved. Coordinates stay empty until the next save or map open.
+        }
+
+        return addressId;
+    }
+
+    private static string NormalizeAddressType(string? value)
+    {
+        var raw = (value ?? string.Empty).Trim();
+        foreach (var allowed in new[] { "Home", "Work", "Billing", "Other" })
+        {
+            if (string.Equals(raw, allowed, StringComparison.OrdinalIgnoreCase))
+            {
+                return allowed;
+            }
+        }
+
+        throw new InvalidOperationException("Address type must be Home, Work, Billing, or Other.");
     }
 
     public async Task DeleteUserAddressAsync(int addressId, CancellationToken cancellationToken = default)
@@ -1324,6 +1362,16 @@ public sealed class AdminService : IAdminService
         return value.Length <= length ? value : value[..length];
     }
 
+    private static int CountWords(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0;
+        }
+
+        return value.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
     private static void EnsureFieldLength(string? value, string fieldDisplayName, int maxLength)
     {
         if (!string.IsNullOrEmpty(value) && value.Length > maxLength)
@@ -1341,6 +1389,8 @@ public sealed class AdminService : IAdminService
         user.Company = user.Company?.Trim();
         user.Department = user.Department?.Trim();
         user.Title = user.Title?.Trim();
+        user.UserFacts = user.UserFacts?.Trim();
+        user.Bio = string.IsNullOrWhiteSpace(user.Bio) ? null : user.Bio.Trim();
         user.UserType = NormalizeUserType(user.UserType);
     }
 

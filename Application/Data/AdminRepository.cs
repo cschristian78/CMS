@@ -149,6 +149,16 @@ public sealed class AdminRepository : IAdminRepository
                     ADD CONSTRAINT CK_tUser_UserType
                     CHECK (UserType IN (N'Basic', N'External', N'Administrator', N'Manager', N'Analyst'));
             END;
+
+            IF COL_LENGTH('dbo.tUser', 'UserFacts') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tUser ADD UserFacts NVARCHAR(1000) NULL;
+            END;
+
+            IF COL_LENGTH('dbo.tUser', 'Bio') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tUser ADD Bio NVARCHAR(4000) NULL;
+            END;
             """;
 
         await _db.ExecuteTextAsync(sql, cancellationToken: cancellationToken);
@@ -163,6 +173,8 @@ public sealed class AdminRepository : IAdminRepository
                 @Phone                        VARCHAR(30) = NULL,
                 @Company                      VARCHAR(150) = NULL,
                 @Department                   VARCHAR(100) = NULL,
+                @UserFacts                    NVARCHAR(1000) = NULL,
+                @Bio                          NVARCHAR(4000) = NULL,
                 @UserType                     VARCHAR(20),
                 @AddressType                  VARCHAR(20) = NULL,
                 @Address1                     VARCHAR(200) = NULL,
@@ -190,8 +202,8 @@ public sealed class AdminRepository : IAdminRepository
                 BEGIN TRY
                     BEGIN TRAN;
 
-                    INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserType)
-                    VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserType);
+                    INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserFacts, Bio, UserType)
+                    VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserFacts, @Bio, @UserType);
 
                     SET @NewUserID = SCOPE_IDENTITY();
 
@@ -244,6 +256,106 @@ public sealed class AdminRepository : IAdminRepository
             """;
 
         await _db.ExecuteTextAsync(spSql, cancellationToken: cancellationToken);
+
+        const string userCreateSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_User_Create
+                @FirstName                    VARCHAR(50),
+                @LastName                     VARCHAR(50),
+                @Title                        VARCHAR(100) = NULL,
+                @Email                        VARCHAR(150),
+                @Phone                        VARCHAR(30) = NULL,
+                @Company                      VARCHAR(150) = NULL,
+                @Department                   VARCHAR(100) = NULL,
+                @UserFacts                    NVARCHAR(1000) = NULL,
+                @Bio                          NVARCHAR(4000) = NULL,
+                @UserType                     VARCHAR(20),
+                @ActingUserID                INT,
+                @NewUserID                   INT OUTPUT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserFacts, Bio, UserType)
+                    VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserFacts, @Bio, @UserType);
+
+                    SET @NewUserID = SCOPE_IDENTITY();
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'User',
+                        @EntityID   = @NewUserID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Insert';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END;
+            """;
+
+        const string userUpdateSql = """
+            CREATE OR ALTER PROCEDURE dbo.usp_User_Update
+                @UserID                       INT,
+                @FirstName                    VARCHAR(50) = NULL,
+                @LastName                     VARCHAR(50) = NULL,
+                @Title                        VARCHAR(100) = NULL,
+                @Email                        VARCHAR(150) = NULL,
+                @Phone                        VARCHAR(30) = NULL,
+                @Company                      VARCHAR(150) = NULL,
+                @Department                   VARCHAR(100) = NULL,
+                @UserFacts                    NVARCHAR(1000) = NULL,
+                @Bio                          NVARCHAR(4000) = NULL,
+                @UserType                     VARCHAR(20) = NULL,
+                @ActingUserID                INT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                SET XACT_ABORT ON;
+
+                IF NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @UserID)
+                    THROW 50001, 'tUser not found.', 1;
+
+                BEGIN TRY
+                    BEGIN TRAN;
+
+                    UPDATE dbo.tUser
+                       SET
+                    FirstName = COALESCE(@FirstName, FirstName),
+                    LastName = COALESCE(@LastName, LastName),
+                    Title = COALESCE(@Title, Title),
+                    Email = COALESCE(@Email, Email),
+                    Phone = COALESCE(@Phone, Phone),
+                    Company = COALESCE(@Company, Company),
+                    Department = COALESCE(@Department, Department),
+                    UserFacts = @UserFacts,
+                    Bio = @Bio,
+                    UserType = COALESCE(@UserType, UserType),
+                    ModifiedDate = SYSUTCDATETIME()
+                     WHERE UserID = @UserID;
+
+                    EXEC dbo.usp_ActivityLog_Insert
+                        @EntityType = 'User',
+                        @EntityID   = @UserID,
+                        @UserID     = @ActingUserID,
+                        @Action     = 'Update';
+
+                    COMMIT TRAN;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                    THROW;
+                END CATCH
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(userCreateSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(userUpdateSql, cancellationToken: cancellationToken);
     }
 
     public async Task<int> SaveUserAsync(User user, CancellationToken cancellationToken = default)
@@ -266,6 +378,8 @@ public sealed class AdminRepository : IAdminRepository
             SqlParameterFactory.VarChar("@Phone", 30, user.Phone),
             SqlParameterFactory.VarChar("@Company", 150, user.Company),
             SqlParameterFactory.VarChar("@Department", 100, user.Department),
+            SqlParameterFactory.NVarChar("@UserFacts", 1000, user.UserFacts),
+            SqlParameterFactory.NVarChar("@Bio", 4000, user.Bio),
             SqlParameterFactory.VarChar("@UserType", 20, user.UserType),
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
             output
@@ -289,6 +403,8 @@ public sealed class AdminRepository : IAdminRepository
             SqlParameterFactory.VarChar("@Phone", 30, user.Phone),
             SqlParameterFactory.VarChar("@Company", 150, user.Company),
             SqlParameterFactory.VarChar("@Department", 100, user.Department),
+            SqlParameterFactory.NVarChar("@UserFacts", 1000, user.UserFacts),
+            SqlParameterFactory.NVarChar("@Bio", 4000, user.Bio),
             SqlParameterFactory.VarChar("@UserType", 20, user.UserType),
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId),
             userOutput,
@@ -340,11 +456,24 @@ public sealed class AdminRepository : IAdminRepository
         return userId;
     }
 
-    public Task<IReadOnlyList<UserAddress>> ListUserAddressesAsync(int userId, CancellationToken cancellationToken = default)
-        => _db.QueryAsync("dbo.usp_UserAddressRef_List", MapUserAddress,
-        [
-            SqlParameterFactory.Int("@UserID", userId)
-        ], cancellationToken);
+    public async Task<IReadOnlyList<UserAddress>> ListUserAddressesAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        await EnsureUserAddressMapSchemaAsync(cancellationToken);
+        const string sql = """
+            SELECT r.UserID,
+                   r.AddressID,
+                   r.AddressType,
+                   a.Address1, a.Address2, a.City, a.State, a.PostalCode, a.Country,
+                   a.Latitude, a.Longitude
+              FROM dbo.tUserAddressRef AS r
+              JOIN dbo.tAddress AS a ON a.AddressID = r.AddressID
+             WHERE r.UserID = @UserID
+               AND r.IsActive = 1
+               AND a.IsActive = 1
+             ORDER BY r.AddressType, r.IsPrimary DESC;
+            """;
+        return await _db.QueryTextAsync(sql, MapUserAddress, [SqlParameterFactory.Int("@UserID", userId)], cancellationToken);
+    }
 
     public async Task<int> AddUserAddressAsync(UserAddress a, CancellationToken cancellationToken = default)
     {
@@ -352,7 +481,7 @@ public sealed class AdminRepository : IAdminRepository
         await _db.ExecuteWithOutputIntAsync("dbo.usp_Address_Create",
         [
             SqlParameterFactory.VarCharAsWritten("@Address1", 200, a.Address1),
-            SqlParameterFactory.VarChar("@Address2", 200, a.Address2),
+            SqlParameterFactory.VarCharAsWritten("@Address2", 200, a.Address2 ?? string.Empty),
             SqlParameterFactory.VarCharAsWritten("@City", 100, a.City),
             SqlParameterFactory.VarChar("@State", 50, a.State),
             SqlParameterFactory.VarChar("@PostalCode", 20, a.PostalCode),
@@ -385,7 +514,7 @@ public sealed class AdminRepository : IAdminRepository
         [
             SqlParameterFactory.Int("@AddressID", a.AddressID),
             SqlParameterFactory.VarCharAsWritten("@Address1", 200, a.Address1),
-            SqlParameterFactory.VarChar("@Address2", 200, a.Address2),
+            SqlParameterFactory.VarCharAsWritten("@Address2", 200, a.Address2 ?? string.Empty),
             SqlParameterFactory.VarCharAsWritten("@City", 100, a.City),
             SqlParameterFactory.VarChar("@State", 50, a.State),
             SqlParameterFactory.VarChar("@PostalCode", 20, a.PostalCode),
@@ -393,7 +522,167 @@ public sealed class AdminRepository : IAdminRepository
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
         ], cancellationToken);
 
+        const string typeSql = """
+            UPDATE dbo.tUserAddressRef
+               SET AddressType = @AddressType
+             WHERE UserID = @UserID
+               AND AddressID = @AddressID
+               AND AddressType <> @AddressType;
+            """;
+        await _db.ExecuteTextAsync(typeSql,
+        [
+            SqlParameterFactory.Int("@UserID", a.UserID),
+            SqlParameterFactory.Int("@AddressID", a.AddressID),
+            SqlParameterFactory.VarCharAsWritten("@AddressType", 20, a.AddressType)
+        ], cancellationToken);
+
+        await EnsureUserAddressMapSchemaAsync(cancellationToken);
+        await ClearAddressGeocodeAsync(a.AddressID, cancellationToken);
         return a.AddressID;
+    }
+
+    public Task EnsureUserAddressMapSchemaAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            IF COL_LENGTH('dbo.tAddress', 'Latitude') IS NULL
+                ALTER TABLE dbo.tAddress ADD Latitude DECIMAL(9, 6) NULL;
+            IF COL_LENGTH('dbo.tAddress', 'Longitude') IS NULL
+                ALTER TABLE dbo.tAddress ADD Longitude DECIMAL(9, 6) NULL;
+            IF COL_LENGTH('dbo.tAddress', 'GeocodedUtc') IS NULL
+                ALTER TABLE dbo.tAddress ADD GeocodedUtc DATETIME2(0) NULL;
+            """;
+        return _db.ExecuteTextAsync(sql, cancellationToken: cancellationToken);
+    }
+
+    public Task<IReadOnlyList<UserMapAddressRow>> ListUserMapAddressesAsync(
+        string? department,
+        string addressType,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT
+                u.UserID,
+                LTRIM(RTRIM(CONCAT(u.FirstName, N' ', u.LastName))) AS Name,
+                ISNULL(u.Department, N'') AS Department,
+                ISNULL(a.AddressID, 0) AS AddressID,
+                r.AddressType,
+                ISNULL(a.Address1, N'') AS Address1,
+                ISNULL(a.Address2, N'') AS Address2,
+                ISNULL(a.City, N'') AS City,
+                ISNULL(a.State, N'') AS State,
+                ISNULL(a.PostalCode, N'') AS PostalCode,
+                ISNULL(a.Country, N'') AS Country,
+                a.Latitude,
+                a.Longitude,
+                a.GeocodedUtc,
+                a.ModifiedDate
+            FROM dbo.tUser AS u
+            LEFT JOIN dbo.tUserAddressRef AS r
+                ON r.UserID = u.UserID
+               AND r.IsActive = 1
+               AND r.AddressType = @AddressType
+            LEFT JOIN dbo.tAddress AS a
+                ON a.AddressID = r.AddressID
+               AND a.IsActive = 1
+            WHERE u.IsActive = 1
+              AND (
+                    @Department = N''
+                 OR LOWER(LTRIM(RTRIM(ISNULL(u.Department, N'')))) = LOWER(@Department)
+              )
+            ORDER BY u.LastName, u.FirstName, u.UserID;
+            """;
+
+        return _db.QueryTextAsync(sql, r => new UserMapAddressRow
+        {
+            UserID = r.GetInt32OrDefault("UserID"),
+            Name = r.TryGetNullableString("Name") ?? string.Empty,
+            Department = r.TryGetNullableString("Department") ?? string.Empty,
+            AddressID = r.GetInt32OrDefault("AddressID"),
+            AddressType = r.TryGetNullableString("AddressType") ?? addressType,
+            Address1 = r.TryGetNullableString("Address1") ?? string.Empty,
+            Address2 = r.TryGetNullableString("Address2") ?? string.Empty,
+            City = r.TryGetNullableString("City") ?? string.Empty,
+            State = r.TryGetNullableString("State") ?? string.Empty,
+            PostalCode = r.TryGetNullableString("PostalCode") ?? string.Empty,
+            Country = r.TryGetNullableString("Country") ?? string.Empty,
+            Latitude = ReadNullableDouble(r, "Latitude"),
+            Longitude = ReadNullableDouble(r, "Longitude"),
+            GeocodedUtc = r.TryGetNullableDateTime("GeocodedUtc"),
+            ModifiedDate = r.TryGetNullableDateTime("ModifiedDate")
+        },
+        [
+            SqlParameterFactory.NVarCharMax("@Department", department?.Trim() ?? string.Empty),
+            SqlParameterFactory.VarChar("@AddressType", 20, addressType)
+        ], cancellationToken);
+    }
+
+    public Task SaveAddressGeocodeAsync(int addressId, double? latitude, double? longitude, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            UPDATE dbo.tAddress
+               SET Latitude = @Latitude,
+                   Longitude = @Longitude,
+                   GeocodedUtc = SYSUTCDATETIME()
+             WHERE AddressID = @AddressID;
+            """;
+        return _db.ExecuteTextAsync(sql,
+        [
+            SqlParameterFactory.Int("@AddressID", addressId),
+            SqlParameterFactory.Float("@Latitude", latitude),
+            SqlParameterFactory.Float("@Longitude", longitude)
+        ], cancellationToken);
+    }
+
+    public Task ClearAddressGeocodeAsync(int addressId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            UPDATE dbo.tAddress
+               SET Latitude = NULL,
+                   Longitude = NULL,
+                   GeocodedUtc = NULL
+             WHERE AddressID = @AddressID;
+            """;
+        return _db.ExecuteTextAsync(sql, [SqlParameterFactory.Int("@AddressID", addressId)], cancellationToken);
+    }
+
+    public async Task<UserMapAddressRow?> GetAddressForGeocodeAsync(int addressId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT AddressID,
+                   ISNULL(Address1, N'') AS Address1,
+                   ISNULL(City, N'') AS City,
+                   ISNULL(State, N'') AS State,
+                   ISNULL(PostalCode, N'') AS PostalCode,
+                   ISNULL(Country, N'') AS Country
+              FROM dbo.tAddress
+             WHERE AddressID = @AddressID
+               AND IsActive = 1;
+            """;
+        var rows = await _db.QueryTextAsync(sql, static r => new UserMapAddressRow
+        {
+            AddressID = r.GetInt32OrDefault("AddressID"),
+            Address1 = r.TryGetNullableString("Address1") ?? string.Empty,
+            City = r.TryGetNullableString("City") ?? string.Empty,
+            State = r.TryGetNullableString("State") ?? string.Empty,
+            PostalCode = r.TryGetNullableString("PostalCode") ?? string.Empty,
+            Country = r.TryGetNullableString("Country") ?? string.Empty
+        }, [SqlParameterFactory.Int("@AddressID", addressId)], cancellationToken);
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    private static double? ReadNullableDouble(Microsoft.Data.SqlClient.SqlDataReader reader, string columnName)
+    {
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            if (!string.Equals(reader.GetName(i), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return reader.IsDBNull(i) ? null : Convert.ToDouble(reader.GetValue(i), System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return null;
     }
 
     public async Task<int> DeleteUserAddressAsync(int addressId, CancellationToken cancellationToken = default)
@@ -1585,6 +1874,8 @@ public sealed class AdminRepository : IAdminRepository
         SqlParameterFactory.VarChar("@Phone", 30, user.Phone),
         SqlParameterFactory.VarChar("@Company", 150, user.Company),
         SqlParameterFactory.VarChar("@Department", 100, user.Department),
+        SqlParameterFactory.NVarChar("@UserFacts", 1000, user.UserFacts),
+        SqlParameterFactory.NVarChar("@Bio", 4000, user.Bio),
         SqlParameterFactory.VarChar("@UserType", 20, user.UserType),
         SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
     ];
@@ -1599,7 +1890,9 @@ public sealed class AdminRepository : IAdminRepository
         City = r.TryGetNullableString("City") ?? string.Empty,
         State = r.TryGetNullableString("State"),
         PostalCode = r.TryGetNullableString("PostalCode"),
-        Country = r.TryGetNullableString("Country") ?? "US"
+        Country = r.TryGetNullableString("Country") ?? "US",
+        Latitude = ReadNullableDouble(r, "Latitude"),
+        Longitude = ReadNullableDouble(r, "Longitude")
     };
 
     private static UserGroup MapUserGroup(SqlDataReader r)

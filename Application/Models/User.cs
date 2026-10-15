@@ -36,6 +36,14 @@ public sealed class User
     [MaxLength(100)]
     public string? Department { get; set; }
 
+    /// <summary>Free-text profile note shown as "Something about me". Stored as <c>dbo.tUser.UserFacts</c>.</summary>
+    [MaxLength(1000)]
+    public string? UserFacts { get; set; }
+
+    /// <summary>Longer profile biography, limited to 250 words. Stored as <c>dbo.tUser.Bio</c>.</summary>
+    [MaxLength(4000)]
+    public string? Bio { get; set; }
+
     /// <summary>'Basic', 'External', 'Administrator', 'Manager', or 'Analyst' per <c>CK_tUser_UserType</c>.</summary>
     [Required]
     [MaxLength(20)]

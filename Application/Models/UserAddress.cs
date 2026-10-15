@@ -29,6 +29,9 @@ public sealed class UserAddress
     [MaxLength(50)]
     public string Country { get; set; } = "US";
 
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+
     public DateTime? CreatedDate { get; set; }
     public DateTime? ModifiedDate { get; set; }
 }

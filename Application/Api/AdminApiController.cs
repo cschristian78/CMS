@@ -10,17 +10,20 @@ namespace ClientManagementSystem.Api;
 public sealed class AdminApiController : ControllerBase
 {
     private readonly IAdminService _adminService;
+    private readonly IUserAddressMapService _userAddressMap;
     private readonly IUserPhotoStorage _userPhotos;
     private readonly ILogger<AdminApiController> _logger;
     private readonly IHostEnvironment _environment;
 
     public AdminApiController(
         IAdminService adminService,
+        IUserAddressMapService userAddressMap,
         IUserPhotoStorage userPhotos,
         ILogger<AdminApiController> logger,
         IHostEnvironment environment)
     {
         _adminService = adminService;
+        _userAddressMap = userAddressMap;
         _userPhotos = userPhotos;
         _logger = logger;
         _environment = environment;
@@ -80,6 +83,13 @@ public sealed class AdminApiController : ControllerBase
             await _adminService.RestoreUserAsync(userId, cancellationToken);
             return Ok(new { message = "User restored." });
         });
+
+    [HttpGet("users/map")]
+    public async Task<ActionResult<UserMapResult>> GetUserMapAsync(
+        [FromQuery] string? department,
+        [FromQuery] string? addressType,
+        CancellationToken cancellationToken)
+        => Ok(await _userAddressMap.GetAsync(department, addressType, cancellationToken));
 
     [HttpGet("users/{userId:int}/addresses")]
     public async Task<ActionResult<IReadOnlyList<UserAddress>>> ListUserAddressesAsync(int userId, CancellationToken cancellationToken)

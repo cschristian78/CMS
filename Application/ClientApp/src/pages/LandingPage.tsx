@@ -62,13 +62,13 @@ export default function LandingPage() {
           <Link to="/catai" className="app-hub-tile app-hub-tile--catai">
             <span className="app-hub-tile-code" aria-hidden="true">
               <span className="logo-accent">C</span>
-              <span className="logo-rest">atAI</span>
+              <span className="logo-rest">ASI</span>
             </span>
-            <span className="app-hub-tile-title">CatAI</span>
+            <span className="app-hub-tile-title">Catastrophe Analytics Super Intelligence</span>
             <span className="app-hub-tile-desc">
               Ask questions about clients, projects, and work in natural language.
             </span>
-            <span className="app-hub-tile-cta">Open CatAI</span>
+            <span className="app-hub-tile-cta">Open CASI</span>
           </Link>
         </nav>
 

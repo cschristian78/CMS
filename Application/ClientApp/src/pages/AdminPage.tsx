@@ -8,6 +8,7 @@ import {
   type DataAuditExportReport,
 } from '../admin/exportDataAuditReportPdf';
 import { formatCalendarDateDisplay } from '../utils/dateInput';
+import UserAddressMap, { isUnitedStatesPoint, regionLabel, type UserMapPoint } from '../components/UserAddressMap';
 
 interface ServerDraft {
   server: string;
@@ -27,6 +28,8 @@ interface AdminUserAddress {
   state?: string;
   postalCode?: string;
   country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 /** Normalizes one address row from GET /api/admin/users/{id}/addresses (or embedded primaryAddress). */
@@ -62,6 +65,16 @@ function coerceAdminUserAddress(raw: unknown): AdminUserAddress | null {
   const state = str('state', 'State');
   const address2 = str('address2', 'Address2');
   const addressType = str('addressType', 'AddressType');
+  const coord = (camel: string, pascal: string) => {
+    const v = o[camel] ?? o[pascal];
+    if (v == null || v === '') {
+      return null;
+    }
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const latitude = coord('latitude', 'Latitude');
+  const longitude = coord('longitude', 'Longitude');
   if (
     addressID <= 0 &&
     !address1.trim() &&
@@ -82,6 +95,8 @@ function coerceAdminUserAddress(raw: unknown): AdminUserAddress | null {
     state: state || undefined,
     postalCode: postal || undefined,
     country: country || undefined,
+    latitude,
+    longitude,
   };
 }
 
@@ -98,12 +113,72 @@ function parseAddressListPayload(raw: unknown): AdminUserAddress[] {
   return [];
 }
 
-function pickPreferredUserAddress(rows: AdminUserAddress[]): AdminUserAddress | null {
-  if (rows.length === 0) {
-    return null;
+const USER_ADDRESS_TYPES = ['Work', 'Home', 'Billing', 'Other'] as const;
+
+interface UserAddressDraft {
+  key: string;
+  addressID: number;
+  addressType: string;
+  address: string;
+  address2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  geocoded: boolean;
+}
+
+function emptyAddressDraft(key: string, addressType = 'Work'): UserAddressDraft {
+  return {
+    key,
+    addressID: 0,
+    addressType,
+    address: '',
+    address2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: '',
+    geocoded: false,
+  };
+}
+
+function draftFromAddress(row: AdminUserAddress, key: string): UserAddressDraft {
+  return {
+    key,
+    addressID: row.addressID,
+    addressType: row.addressType || 'Work',
+    address: row.address1 ?? '',
+    address2: row.address2 ?? '',
+    city: row.city ?? '',
+    state: row.state ?? '',
+    postalCode: row.postalCode ?? '',
+    country: row.country ?? '',
+    geocoded: row.latitude != null && row.longitude != null,
+  };
+}
+
+function addressDraftHasContent(row: UserAddressDraft): boolean {
+  return [row.address, row.address2, row.city, row.state, row.postalCode, row.country].some((value) => value.trim() !== '');
+}
+
+const USER_BIO_WORD_LIMIT = 250;
+const USER_BIO_CHAR_LIMIT = 4000;
+
+function countBioWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return 0;
   }
-  const work = rows.find((a) => (a.addressType ?? 'Work').trim().toLowerCase() === 'work');
-  return work ?? rows[0]!;
+  return trimmed.split(/\s+/).length;
+}
+
+function clampUserBio(text: string): string {
+  let next = text.length > USER_BIO_CHAR_LIMIT ? text.slice(0, USER_BIO_CHAR_LIMIT) : text;
+  if (countBioWords(next) <= USER_BIO_WORD_LIMIT) {
+    return next;
+  }
+  return next.trim().split(/\s+/).slice(0, USER_BIO_WORD_LIMIT).join(' ');
 }
 
 interface AdminUser {
@@ -116,6 +191,8 @@ interface AdminUser {
   email?: string;
   phone?: string;
   company?: string;
+  userFacts?: string;
+  bio?: string;
   userType?: string;
   statusID?: number;
   statusCode?: string;
@@ -733,7 +810,7 @@ const DEFAULT_CORRESPONDENCE_DRAFT: CorrespondenceDraft = {
 };
 
 /** Nested tabs inside the Admin Users section. */
-type UsersSubTab = 'users' | 'roles' | 'groups';
+type UsersSubTab = 'users' | 'roles' | 'groups' | 'map';
 
 /** Nested tabs inside the Admin Services section. */
 type ServicesSubTab = 'groups' | 'categories' | 'services';
@@ -1305,18 +1382,23 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     email: '',
     phone: '',
     company: 'BMS',
+    userFacts: '',
+    bio: '',
     userType: 'Basic' as UserTypeOption,
-    address: '',
-    addressType: 'Work',
-    city: '',
-    state: '',
-    postalCode: '',
-    country: '',
+    addresses: [emptyAddressDraft('addr-1')] as UserAddressDraft[],
+    removedAddressIds: [] as number[],
     statusID: 0,
   });
+  const userAddressKey = useRef(1);
+  const nextUserAddressKey = () => {
+    userAddressKey.current += 1;
+    return `addr-${userAddressKey.current}`;
+  };
   const [userPhotoRevision, setUserPhotoRevision] = useState(0);
   const [userPhotoBroken, setUserPhotoBroken] = useState(true);
   const userPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const [userBioDialogOpen, setUserBioDialogOpen] = useState(false);
+  const [userBioDraft, setUserBioDraft] = useState('');
   const [copyEmail, setCopyEmail] = useState('');
   const [userRemoveDialogOpen, setUserRemoveDialogOpen] = useState(false);
   const [buDeleteBlockedMessage, setBuDeleteBlockedMessage] = useState<string | null>(null);
@@ -1339,6 +1421,53 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [userBulkBusy, setUserBulkBusy] = useState(false);
   const [userDirectorySearch, setUserDirectorySearch] = useState('');
   const [userDepartmentFilter, setUserDepartmentFilter] = useState('');
+  const [mapAddressType, setMapAddressType] = useState<'Work' | 'Home'>('Work');
+  const [mapPlotted, setMapPlotted] = useState<UserMapPoint[]>([]);
+  const [mapUnplotted, setMapUnplotted] = useState<UserMapPoint[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState('');
+
+  useEffect(() => {
+    if (tab !== 'users' || usersSubTab !== 'map') {
+      return;
+    }
+
+    let cancelled = false;
+    setMapLoading(true);
+    setMapError('');
+    const params = new URLSearchParams();
+    const department = userDepartmentFilter.trim();
+    if (department) {
+      params.set('department', department);
+    }
+    params.set('addressType', mapAddressType);
+    void apiGet<{ plotted?: UserMapPoint[]; unplotted?: UserMapPoint[] }>(`/api/admin/users/map?${params.toString()}`)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setMapPlotted(result.plotted ?? []);
+        setMapUnplotted(result.unplotted ?? []);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setMapPlotted([]);
+        setMapUnplotted([]);
+        setMapError(err instanceof ApiError ? err.message : 'Could not load the map.');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMapLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, usersSubTab, userDepartmentFilter, mapAddressType]);
+
   const [userActiveTab, setUserActiveTab] = useState<'Active' | 'Inactive'>('Active');
 
   // Roles
@@ -1600,13 +1729,11 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       email: '',
       phone: '',
       company: 'BMS',
+      userFacts: '',
+      bio: '',
       userType: 'Basic',
-      address: '',
-      addressType: 'Work',
-      city: '',
-      state: '',
-      postalCode: '',
-      country: '',
+      addresses: [emptyAddressDraft(nextUserAddressKey())],
+      removedAddressIds: [],
       statusID: 0,
     });
     setUserPhotoRevision((x) => x + 1);
@@ -1622,23 +1749,27 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       return;
     }
 
-    let addr: AdminUserAddress | null =
-      coerceAdminUserAddress(u.primaryAddress) ??
-      (u.addresses?.length ? coerceAdminUserAddress(u.addresses[0]) : null);
+    let rows: AdminUserAddress[] = [];
+    const embedded = coerceAdminUserAddress(u.primaryAddress);
+    if (embedded) {
+      rows = [embedded];
+    } else if (u.addresses?.length) {
+      rows = u.addresses.map(coerceAdminUserAddress).filter((x): x is AdminUserAddress => x !== null);
+    }
 
     if (u.userID > 0) {
       try {
         const raw = await apiGet<unknown>(`/api/admin/users/${u.userID}/addresses`);
         const fetched = parseAddressListPayload(raw);
-        const picked = pickPreferredUserAddress(fetched);
-        if (picked) {
-          addr = picked;
+        if (fetched.length > 0) {
+          rows = fetched;
         }
       } catch (e) {
         flash('error', e instanceof ApiError ? e.message : 'Could not load user addresses from the server.');
       }
     }
 
+    const drafts = rows.map((row) => draftFromAddress(row, nextUserAddressKey()));
     setUserForm({
       userID: u.userID,
       firstName: u.firstName ?? '',
@@ -1648,13 +1779,11 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       email: u.email ?? '',
       phone: u.phone ?? '',
       company: u.company ?? 'BMS',
+      userFacts: u.userFacts ?? '',
+      bio: u.bio ?? '',
       userType: normalizeUserType(u.userType),
-      address: addr?.address1 ?? '',
-      addressType: addr?.addressType ?? 'Work',
-      city: addr?.city ?? '',
-      state: addr?.state ?? '',
-      postalCode: addr?.postalCode ?? '',
-      country: addr?.country ?? '',
+      addresses: drafts.length > 0 ? drafts : [emptyAddressDraft(nextUserAddressKey())],
+      removedAddressIds: [],
       statusID: 0,
     });
     setUserPhotoRevision((x) => x + 1);
@@ -1695,6 +1824,20 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     }
   };
 
+  const openUserBioDialog = () => {
+    setUserBioDraft(userForm.bio);
+    setUserBioDialogOpen(true);
+  };
+
+  const closeUserBioDialog = () => setUserBioDialogOpen(false);
+
+  const applyUserBioDraft = () => {
+    setUserForm((form) => ({ ...form, bio: clampUserBio(userBioDraft) }));
+    setUserBioDialogOpen(false);
+  };
+
+  const userBioWordCount = countBioWords(userBioDraft);
+
   const editUserFromSelection = () => {
     if (selectedUserId === '' || !admin) {
       window.alert('Select a user first.');
@@ -1719,29 +1862,48 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
         email: userForm.email,
         phone: userForm.phone,
         company: userForm.company,
+        userFacts: userForm.userFacts,
+        bio: userForm.bio,
         userType: userForm.userType,
       });
       const savedUserId = result.userId ?? userForm.userID;
       setUserForm((f) => ({ ...f, userID: savedUserId }));
 
-      const hasAddress =
-        (userForm.address ?? '').trim() !== '' ||
-        (userForm.city ?? '').trim() !== '' ||
-        (userForm.state ?? '').trim() !== '' ||
-        (userForm.postalCode ?? '').trim() !== '' ||
-        (userForm.country ?? '').trim() !== '';
-      if (hasAddress && savedUserId > 0) {
+      if (savedUserId > 0) {
         try {
-          await apiPostJson('/api/admin/users/addresses/save', {
-            addressID: 0,
+          for (const addressId of userForm.removedAddressIds) {
+            if (addressId > 0) {
+              await apiDelete(`/api/admin/users/addresses/${addressId}`);
+            }
+          }
+          for (const row of userForm.addresses) {
+            if (!addressDraftHasContent(row)) {
+              if (row.addressID > 0) {
+                await apiDelete(`/api/admin/users/addresses/${row.addressID}`);
+              }
+              continue;
+            }
+            await apiPostJson('/api/admin/users/addresses/save', {
+              addressID: row.addressID,
+              userID: savedUserId,
+              addressType: row.addressType || 'Work',
+              address1: row.address,
+              address2: row.address2,
+              city: row.city,
+              state: row.state,
+              postalCode: row.postalCode,
+              country: row.country,
+            });
+          }
+          const raw = await apiGet<unknown>(`/api/admin/users/${savedUserId}/addresses`);
+          const fetched = parseAddressListPayload(raw);
+          const drafts = fetched.map((row) => draftFromAddress(row, nextUserAddressKey()));
+          setUserForm((f) => ({
+            ...f,
             userID: savedUserId,
-            addressType: userForm.addressType || 'Work',
-            address1: userForm.address,
-            city: userForm.city,
-            state: userForm.state,
-            postalCode: userForm.postalCode,
-            country: userForm.country,
-          });
+            addresses: drafts.length > 0 ? drafts : [emptyAddressDraft(nextUserAddressKey())],
+            removedAddressIds: [],
+          }));
         } catch (addrErr) {
           flash('error', addrErr instanceof ApiError ? addrErr.message : 'Saved user, but address save failed.');
         }
@@ -1754,6 +1916,47 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     } catch (err) {
       flash('error', err instanceof ApiError ? err.message : 'Save failed.');
     }
+  };
+
+  const updateUserAddress = (index: number, patch: Partial<UserAddressDraft>) => {
+    setUserForm((form) => ({
+      ...form,
+      addresses: form.addresses.map((row, i) => {
+        if (i !== index) {
+          return row;
+        }
+        const next = { ...row, ...patch };
+        const locationChanged = (['address', 'city', 'state', 'postalCode', 'country'] as const).some(
+          (key) => patch[key] !== undefined && patch[key] !== row[key],
+        );
+        return locationChanged ? { ...next, geocoded: false } : next;
+      }),
+    }));
+  };
+
+  const addUserAddress = () => {
+    setUserForm((form) => {
+      const used = new Set(form.addresses.map((row) => row.addressType));
+      const nextType = USER_ADDRESS_TYPES.find((type) => !used.has(type)) ?? 'Home';
+      return {
+        ...form,
+        addresses: [...form.addresses, emptyAddressDraft(nextUserAddressKey(), nextType)],
+      };
+    });
+  };
+
+  const removeUserAddress = (index: number) => {
+    setUserForm((form) => {
+      const row = form.addresses[index];
+      const removedAddressIds =
+        row && row.addressID > 0 ? [...form.removedAddressIds, row.addressID] : form.removedAddressIds;
+      const addresses = form.addresses.filter((_, i) => i !== index);
+      return {
+        ...form,
+        removedAddressIds,
+        addresses: addresses.length > 0 ? addresses : [emptyAddressDraft(nextUserAddressKey())],
+      };
+    });
   };
 
   const openRemoveUserDialog = () => {
@@ -4246,7 +4449,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
         <div id="admin-tab-users" className={'admin-tab-panel' + (tab === 'users' ? ' active' : '')}>
           <h2>Users</h2>
           <p className="field-help">
-            Manage users, user roles, and user groups from one place.
+            Manage users, user roles, user groups, and the employee address map from one place.
           </p>
           <div className="admin-tabs admin-users-subtabs" role="tablist" aria-label="Users sections">
             <button
@@ -4281,6 +4484,17 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               onClick={() => setUsersSubTab('groups')}
             >
               User Group
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="admin-users-tab-map"
+              aria-selected={usersSubTab === 'map'}
+              aria-controls="admin-users-panel-map"
+              className={usersSubTab === 'map' ? 'active' : ''}
+              onClick={() => setUsersSubTab('map')}
+            >
+              Map
             </button>
           </div>
 
@@ -4494,14 +4708,19 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   )}
                 </div>
                 <div className="admin-user-photo-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={userForm.userID <= 0}
-                    onClick={() => userPhotoInputRef.current?.click()}
-                  >
-                    Upload picture
-                  </button>
+                  <div className="admin-user-photo-action-line">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={userForm.userID <= 0}
+                      onClick={() => userPhotoInputRef.current?.click()}
+                    >
+                      Upload picture
+                    </button>
+                    <button type="button" className="admin-user-bio-link" onClick={openUserBioDialog}>
+                      Add Bio
+                    </button>
+                  </div>
                   <button
                     type="button"
                     className="secondary-button"
@@ -4548,18 +4767,20 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     </option>
                   ))}
                 </select>
-                <label>Email</label>
-                <input
-                  maxLength={100}
-                  value={userForm.email}
-                  onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-                />
-                <label>Phone</label>
-                <input
-                  maxLength={20}
-                  value={userForm.phone}
-                  onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
-                />
+                <div className="admin-user-inline-fields admin-user-inline-fields--pair">
+                  <label>Email</label>
+                  <input
+                    maxLength={100}
+                    value={userForm.email}
+                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                  />
+                  <label>Phone</label>
+                  <input
+                    maxLength={20}
+                    value={userForm.phone}
+                    onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
+                  />
+                </div>
                 <label>Company</label>
                 <input
                   maxLength={50}
@@ -4580,69 +4801,121 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   <option value="Manager">Manager</option>
                   <option value="Analyst">Analyst</option>
                 </select>
-                <label>Address type</label>
-                <select
-                  value={userForm.addressType}
-                  onChange={(e) => setUserForm({ ...userForm, addressType: e.target.value })}
-                  aria-label="Address type"
-                >
-                  <option value="Work">Work</option>
-                  <option value="Home">Home</option>
-                  <option value="Mailing">Mailing</option>
-                  <option value="Other">Other</option>
-                </select>
-                <label>Address</label>
-                <input
-                  maxLength={100}
-                  value={userForm.address}
-                  onChange={(e) => setUserForm({ ...userForm, address: e.target.value })}
-                />
-                <label>City</label>
-                <input
-                  maxLength={25}
-                  value={userForm.city}
-                  onChange={(e) => setUserForm({ ...userForm, city: e.target.value })}
-                />
-                <label>State</label>
-                <select
-                  value={userStateSelectValue(userForm.state)}
-                  onChange={(e) => setUserForm({ ...userForm, state: e.target.value })}
-                  aria-label="State (US postal code)"
-                >
-                  <option value="">-</option>
-                  {US_STATE_CODES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
+                <div className="admin-user-addresses">
+                  {userForm.addresses.map((row, index) => (
+                    <div className="admin-user-address-card" key={row.key}>
+                      <div className="admin-user-address-head">
+                        <label htmlFor={`admin-user-address-type-${row.key}`}>Address type</label>
+                        <select
+                          id={`admin-user-address-type-${row.key}`}
+                          value={row.addressType}
+                          onChange={(e) => updateUserAddress(index, { addressType: e.target.value })}
+                          aria-label={`Address type ${index + 1}`}
+                        >
+                          {USER_ADDRESS_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                          {USER_ADDRESS_TYPES.includes(row.addressType as (typeof USER_ADDRESS_TYPES)[number]) ? null : (
+                            <option value={row.addressType}>{row.addressType}</option>
+                          )}
+                        </select>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => removeUserAddress(index)}
+                        >
+                          Remove address
+                        </button>
+                      </div>
+                      <div className="admin-user-address-line">
+                        <label htmlFor={`admin-user-address-line-${row.key}`}>Address</label>
+                        {row.geocoded ? (
+                          <span className="admin-user-geocode-ok" title="Latitude and longitude are saved" aria-label="Geocoded">
+                            ✓
+                          </span>
+                        ) : addressDraftHasContent(row) ? (
+                          <span className="admin-user-geocode-pending">Geocoding will be done on save</span>
+                        ) : null}
+                      </div>
+                      <input
+                        id={`admin-user-address-line-${row.key}`}
+                        maxLength={100}
+                        value={row.address}
+                        onChange={(e) => updateUserAddress(index, { address: e.target.value })}
+                      />
+                      <label htmlFor={`admin-user-address2-${row.key}`}>Address 2</label>
+                      <input
+                        id={`admin-user-address2-${row.key}`}
+                        maxLength={100}
+                        value={row.address2}
+                        onChange={(e) => updateUserAddress(index, { address2: e.target.value })}
+                      />
+                      <div className="admin-user-inline-fields admin-user-inline-fields--city">
+                        <label htmlFor={`admin-user-city-${row.key}`}>City</label>
+                        <input
+                          id={`admin-user-city-${row.key}`}
+                          maxLength={25}
+                          value={row.city}
+                          onChange={(e) => updateUserAddress(index, { city: e.target.value })}
+                        />
+                        <label htmlFor={`admin-user-state-${row.key}`}>State</label>
+                        <select
+                          id={`admin-user-state-${row.key}`}
+                          value={userStateSelectValue(row.state)}
+                          onChange={(e) => updateUserAddress(index, { state: e.target.value })}
+                          aria-label={`State ${index + 1}`}
+                        >
+                          <option value="">-</option>
+                          {US_STATE_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {code}
+                            </option>
+                          ))}
+                          {(() => {
+                            const raw = row.state.trim();
+                            if (!raw || US_STATE_CODE_SET.has(raw.toUpperCase())) {
+                              return null;
+                            }
+                            return (
+                              <option key="__legacy_state" value={row.state}>
+                                {row.state}
+                              </option>
+                            );
+                          })()}
+                        </select>
+                        <label htmlFor={`admin-user-postal-${row.key}`}>Postal code</label>
+                        <input
+                          id={`admin-user-postal-${row.key}`}
+                          maxLength={25}
+                          value={row.postalCode}
+                          onChange={(e) => updateUserAddress(index, { postalCode: e.target.value })}
+                          autoComplete="postal-code"
+                        />
+                        <label htmlFor={`admin-user-country-${row.key}`}>Country</label>
+                        <input
+                          id={`admin-user-country-${row.key}`}
+                          maxLength={25}
+                          value={row.country}
+                          onChange={(e) => updateUserAddress(index, { country: e.target.value })}
+                        />
+                      </div>
+                    </div>
                   ))}
-                  {(() => {
-                    const raw = userForm.state.trim();
-                    if (!raw) {
-                      return null;
-                    }
-                    const upper = raw.toUpperCase();
-                    if (US_STATE_CODE_SET.has(upper)) {
-                      return null;
-                    }
-                    return (
-                      <option key="__legacy_state" value={userForm.state}>
-                        {userForm.state}
-                      </option>
-                    );
-                  })()}
-                </select>
-                <label>Postal code</label>
-                <input
-                  maxLength={25}
-                  value={userForm.postalCode}
-                  onChange={(e) => setUserForm({ ...userForm, postalCode: e.target.value })}
-                  autoComplete="postal-code"
-                />
-                <label>Country</label>
-                <input
-                  maxLength={25}
-                  value={userForm.country}
-                  onChange={(e) => setUserForm({ ...userForm, country: e.target.value })}
+                  <button type="button" className="secondary-button admin-user-add-address" onClick={addUserAddress}>
+                    Add address
+                  </button>
+                </div>
+              </div>
+              <div className="admin-user-facts">
+                <label htmlFor="admin-user-facts">Something about me</label>
+                <textarea
+                  id="admin-user-facts"
+                  maxLength={1000}
+                  rows={4}
+                  value={userForm.userFacts}
+                  onChange={(e) => setUserForm({ ...userForm, userFacts: e.target.value })}
                 />
               </div>
               <div className="button-row wrap-buttons admin-user-form-actions">
@@ -5117,7 +5390,96 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             </div>
           </div>
           </div>
-        </div>
+
+          <div
+            id="admin-users-panel-map"
+            role="tabpanel"
+            aria-labelledby="admin-users-tab-map"
+            hidden={usersSubTab !== 'map'}
+            className={'admin-tab-panel admin-users-subpanel' + (usersSubTab === 'map' ? ' active' : '')}
+          >
+            <h3 className="admin-subheading">Employee map</h3>
+            <p className="field-help">
+              Choose a department, then Home or Work. Everyone in that department with a located address is shown. The United States and each other country sit side by side, and each map zooms to include its own people.
+            </p>
+            <div className="admin-user-map-toolbar">
+              <div className="admin-users-dept-row">
+                <label htmlFor="admin-user-map-dept-filter">Department</label>
+                <select
+                  id="admin-user-map-dept-filter"
+                  className="admin-users-dept-select"
+                  value={userDepartmentFilter}
+                  onChange={(e) => setUserDepartmentFilter(e.target.value)}
+                  aria-label="Filter the map by department"
+                >
+                  <option value="">All departments</option>
+                  {distinctUserDepartments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="admin-user-map-types" role="group" aria-label="Address type">
+                {(['Work', 'Home'] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={mapAddressType === type ? 'primary-button' : 'secondary-button'}
+                    aria-pressed={mapAddressType === type}
+                    onClick={() => setMapAddressType(type)}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {mapError ? <p className="field-help">{mapError}</p> : null}
+            <p className="field-help admin-user-map-status">
+              {mapLoading
+                ? 'Locating addresses and saving coordinates…'
+                : `${mapPlotted.length} ${mapAddressType.toLowerCase()} address${mapPlotted.length === 1 ? '' : 'es'} plotted${
+                    mapUnplotted.length > 0 ? `, ${mapUnplotted.length} not on the map` : ''
+                  }.`}
+            </p>
+            {usersSubTab === 'map' ? (
+              <div className="admin-user-map-row">
+                <section className="admin-user-map-pane">
+                  <h4>United States</h4>
+                  <UserAddressMap points={mapPlotted.filter(isUnitedStatesPoint)} focus="us" label="United States employee map" />
+                </section>
+                {[...new Map(
+                  mapPlotted
+                    .filter((point) => !isUnitedStatesPoint(point))
+                    .map((point) => [regionLabel(point), point] as const),
+                ).keys()].map((label) => (
+                  <section key={label} className="admin-user-map-pane">
+                    <h4>{label}</h4>
+                    <UserAddressMap
+                      points={mapPlotted.filter((point) => !isUnitedStatesPoint(point) && regionLabel(point) === label)}
+                      focus="region"
+                      label={`${label} employee map`}
+                    />
+                  </section>
+                ))}
+              </div>
+            ) : null}
+            {mapUnplotted.length > 0 ? (
+              <div className="admin-user-map-unplotted">
+                <h4>Not plotted</h4>
+                <ul>
+                  {mapUnplotted.map((point, index) => (
+                    <li key={`${point.userID}-${index}`}>
+                      <strong>{point.name || `User ${point.userID}`}</strong>
+                      {point.addressLine ? ` — ${point.addressLine}` : ''}
+                      {point.plotNote ? ` (${point.plotNote})` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+          </div>
 
         <div id="admin-tab-projectTypes" className={'admin-tab-panel' + (tab === 'projectTypes' ? ' active' : '')}>
           <h2>Project Types</h2>
@@ -6529,6 +6891,64 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
       </section>
+
+      {userBioDialogOpen ? (
+        <div
+          className="home-modal-overlay"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              closeUserBioDialog();
+            }
+          }}
+        >
+          <div
+            className="home-modal-dialog admin-user-bio-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-user-bio-title"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                closeUserBioDialog();
+              }
+            }}
+          >
+            <h2 id="admin-user-bio-title" className="home-modal-title">
+              Add Bio
+            </h2>
+            <p className="home-modal-body">
+              Write a short biography for this user. The bio is stored when you save the user.
+            </p>
+            <textarea
+              id="admin-user-bio"
+              className="admin-user-bio-input"
+              rows={12}
+              autoFocus
+              value={userBioDraft}
+              aria-describedby="admin-user-bio-count"
+              onChange={(e) => setUserBioDraft(clampUserBio(e.target.value))}
+            />
+            <p
+              id="admin-user-bio-count"
+              className={
+                'field-help admin-user-bio-count' +
+                (userBioWordCount >= USER_BIO_WORD_LIMIT ? ' admin-user-bio-count--limit' : '')
+              }
+            >
+              {userBioWordCount} / {USER_BIO_WORD_LIMIT} words
+            </p>
+            <div className="home-modal-actions">
+              <button type="button" className="primary-button" onClick={applyUserBioDraft}>
+                Done
+              </button>
+              <button type="button" className="secondary-button" onClick={closeUserBioDialog}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {buDeleteBlockedMessage ? (
         <div

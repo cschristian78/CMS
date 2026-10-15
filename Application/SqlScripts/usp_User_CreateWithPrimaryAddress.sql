@@ -12,6 +12,8 @@ CREATE OR ALTER PROCEDURE usp_User_CreateWithPrimaryAddress
     @Phone                        VARCHAR(30) = NULL,
     @Company                      VARCHAR(150) = NULL,
     @Department                   VARCHAR(100) = NULL,
+    @UserFacts                    NVARCHAR(1000) = NULL,
+    @Bio                          NVARCHAR(4000) = NULL,
     @UserType                     VARCHAR(20),
     @AddressType                  VARCHAR(20) = NULL,
     @Address1                     VARCHAR(200) = NULL,
@@ -39,8 +41,8 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
 
-        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserType)
-        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserType);
+        INSERT INTO dbo.tUser (FirstName, LastName, Title, Email, Phone, Company, Department, UserFacts, Bio, UserType)
+        VALUES (@FirstName, @LastName, @Title, @Email, @Phone, @Company, @Department, @UserFacts, @Bio, @UserType);
 
         SET @NewUserID = SCOPE_IDENTITY();
 
