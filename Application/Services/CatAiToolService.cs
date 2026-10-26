@@ -900,7 +900,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
                 IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
                 pt.ProjectTypeCode,
-                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END)
+                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned')
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
              INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
@@ -923,11 +923,9 @@ public sealed partial class CatAiToolService : ICatAiToolService
                     ? (r.IsDBNull(3) ? null : r.GetString(3))
                     : r.GetString(4),
                 isActive = !r.IsDBNull(5) && r.GetBoolean(5),
-                isOnline = !r.IsDBNull(6) && r.GetBoolean(6),
                 projectTypeCode = r.IsDBNull(7) ? null : r.GetString(7),
-                workStatus = r.IsDBNull(8)
-                    ? ProjectWorkStatus.Normalize(null, !r.IsDBNull(6) && r.GetBoolean(6))
-                    : ProjectWorkStatus.Normalize(r.GetString(8), !r.IsDBNull(6) && r.GetBoolean(6)),
+                workStatus = ProjectWorkStatus.Normalize(r.IsDBNull(8) ? null : r.GetString(8)),
+                isOnline = ProjectWorkStatus.IsInProgress(r.IsDBNull(8) ? null : r.GetString(8)),
             },
             [
                 SqlParameterFactory.Int("@ClientID", clientId),
@@ -970,7 +968,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 st.StatusDescription,
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
                 IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
-                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END),
+                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned'),
                 p.RenewalDate
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
@@ -981,10 +979,10 @@ public sealed partial class CatAiToolService : ICatAiToolService
              WHERE (@FilterActive = -1 OR p.IsActive = @FilterActive)
                AND (
                     @FilterOnline = -1
-                    OR (@FilterOnline = 1 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) = N'In Progress')
-                    OR (@FilterOnline = 0 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) <> N'In Progress')
-                    OR (@FilterOnline = 2 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) = N'Planned')
-                    OR (@FilterOnline = 3 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) = N'Closed')
+                    OR (@FilterOnline = 1 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') = N'In Progress')
+                    OR (@FilterOnline = 0 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') <> N'In Progress')
+                    OR (@FilterOnline = 2 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') = N'Planned')
+                    OR (@FilterOnline = 3 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') = N'Closed')
                )
              ORDER BY c.ClientName, p.ProjectName, p.ProjectID;
             """;
@@ -998,8 +996,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 var projectName = r.IsDBNull(2) ? null : r.GetString(2);
                 var clientName = r.IsDBNull(3) ? null : r.GetString(3);
                 var isActive = !r.IsDBNull(7) && r.GetBoolean(7);
-                var isOnline = !r.IsDBNull(8) && r.GetBoolean(8);
-                var workStatus = r.IsDBNull(9) ? ProjectWorkStatus.Normalize(null, isOnline) : ProjectWorkStatus.Normalize(r.GetString(9), isOnline);
+                var workStatus = ProjectWorkStatus.Normalize(r.IsDBNull(9) ? null : r.GetString(9));
                 return new
                 {
                     projectId,
@@ -1074,7 +1071,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
         return false;
     }
 
-    /// <summary>Parses all|online|offline (default all). Returns -1 for no filter, else 0/1 for SQL.</summary>
+    /// <summary>Parses all, planned, in progress, or closed. Legacy online means in progress.</summary>
     private static bool TryParseOnlineFilter(string raw, out int filterValue, out string label, out string? error)
     {
         filterValue = -1;
@@ -1151,7 +1148,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 st.StatusCode,
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
                 IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
-                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END)
+                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned')
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
               LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
@@ -1186,10 +1183,8 @@ public sealed partial class CatAiToolService : ICatAiToolService
                     projectTypeCode = r.IsDBNull(5) ? null : r.GetString(5),
                     statusCode = r.IsDBNull(6) ? null : r.GetString(6),
                     isActive = !r.IsDBNull(7) && r.GetBoolean(7),
-                    isOnline = !r.IsDBNull(8) && r.GetBoolean(8),
-                    workStatus = r.IsDBNull(9)
-                        ? ProjectWorkStatus.Normalize(null, !r.IsDBNull(8) && r.GetBoolean(8))
-                        : ProjectWorkStatus.Normalize(r.GetString(9), !r.IsDBNull(8) && r.GetBoolean(8)),
+                    workStatus = ProjectWorkStatus.Normalize(r.IsDBNull(9) ? null : r.GetString(9)),
+                    isOnline = ProjectWorkStatus.IsInProgress(r.IsDBNull(9) ? null : r.GetString(9)),
                     // Preformatted line so ProjectID / ProjectNumber are hard to omit when listing.
                     listLine = $"{clientName ?? "(no client)"} | ProjectID {projectId} | ProjectNumber {projectNumber ?? "(none)"} | {projectName ?? "(unnamed)"} | Renews {renewalDate ?? "(none)"}",
                 };

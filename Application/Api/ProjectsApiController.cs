@@ -114,27 +114,29 @@ public sealed class ProjectsApiController : ControllerBase
         return Ok(new { message = "Project restored." });
     }
 
-    public sealed class SetOnlineRequest
+    public sealed class SetWorkStatusRequest
     {
         public string? WorkStatus { get; set; }
-        public bool? IsOnline { get; set; }
     }
 
+    [HttpPost("{id:int}/work-status")]
     [HttpPost("{id:int}/online")]
-    public async Task<ActionResult<object>> SetOnlineAsync(
+    public async Task<ActionResult<object>> SetWorkStatusAsync(
         int id,
-        [FromBody] SetOnlineRequest body,
+        [FromBody] SetWorkStatusRequest? body,
         CancellationToken cancellationToken)
     {
-        var status = ProjectWorkStatus.NormalizeOrNull(body.WorkStatus)
-            ?? (body.IsOnline == true ? ProjectWorkStatus.InProgress : ProjectWorkStatus.Closed);
+        var status = ProjectWorkStatus.NormalizeOrNull(body?.WorkStatus);
+        if (status is null)
+        {
+            return BadRequest(new { message = "Project status must be Planned, In Progress, or Closed." });
+        }
+
         await _projectService.SetWorkStatusAsync(id, status, cancellationToken);
-        var isOnline = ProjectWorkStatus.IsInProgress(status);
         return Ok(new
         {
             projectId = id,
             workStatus = status,
-            isOnline,
             message = $"Project status is now {status}."
         });
     }

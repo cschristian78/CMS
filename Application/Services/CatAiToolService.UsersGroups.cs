@@ -155,7 +155,7 @@ public sealed partial class CatAiToolService
                 p.ProjectName,
                 c.ClientName,
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
-                IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
+                IsOnline = CAST(CASE WHEN ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') = N'In Progress' THEN 1 ELSE 0 END AS BIT),
                 st.StatusCode
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1

@@ -18,8 +18,7 @@ public sealed class ProjectRepository : IProjectRepository
             p.CreatedDate,
             p.ModifiedDate,
             IsDeleted = CAST(CASE WHEN p.IsActive = 0 THEN 1 ELSE 0 END AS BIT),
-            IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
-            WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END),
+            WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned'),
             IsFeeBasedRevenue = CAST(ISNULL(p.IsFeeBasedRevenue, 0) AS BIT),
             c.ClientID,
             c.ClientName,
@@ -148,9 +147,6 @@ public sealed class ProjectRepository : IProjectRepository
         await _db.ExecuteTextAsync(sql, [SqlParameterFactory.Int("@ProjectID", projectId)], cancellationToken);
         return projectId;
     }
-
-    public Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default) =>
-        SetWorkStatusAsync(projectId, isOnline ? ProjectWorkStatus.InProgress : ProjectWorkStatus.Closed, cancellationToken);
 
     public async Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default)
     {
@@ -389,7 +385,7 @@ public sealed class ProjectRepository : IProjectRepository
                 cancellationToken);
 
             await SyncProjectActiveFromStatusAsync(connection, tx, projectId, statusId, cancellationToken);
-            await SyncProjectOnlineAsync(connection, tx, projectId, project.WorkStatus, project.IsOnline, cancellationToken);
+            await SyncProjectWorkStatusAsync(connection, tx, projectId, project.WorkStatus, cancellationToken);
             await SyncProjectFeeBasedRevenueAsync(connection, tx, projectId, project.IsFeeBasedRevenue, cancellationToken);
 
             await ExecuteTextAsync(connection, tx,
@@ -2128,15 +2124,14 @@ public sealed class ProjectRepository : IProjectRepository
         return Convert.ToInt32(output.Value, CultureInfo.InvariantCulture);
     }
 
-    private static async Task SyncProjectOnlineAsync(
+    private static async Task SyncProjectWorkStatusAsync(
         SqlConnection connection,
         SqlTransaction tx,
         int projectId,
         string? workStatus,
-        bool isOnline,
         CancellationToken cancellationToken)
     {
-        var status = ProjectWorkStatus.Normalize(workStatus, isOnline);
+        var status = ProjectWorkStatus.Normalize(workStatus);
         await ExecuteTextAsync(connection, tx,
             """
             UPDATE dbo.tProject
@@ -2381,8 +2376,7 @@ public sealed class ProjectRepository : IProjectRepository
         StatusID = r.GetInt32OrDefault("StatusID"),
         StatusCode = r.TryGetNullableString("StatusCode"),
         StatusDescription = r.TryGetNullableString("StatusDescription"),
-        IsOnline = r.TryGetNullableBoolean("IsOnline") ?? false,
-        WorkStatus = ProjectWorkStatus.Normalize(r.TryGetNullableString("WorkStatus"), r.TryGetNullableBoolean("IsOnline") ?? false),
+        WorkStatus = ProjectWorkStatus.Normalize(r.TryGetNullableString("WorkStatus")),
         IsFeeBasedRevenue = r.TryGetNullableBoolean("IsFeeBasedRevenue") ?? false,
         IsDeleted = r.TryGetNullableBoolean("IsDeleted") ?? false,
         CreatedDate = r.TryGetNullableDateTime("CreatedDate"),

@@ -58,7 +58,7 @@ public sealed class DashboardApiController : ControllerBase
 
     /// <summary>
     /// Bar-chart series: distinct project counts by begin month (<c>tProject.CreatedDate</c>).
-    /// Query: <c>analyticsLeadName</c>, <c>onlineStatus</c>=Online|All.
+    /// Query: <c>analyticsLeadName</c>, <c>onlineStatus</c>=In Progress|All.
     /// </summary>
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [HttpGet("projects-by-begin-month")]
@@ -133,7 +133,7 @@ public sealed class DashboardApiController : ControllerBase
         }
     }
 
-    /// <summary>Online → true; All / empty / unknown → null (no IsOnline filter).</summary>
+    /// <summary>In Progress (or the legacy word Online) filters to that project status. Anything else is unfiltered.</summary>
     private static bool? ParseOnlineStatus(string? onlineStatus)
     {
         if (string.IsNullOrWhiteSpace(onlineStatus))
@@ -142,14 +142,14 @@ public sealed class DashboardApiController : ControllerBase
         }
 
         var value = onlineStatus.Trim();
-        if (value.Equals("Online", StringComparison.OrdinalIgnoreCase)
+        if (value.Equals(ProjectWorkStatus.InProgress, StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Online", StringComparison.OrdinalIgnoreCase)
             || value.Equals("true", StringComparison.OrdinalIgnoreCase)
             || value.Equals("1", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        // All (and offline-as-all for this dashboard) → no filter
         return null;
     }
 }

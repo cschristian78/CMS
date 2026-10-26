@@ -35,11 +35,11 @@ public sealed class Project
     public string? StatusCode { get; set; }
     public string? StatusDescription { get; set; }
 
-    /// <summary>Planned, In Progress, or Closed. The home green icon is shown for In Progress.</summary>
+    /// <summary>Planned, In Progress, or Closed. The green icon is shown for In Progress.</summary>
     public string WorkStatus { get; set; } = ProjectWorkStatus.Planned;
 
-    /// <summary>True when <see cref="WorkStatus"/> is In Progress. Kept in sync for the green icon.</summary>
-    public bool IsOnline { get; set; }
+    /// <summary>Derived from <see cref="WorkStatus"/>: true only when the project is In Progress.</summary>
+    public bool IsOnline => ProjectWorkStatus.IsInProgress(WorkStatus);
 
     /// <summary>When true, project revenue is fee-based (Project Info checkbox).</summary>
     public bool IsFeeBasedRevenue { get; set; }

@@ -210,10 +210,8 @@ public sealed class ProjectReportService : IProjectReportService
             UserGroup = OptionText(form.UserGroupOptions, ugid)
                 .OrFallback(ugid > 0 ? $"User Group {ugid}" : null),
             Status = OptionText(form.StatusOptions, form.StatusID),
-            IsOnline = form.IsOnline,
-            WorkStatus = string.IsNullOrWhiteSpace(form.WorkStatus)
-                ? ProjectWorkStatus.Normalize(null, form.IsOnline)
-                : ProjectWorkStatus.Normalize(form.WorkStatus, form.IsOnline),
+            IsOnline = ProjectWorkStatus.IsInProgress(form.WorkStatus),
+            WorkStatus = ProjectWorkStatus.Normalize(form.WorkStatus),
             RenewalDate = form.RenewalDate,
             DueDate = form.DueDate,
             LatestRevenue = form.RevenueAmount,
@@ -323,9 +321,7 @@ public sealed class ProjectReportService : IProjectReportService
                         ("Project type", Blank(data.ProjectType)),
                         ("User group", Blank(data.UserGroup)),
                         ("Status", Blank(data.Status)),
-                        ("Project status", string.IsNullOrWhiteSpace(data.WorkStatus)
-                            ? ProjectWorkStatus.Normalize(null, data.IsOnline)
-                            : data.WorkStatus),
+                        ("Project status", ProjectWorkStatus.Normalize(data.WorkStatus)),
                         ("Renewal date", FormatDate(data.RenewalDate)),
                         ("Due date", FormatDate(data.DueDate)),
                         ("Latest revenue", FormatMoney(data.LatestRevenue)),

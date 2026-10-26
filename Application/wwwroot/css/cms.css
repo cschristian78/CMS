@@ -3851,7 +3851,7 @@ textarea {
     outline-offset: -2px;
 }
 
-/* Online / in-progress indicator (far-left column on the home grid) */
+/* In Progress indicator (far-left column on the home grid). Green only for In Progress. */
 .home-online-col {
     width: 2.1rem;
     min-width: 2.1rem;
@@ -3883,7 +3883,7 @@ button.home-online-dot {
     background-image: none;
 }
 
-/* Offline = gray dot */
+/* Planned or Closed = gray dot */
 .home-online-dot--off,
 button.home-online-dot.home-online-dot--off {
     background: #9aa6b2 !important;
@@ -3892,7 +3892,7 @@ button.home-online-dot.home-online-dot--off {
     box-shadow: none !important;
 }
 
-/* Online = green dot */
+/* In Progress = green dot */
 .home-online-dot--on,
 button.home-online-dot.home-online-dot--on {
     background: #22a045 !important;

@@ -392,7 +392,7 @@ public sealed partial class CatAiToolService
             RenewalDate = renewalDate,
             StatusID = 1,
             UGID = userGroupId > 0 ? userGroupId : 0,
-            IsOnline = false,
+            WorkStatus = ProjectWorkStatus.Planned,
         };
 
         var projectId = await _projects.SaveProjectAndReplaceServicesAsync(

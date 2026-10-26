@@ -361,6 +361,7 @@ public sealed class DashboardRepository : IDashboardRepository
         bool? isOnline = null,
         CancellationToken cancellationToken = default)
     {
+        await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         // Fixed calendar-year monthly view (January–December of the current year).
         var year = DateTime.UtcNow.Year;
         var yearStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -397,8 +398,9 @@ public sealed class DashboardRepository : IDashboardRepository
         if (isOnline.HasValue)
         {
             // Keep a trailing space — C# raw strings drop the newline before the closing """.
-            sql.Append(" AND CAST(ISNULL(p.IsOnline, 0) AS BIT) = @IsOnline ");
-            parameters.Add(SqlParameterFactory.Bit("@IsOnline", isOnline.Value));
+            sql.Append(isOnline.Value
+                ? " AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') = N'In Progress' "
+                : " AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') <> N'In Progress' ");
         }
 
         sql.Append("""
@@ -503,9 +505,7 @@ public sealed class DashboardRepository : IDashboardRepository
         await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         var sql = new StringBuilder("""
             SELECT
-                CAST(ISNULL(tp.IsOnline, 0) AS BIT) AS ProjectOnline,
-                ISNULL(NULLIF(LTRIM(RTRIM(tp.WorkStatus)), N''),
-                    CASE WHEN ISNULL(tp.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) AS WorkStatus,
+                ISNULL(NULLIF(LTRIM(RTRIM(tp.WorkStatus)), N''), N'Planned') AS WorkStatus,
                 v.*,
                 CAST(ISNULL((
                     SELECT SUM(te.Hours)
@@ -537,9 +537,10 @@ public sealed class DashboardRepository : IDashboardRepository
         return await _db.QueryTextAsTableAsync(sql.ToString(), parameters, cancellationToken);
     }
 
-    public Task<IReadOnlyList<DashboardInactiveProject>> GetInactiveProjectsAsync(
+    public async Task<IReadOnlyList<DashboardInactiveProject>> GetInactiveProjectsAsync(
         CancellationToken cancellationToken = default)
     {
+        await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         const string sql = """
             SELECT
                 p.ProjectID,
@@ -547,7 +548,7 @@ public sealed class DashboardRepository : IDashboardRepository
                 p.ProjectName,
                 c.ClientName,
                 p.CreatedDate,
-                CAST(ISNULL(p.IsOnline, 0) AS BIT) AS IsOnline
+                ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') AS WorkStatus
             FROM dbo.tProject AS p
             OUTER APPLY (
                 SELECT TOP (1) pr.ClientRefID
@@ -561,7 +562,7 @@ public sealed class DashboardRepository : IDashboardRepository
             ORDER BY p.ProjectNumber, p.ProjectID;
             """;
 
-        return _db.QueryTextAsync(sql, MapInactiveProject, null, cancellationToken);
+        return await _db.QueryTextAsync(sql, MapInactiveProject, null, cancellationToken);
     }
 
     public Task<IReadOnlyList<CatStaffHoursRow>> GetCatStaffHoursAsync(
@@ -782,7 +783,7 @@ public sealed class DashboardRepository : IDashboardRepository
             ProjectName = r.GetNullableString("ProjectName"),
             ClientName = r.GetNullableString("ClientName"),
             CreatedDate = r.TryGetNullableDateTime("CreatedDate"),
-            IsOnline = r.GetBooleanOrDefault("IsOnline")
+            IsOnline = ProjectWorkStatus.IsInProgress(r.TryGetNullableString("WorkStatus"))
         };
 
     private static DashboardBusinessUnitCount MapBusinessUnitCount(SqlDataReader r) =>

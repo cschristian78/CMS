@@ -15,7 +15,7 @@ function formatHours(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-function reportWorkStatus(project: { workStatus?: string | null; isOnline?: boolean }): string {
+function reportWorkStatus(project: { workStatus?: string | null }): string {
   const text = (project.workStatus ?? '').trim().toLowerCase();
   if (text === 'planned') {
     return 'Planned';
@@ -26,7 +26,7 @@ function reportWorkStatus(project: { workStatus?: string | null; isOnline?: bool
   if (text === 'closed') {
     return 'Closed';
   }
-  return project.isOnline ? 'In Progress' : 'Planned';
+  return 'Planned';
 }
 
 function blank(value: string | null | undefined, fallback = '—'): string {

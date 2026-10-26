@@ -12,10 +12,10 @@ public sealed class HomeSummary
     /// <summary>Sum of latest revenue for all Active clients and Active projects (ignores Main list filters).</summary>
     public double TotalProjectRevenue { get; set; }
 
-    /// <summary>Distinct active projects with <c>tProject.IsOnline = 1</c> (global; ignores list filters).</summary>
+    /// <summary>Distinct active projects whose <c>WorkStatus</c> is In Progress (global; ignores list filters).</summary>
     public int OnlineProjectCount { get; set; }
 
-    /// <summary>Sum of latest revenue for those online active projects.</summary>
+    /// <summary>Sum of latest revenue for those In Progress projects.</summary>
     public double OnlineProjectRevenue { get; set; }
 
     /// <summary>Active project counts grouped by <c>ProjectTypeDescription</c>.</summary>

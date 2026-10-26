@@ -162,7 +162,7 @@ function projectDisplayTitle(project: Pick<ProjectBlock, 'clientName' | 'project
   return client ? `${client} — ${project.projectName}` : project.projectName;
 }
 
-function projectWorkStatus(project: Pick<ProjectBlock, 'workStatus' | 'isOnline'>): string {
+function projectWorkStatus(project: Pick<ProjectBlock, 'workStatus'>): string {
   const text = (project.workStatus ?? '').trim().toLowerCase();
   if (text === 'planned') {
     return 'Planned';
@@ -173,7 +173,7 @@ function projectWorkStatus(project: Pick<ProjectBlock, 'workStatus' | 'isOnline'
   if (text === 'closed') {
     return 'Closed';
   }
-  return project.isOnline ? 'In Progress' : 'Planned';
+  return 'Planned';
 }
 
 function compareProjectsAlpha(a: ProjectBlock, b: ProjectBlock): number {

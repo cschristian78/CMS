@@ -463,7 +463,7 @@ export function onlineLabel(row: DashCell[], col: DashColIndex): string {
   if (text === 'closed') {
     return 'Closed';
   }
-  return cellBool(row, col.isOnline) ? 'In Progress' : 'Planned';
+  return 'Planned';
 }
 
 export function monthKey(ymd: string): string {
@@ -508,9 +508,9 @@ export interface RenewalTimelinePeriod {
   label: string;
   revenue: number;
   renewalCount: number;
-  /** LatestRevenue sum for projects that are Online in the period. */
+  /** LatestRevenue sum for In Progress projects renewing in the period. */
   onlineRevenue: number;
-  /** Distinct Online project count in the period. */
+  /** Distinct In Progress project count in the period. */
   onlineRenewalCount: number;
   minRevenue: number;
   maxRevenue: number;
@@ -564,7 +564,7 @@ function enumeratePeriodKeys(start: string, end: string, grain: TimelineGrain): 
  * Renewal calendar timeline: periods are driven by <c>RenewalDate</c>.
  * Revenue is the sum of <c>LatestRevenue</c> for projects renewing in each period;
  * renewalCount is the distinct project count for that period.
- * Online metrics use <c>ProjectOnline</c> / <c>IsOnline</c>.
+ * In Progress metrics use WorkStatus.
  */
 export function buildRenewalTimeline(
   rows: DashCell[][],
@@ -595,7 +595,7 @@ export function buildRenewalTimeline(
     bucket.ids.add(pid);
     const rev = cellNumber(row, col.latestRevenue);
     bucket.revenues.push(rev);
-    if (cellBool(row, col.isOnline)) {
+    if (onlineLabel(row, col) === 'In Progress') {
       bucket.onlineIds.add(pid);
       bucket.onlineRevenues.push(rev);
     }

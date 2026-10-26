@@ -61,22 +61,14 @@ function findClientIdColumnIndex(columns: string[]): number {
   return findGridColumnIndex(columns, 'ClientID');
 }
 
-function findIsOnlineColumnIndex(columns: string[]): number {
-  const preferred = findGridColumnIndex(columns, 'ProjectOnline');
-  if (preferred >= 0) {
-    return preferred;
-  }
-  return findGridColumnIndex(columns, 'IsOnline');
-}
-
-function isOnlineStatusColumn(columnName: string): boolean {
+function isLegacyOnlineColumn(columnName: string): boolean {
   const n = normalizeColumnName(columnName);
   return n === 'projectonline' || n === 'isonline';
 }
 
 const PROJECT_WORK_STATUSES = ['Planned', 'In Progress', 'Closed'] as const;
 
-function normalizeWorkStatus(value: string, isOnline: boolean): string {
+function normalizeWorkStatus(value: string): string {
   const text = value.trim().toLowerCase();
   if (text === 'planned') {
     return 'Planned';
@@ -87,7 +79,7 @@ function normalizeWorkStatus(value: string, isOnline: boolean): string {
   if (text === 'closed') {
     return 'Closed';
   }
-  return isOnline ? 'In Progress' : 'Planned';
+  return 'Planned';
 }
 
 function nextWorkStatus(current: string): string {
@@ -102,20 +94,6 @@ function nextWorkStatus(current: string): string {
 
 function findWorkStatusColumnIndex(columns: string[]): number {
   return findGridColumnIndex(columns, 'WorkStatus');
-}
-
-function cellIsTruthy(raw: string | number | boolean | null | undefined): boolean {
-  if (typeof raw === 'boolean') {
-    return raw;
-  }
-  if (typeof raw === 'number') {
-    return raw !== 0;
-  }
-  if (typeof raw === 'string') {
-    const t = raw.trim().toLowerCase();
-    return t === '1' || t === 'true' || t === 'yes' || t === 'online' || t === 'y';
-  }
-  return false;
 }
 
 /** Widen key text columns so values stay on one line (table scrolls horizontally). */
@@ -405,9 +383,9 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const initialHomeFilters = useMemo(() => loadHomeListFilters(), []);
   const [filterBusinessUnit, setFilterBusinessUnit] = useState(initialHomeFilters.businessUnit);
   const [filterBusinessClass, setFilterBusinessClass] = useState(initialHomeFilters.businessClass);
-  // Default: All clients + Online (unless a prior Main visit saved something else).
+  // Default: All clients + In Progress (unless a prior Main visit saved something else).
   const [filterStatus, setFilterStatus] = useState(initialHomeFilters.status);
-  /** '' = all, 'Online', or 'Offline' - filters by dbo.tProject.IsOnline. */
+  /** '' = all project statuses, otherwise Planned, In Progress, or Closed. */
   const [filterOnline, setFilterOnline] = useState(initialHomeFilters.online);
   const [clientNameSearch, setClientNameSearch] = useState(initialHomeFilters.client);
   // ProjectType filter is sourced from unique PTDescription values in dbo.vProject_Current.
@@ -582,13 +560,6 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     return findClientIdColumnIndex(list.columns);
   }, [list?.columns]);
 
-  const isOnlineColumnIndex = useMemo(() => {
-    if (!list?.columns?.length) {
-      return -1;
-    }
-    return findIsOnlineColumnIndex(list.columns);
-  }, [list?.columns]);
-
   const workStatusColumnIndex = useMemo(() => {
     if (!list?.columns?.length) {
       return -1;
@@ -596,14 +567,14 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
     return findWorkStatusColumnIndex(list.columns);
   }, [list?.columns]);
 
-  /** Data columns shown in the grid (online flags are the leading green-dot; IDs and service pivots stay in the payload). */
+  /** Data columns shown in the grid. The leading dot is In Progress; IDs and service pivots stay in the payload. */
   const visibleColumnIndexes = useMemo(() => {
     if (!list?.columns?.length) {
       return [] as number[];
     }
     return list.columns
       .map((c, i) => ({ c, i }))
-      .filter(({ c }) => !isOnlineStatusColumn(c) && !isHomeProjectListHiddenColumn(c))
+      .filter(({ c }) => !isLegacyOnlineColumn(c) && !isHomeProjectListHiddenColumn(c))
       .map(({ i }) => i);
   }, [list?.columns]);
 
@@ -822,9 +793,6 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               return row;
             }
             const next = [...row];
-            if (isOnlineColumnIndex >= 0) {
-              next[isOnlineColumnIndex] = saved === 'In Progress';
-            }
             if (workStatusColumnIndex >= 0) {
               next[workStatusColumnIndex] = saved;
             }
@@ -838,7 +806,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         flash('error', err instanceof ApiError ? err.message : 'Could not update project status.');
       }
     },
-    [flash, isOnlineColumnIndex, projectIdColumnIndex, workStatusColumnIndex],
+    [flash, projectIdColumnIndex, workStatusColumnIndex],
   );
 
   const runHomeProjectReport = useCallback(
@@ -1184,7 +1152,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
             ref={homeFilterBarRef}
             className="dashboard-tabular-filters dashboard-tabular-filters--home"
             role="search"
-            aria-label="Client project list filters by business unit, business class, client status, online status, client, project type, and analytics lead"
+            aria-label="Client project list filters by business unit, business class, client status, project status, client, project type, and analytics lead"
           >
             <div className="home-filter-fields">
             <div className="dashboard-filter-field dashboard-filter-field--bu">
@@ -1416,10 +1384,6 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                   {displayRows.map((row, ri) => {
                     const rowProjectId =
                       projectIdColumnIndex >= 0 ? parseProjectIdFromRow(row, projectIdColumnIndex) : null;
-                    const fromOnline =
-                      isOnlineColumnIndex >= 0 && isOnlineColumnIndex < row.length ?
-                        cellIsTruthy(row[isOnlineColumnIndex])
-                      : false;
                     const fromStatus =
                       workStatusColumnIndex >= 0 && workStatusColumnIndex < row.length ?
                         String(row[workStatusColumnIndex] ?? '')
@@ -1427,8 +1391,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                     const workStatus =
                       rowProjectId !== null && Object.prototype.hasOwnProperty.call(workStatusOverrides, rowProjectId) ?
                         workStatusOverrides[rowProjectId]
-                      : normalizeWorkStatus(fromStatus, fromOnline);
-                    const isOnline = workStatus === 'In Progress';
+                      : normalizeWorkStatus(fromStatus);
+                    const inProgress = workStatus === 'In Progress';
                     const rowKey =
                       rowProjectId !== null ? `project-${rowProjectId}` : `row-${ri}-${String(row[0] ?? '')}`;
                     return (
@@ -1458,10 +1422,9 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                           type="button"
                           className={
                             'home-online-dot' +
-                            (isOnline ? ' home-online-dot--on' : ' home-online-dot--off')
+                            (inProgress ? ' home-online-dot--on' : ' home-online-dot--off')
                           }
                           disabled={rowProjectId === null}
-                          aria-pressed={isOnline}
                           aria-label={`${workStatus}. Click to change project status.`}
                           title={`${workStatus}. Click to change.`}
                           onClick={(e) => {

@@ -338,12 +338,9 @@ async function loadProjectReportInput(projectId: number): Promise<{
       projectTypeCode,
       userGroup: groupOptions.find((o) => o.value === String(ugid))?.text ?? (ugid > 0 ? `User Group ${ugid}` : ''),
       status: statusOptions.find((o) => o.value === String(form.statusID ?? ''))?.text ?? '',
-      isOnline: !!form.isOnline,
       workStatus:
         typeof form.workStatus === 'string' && form.workStatus.trim() ?
           form.workStatus
-        : form.isOnline ?
-          'In Progress'
         : 'Planned',
       renewalDate: form.renewalDate,
       dueDate: form.dueDate,

@@ -1,5 +1,5 @@
--- Adds IsOnline to dbo.tProject and refreshes vProject_Current so the home grid
--- can show a green "online / in progress" indicator. Safe to re-run.
+-- Legacy bit kept equal to WorkStatus = In Progress. Project status is WorkStatus.
+-- The green indicator is In Progress, not a separate Online / Offline tag. Safe to re-run.
 CREATE OR ALTER PROCEDURE dbo.usp_AlterTable_tProject_AddIsOnline
 AS
 BEGIN

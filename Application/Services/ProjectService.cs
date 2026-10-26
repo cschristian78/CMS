@@ -187,8 +187,7 @@ public sealed class ProjectService : IProjectService
             RenewalDate = model.RenewalDate,
             DueDate = model.DueDate,
             StatusID = model.StatusID > 0 ? model.StatusID : 1,
-            WorkStatus = ProjectWorkStatus.Normalize(model.WorkStatus, model.IsOnline),
-            IsOnline = ProjectWorkStatus.IsInProgress(ProjectWorkStatus.Normalize(model.WorkStatus, model.IsOnline)),
+            WorkStatus = ProjectWorkStatus.Normalize(model.WorkStatus),
             IsFeeBasedRevenue = model.IsFeeBasedRevenue
         };
 
@@ -300,28 +299,24 @@ public sealed class ProjectService : IProjectService
         return result;
     }
 
-    public Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default) =>
-        SetWorkStatusAsync(projectId, isOnline ? ProjectWorkStatus.InProgress : ProjectWorkStatus.Closed, cancellationToken);
-
     public async Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default)
     {
         var status = ProjectWorkStatus.Normalize(workStatus);
         await _projects.SetWorkStatusAsync(projectId, status, cancellationToken);
-        var isOnline = ProjectWorkStatus.IsInProgress(status);
         try
         {
             await _admin.LogActivityAsync(
                 ProjectEntityType,
                 projectId,
-                "OnlineChange",
-                nameof(Project.IsOnline),
-                (!isOnline).ToString(),
-                isOnline.ToString(),
+                "WorkStatusChange",
+                nameof(Project.WorkStatus),
+                null,
+                status,
                 cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Activity log write failed for OnlineChange of ProjectID {ProjectID}.", projectId);
+            _logger?.LogWarning(ex, "Activity log write failed for WorkStatusChange of ProjectID {ProjectID}.", projectId);
         }
 
         await RefreshHomeListAsync(cancellationToken);

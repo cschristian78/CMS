@@ -113,7 +113,7 @@ interface ProjectFormModel {
   statusID: number;
   /** Planned, In Progress, or Closed. Green icon when In Progress. */
   workStatus?: string;
-  /** When true, project is In Progress (green-dot on Home). */
+  /** Derived from work status. The green icon follows In Progress. */
   isOnline?: boolean;
   /** When true, project revenue is fee-based. */
   isFeeBasedRevenue?: boolean;
@@ -3683,7 +3683,7 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   <span
                     className={
                       'home-online-dot' +
-                      ((model.workStatus ?? (model.isOnline ? 'In Progress' : 'Planned')) === 'In Progress' ?
+                      ((model.workStatus === 'In Progress') ?
                         ' home-online-dot--on'
                       : ' home-online-dot--off')
                     }
@@ -3694,11 +3694,11 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   </label>
                   <select
                     id="workStatus"
-                    value={model.workStatus ?? (model.isOnline ? 'In Progress' : 'Planned')}
+                    value={model.workStatus === 'In Progress' || model.workStatus === 'Closed' ? model.workStatus : 'Planned'}
                     onChange={(e) => {
-                      const previous = model.workStatus ?? (model.isOnline ? 'In Progress' : 'Planned');
+                      const previous = model.workStatus === 'In Progress' || model.workStatus === 'Closed' ? model.workStatus : 'Planned';
                       const next = e.target.value;
-                      setModel({ ...model, workStatus: next, isOnline: next === 'In Progress' });
+                      setModel({ ...model, workStatus: next });
                       if (isEdit && projectId !== undefined) {
                         void (async () => {
                           try {
@@ -3711,7 +3711,6 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                             setModel({
                               ...model,
                               workStatus: previous,
-                              isOnline: previous === 'In Progress',
                             });
                             flash(
                               'error',

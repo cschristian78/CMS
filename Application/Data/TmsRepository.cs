@@ -117,9 +117,7 @@ public sealed class TmsRepository : ITmsRepository
                 pr.ProjectRefID,
                 ISNULL(p.ProjectName, N'') AS ProjectName,
                 c.ClientName,
-                CAST(ISNULL(p.IsOnline, 0) AS BIT) AS IsOnline,
-                ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''),
-                    CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) AS WorkStatus
+                ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') AS WorkStatus
               FROM dbo.tUserGroupRef AS ugr
               INNER JOIN dbo.tProjectRef AS pr
                 ON pr.UserGroupID = ugr.UserGroupID
@@ -130,7 +128,7 @@ public sealed class TmsRepository : ITmsRepository
               LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
               LEFT JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
              WHERE ugr.UserID = @UserID
-             ORDER BY CASE ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END)
+             ORDER BY CASE ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned')
                           WHEN N'In Progress' THEN 0 WHEN N'Planned' THEN 1 ELSE 2 END,
                       c.ClientName, ProjectName, p.ProjectID;
             """;
@@ -143,8 +141,8 @@ public sealed class TmsRepository : ITmsRepository
                 ProjectRefID = r.GetInt32OrDefault("ProjectRefID"),
                 ProjectName = r.TryGetNullableString("ProjectName") ?? string.Empty,
                 ClientName = r.TryGetNullableString("ClientName"),
-                IsOnline = r.TryGetNullableBoolean("IsOnline") ?? false,
-                WorkStatus = ProjectWorkStatus.Normalize(r.TryGetNullableString("WorkStatus"), r.TryGetNullableBoolean("IsOnline") ?? false),
+                WorkStatus = ProjectWorkStatus.Normalize(r.TryGetNullableString("WorkStatus")),
+                IsOnline = ProjectWorkStatus.IsInProgress(r.TryGetNullableString("WorkStatus")),
             },
             [SqlParameterFactory.Int("@UserID", userId)],
             cancellationToken);

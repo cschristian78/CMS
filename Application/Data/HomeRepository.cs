@@ -87,8 +87,8 @@ public sealed class HomeRepository : IHomeRepository
             : new { UniqueClientCount = 0, DistinctProjectCount = 0, TotalProjectRevenue = 0d };
 
         // Total Revenue tile: sum latest revenue for ALL Active projects (Active client + Active
-        // project). Intentionally ignores Main list filters (including Online) so the tile is not
-        // reduced when Online defaults to "Online".
+        // project). Intentionally ignores Main list filters so the tile is not
+        // reduced when the list defaults to In Progress.
         const string totalRevenueSql = """
             SELECT CAST(ISNULL(SUM(perProject.LatestRevenue), 0) AS float) AS TotalProjectRevenue
             FROM (
@@ -112,7 +112,7 @@ public sealed class HomeRepository : IHomeRepository
 
         var totalProjectRevenue = totalRevenueRows.Count > 0 ? totalRevenueRows[0] : 0d;
 
-        // Same universe as Total Revenue / Online tiles:
+        // Same universe as Total Revenue / In Progress tiles:
         // distinct Active projects in dbo.vProject_Current (Active client + Active project).
         const string activeProjectCountSql = """
             SELECT CAST(COUNT(DISTINCT v.ProjectID) AS int) AS ActiveProjectCount
@@ -130,8 +130,8 @@ public sealed class HomeRepository : IHomeRepository
 
         var activeProjectCount = activeProjectCountRows.Count > 0 ? activeProjectCountRows[0] : 0;
 
-        // Global online roll-ups (same Active client/project scope as revenue; ignore list filters
-        // so the Online Projects tile is not zeroed by the Online/Offline dropdown).
+        // In Progress roll-ups (same Active client/project scope as revenue; ignore list filters
+        // so the In Progress tile is not limited to the project-status dropdown).
         const string onlineTotalsSql = """
             SELECT
                 CAST((

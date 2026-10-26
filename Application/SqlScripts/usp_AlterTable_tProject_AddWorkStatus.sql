@@ -8,7 +8,7 @@
       RenewalDate today                   -> In Progress
       otherwise                           -> Planned
 
-    IsOnline stays in sync: 1 only when WorkStatus is In Progress.
+    IsOnline is not a status. It is kept equal to 1 only when WorkStatus is In Progress.
     The application also applies this on startup.
 */
 SET NOCOUNT ON;

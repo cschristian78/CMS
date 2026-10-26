@@ -98,10 +98,7 @@ public interface IProjectRepository
         string blobUrl,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
-    Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
-
-    /// <summary>Sets Planned, In Progress, or Closed and keeps <c>IsOnline</c> in sync.</summary>
+    /// <summary>Sets Planned, In Progress, or Closed. The legacy online bit is kept equal to In Progress.</summary>
     Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default);
 
     /// <summary>Adds <c>WorkStatus</c> and backfills existing projects once.</summary>
