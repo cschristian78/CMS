@@ -3944,8 +3944,10 @@ button.home-online-dot.home-online-dot--on {
     margin-left: auto;
 }
 
-.project-number-with-online .project-online-toggle input[type='checkbox'] {
+.project-number-with-online .project-online-toggle input[type='checkbox'],
+.project-online-toggle select#workStatus {
     width: auto;
+    min-width: 9.5rem;
 }
 
 /* Home client/project grid: keep cell values on one line; scroll horizontally in the wrap */
@@ -4487,24 +4489,6 @@ button.home-online-dot.home-online-dot--on {
     justify-content: space-between;
     gap: 0.75rem;
     width: 100%;
-}
-
-.admin-user-bio-link {
-    margin-left: auto;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--accent, #f08700);
-    font: inherit;
-    font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 0.15em;
-    cursor: pointer;
-}
-
-.admin-user-bio-link:hover,
-.admin-user-bio-link:focus-visible {
-    color: var(--accent-dim, #b86500);
 }
 
 .home-modal-dialog.admin-user-bio-dialog {

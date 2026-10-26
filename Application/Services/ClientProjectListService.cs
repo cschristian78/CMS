@@ -28,7 +28,7 @@ public sealed class ClientProjectListService : IClientProjectListService
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default)
     {
@@ -43,7 +43,7 @@ public sealed class ClientProjectListService : IClientProjectListService
             clientNameSearch,
             businessClassName,
             projectTypeName,
-            isOnline,
+            workStatus,
             analyticsLeadNames,
             cancellationToken);
 

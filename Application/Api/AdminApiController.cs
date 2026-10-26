@@ -68,12 +68,28 @@ public sealed class AdminApiController : ControllerBase
             return Ok(new { message = "User saved.", userId = effectiveId });
         });
 
+    [HttpPost("users/{userId:int}/bio")]
+    public Task<ActionResult> SaveUserBioAsync(int userId, [FromBody] SaveUserBioRequest body, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            await _adminService.SaveUserBioAsync(userId, body?.Bio, cancellationToken);
+            return Ok(new { message = "Bio saved." });
+        });
+
     [HttpPost("users/{userId:int}/soft-delete")]
     public Task<ActionResult> SoftDeleteUserAsync(int userId, CancellationToken cancellationToken)
         => RunAsync(async () =>
         {
             await _adminService.SoftDeleteUserAsync(userId, cancellationToken);
             return Ok(new { message = "User soft-deleted." });
+        });
+
+    [HttpPost("users/{userId:int}/delete")]
+    public Task<ActionResult> DeleteUserAsync(int userId, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            await _adminService.DeleteUserAsync(userId, cancellationToken);
+            return Ok(new { message = "User deleted." });
         });
 
     [HttpPost("users/{userId:int}/restore")]
@@ -593,6 +609,11 @@ public sealed class AdminApiController : ControllerBase
         _environment.IsDevelopment()
             ? ex.Message
             : "The operation could not be completed. Please try again or contact support.";
+
+    public sealed class SaveUserBioRequest
+    {
+        public string? Bio { get; set; }
+    }
 
     private async Task<ActionResult> RunAsync(Func<Task<ActionResult>> operation)
     {

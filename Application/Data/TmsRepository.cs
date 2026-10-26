@@ -6,10 +6,12 @@ namespace ClientManagementSystem.Data;
 public sealed class TmsRepository : ITmsRepository
 {
     private readonly IDbExecutor _db;
+    private readonly IProjectRepository _projects;
 
-    public TmsRepository(IDbExecutor db)
+    public TmsRepository(IDbExecutor db, IProjectRepository projects)
     {
         _db = db;
+        _projects = projects;
     }
 
     public async Task EnsureUserTimeEntrySchemaAsync(CancellationToken cancellationToken = default)
@@ -104,17 +106,20 @@ public sealed class TmsRepository : ITmsRepository
             cancellationToken: cancellationToken);
     }
 
-    public Task<IReadOnlyList<TmsUserProject>> ListProjectsForUserAsync(
+    public async Task<IReadOnlyList<TmsUserProject>> ListProjectsForUserAsync(
         int userId,
         CancellationToken cancellationToken = default)
     {
+        await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         const string sql = """
             SELECT DISTINCT
                 p.ProjectID,
                 pr.ProjectRefID,
                 ISNULL(p.ProjectName, N'') AS ProjectName,
                 c.ClientName,
-                CAST(ISNULL(p.IsOnline, 0) AS BIT) AS IsOnline
+                CAST(ISNULL(p.IsOnline, 0) AS BIT) AS IsOnline,
+                ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''),
+                    CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) AS WorkStatus
               FROM dbo.tUserGroupRef AS ugr
               INNER JOIN dbo.tProjectRef AS pr
                 ON pr.UserGroupID = ugr.UserGroupID
@@ -125,10 +130,12 @@ public sealed class TmsRepository : ITmsRepository
               LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
               LEFT JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
              WHERE ugr.UserID = @UserID
-             ORDER BY IsOnline DESC, c.ClientName, ProjectName, p.ProjectID;
+             ORDER BY CASE ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END)
+                          WHEN N'In Progress' THEN 0 WHEN N'Planned' THEN 1 ELSE 2 END,
+                      c.ClientName, ProjectName, p.ProjectID;
             """;
 
-        return _db.QueryTextAsync(
+        return await _db.QueryTextAsync(
             sql,
             static r => new TmsUserProject
             {
@@ -137,6 +144,7 @@ public sealed class TmsRepository : ITmsRepository
                 ProjectName = r.TryGetNullableString("ProjectName") ?? string.Empty,
                 ClientName = r.TryGetNullableString("ClientName"),
                 IsOnline = r.TryGetNullableBoolean("IsOnline") ?? false,
+                WorkStatus = ProjectWorkStatus.Normalize(r.TryGetNullableString("WorkStatus"), r.TryGetNullableBoolean("IsOnline") ?? false),
             },
             [SqlParameterFactory.Int("@UserID", userId)],
             cancellationToken);

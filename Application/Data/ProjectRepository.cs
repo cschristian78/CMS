@@ -19,6 +19,7 @@ public sealed class ProjectRepository : IProjectRepository
             p.ModifiedDate,
             IsDeleted = CAST(CASE WHEN p.IsActive = 0 THEN 1 ELSE 0 END AS BIT),
             IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
+            WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END),
             IsFeeBasedRevenue = CAST(ISNULL(p.IsFeeBasedRevenue, 0) AS BIT),
             c.ClientID,
             c.ClientName,
@@ -148,11 +149,17 @@ public sealed class ProjectRepository : IProjectRepository
         return projectId;
     }
 
-    public async Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default)
+    public Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default) =>
+        SetWorkStatusAsync(projectId, isOnline ? ProjectWorkStatus.InProgress : ProjectWorkStatus.Closed, cancellationToken);
+
+    public async Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default)
     {
+        await EnsureProjectWorkStatusSchemaAsync(cancellationToken);
+        var status = ProjectWorkStatus.Normalize(workStatus);
         const string sql = """
             UPDATE dbo.tProject
-               SET IsOnline = @IsOnline,
+               SET WorkStatus = @WorkStatus,
+                   IsOnline = CASE WHEN @WorkStatus = N'In Progress' THEN 1 ELSE 0 END,
                    ModifiedDate = SYSUTCDATETIME()
              WHERE ProjectID = @ProjectID;
             """;
@@ -160,7 +167,7 @@ public sealed class ProjectRepository : IProjectRepository
         await _db.ExecuteTextAsync(sql,
         [
             SqlParameterFactory.Int("@ProjectID", projectId),
-            SqlParameterFactory.Bit("@IsOnline", isOnline)
+            SqlParameterFactory.VarChar("@WorkStatus", 20, status)
         ], cancellationToken);
     }
 
@@ -382,7 +389,7 @@ public sealed class ProjectRepository : IProjectRepository
                 cancellationToken);
 
             await SyncProjectActiveFromStatusAsync(connection, tx, projectId, statusId, cancellationToken);
-            await SyncProjectOnlineAsync(connection, tx, projectId, project.IsOnline, cancellationToken);
+            await SyncProjectOnlineAsync(connection, tx, projectId, project.WorkStatus, project.IsOnline, cancellationToken);
             await SyncProjectFeeBasedRevenueAsync(connection, tx, projectId, project.IsFeeBasedRevenue, cancellationToken);
 
             await ExecuteTextAsync(connection, tx,
@@ -813,6 +820,120 @@ public sealed class ProjectRepository : IProjectRepository
             SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
         ], cancellationToken);
         return noteId;
+    }
+
+    private static readonly SemaphoreSlim WorkStatusSchemaGate = new(1, 1);
+
+    public async Task EnsureProjectWorkStatusSchemaAsync(CancellationToken cancellationToken = default)
+    {
+        // SQL Server compiles a batch before it runs. The ADD COLUMN and any
+        // statement that names WorkStatus must be separate commands, or the
+        // backfill fails with "Invalid column name 'WorkStatus'" and the column
+        // is never created.
+        await WorkStatusSchemaGate.WaitAsync(cancellationToken);
+        try
+        {
+            const string readySql = """
+                SELECT CASE
+                    WHEN OBJECT_ID(N'dbo.tProject', N'U') IS NULL THEN 1
+                    WHEN COL_LENGTH(N'dbo.tProject', N'WorkStatus') IS NOT NULL
+                     AND EXISTS (
+                            SELECT 1
+                              FROM sys.check_constraints
+                             WHERE name = N'CK_tProject_WorkStatus'
+                               AND parent_object_id = OBJECT_ID(N'dbo.tProject')
+                         ) THEN 1
+                    ELSE 0
+                END;
+                """;
+
+            var ready = await _db.QueryTextAsync(readySql, static r => r.GetInt32(0), null, cancellationToken);
+            if (ready.Count > 0 && ready[0] == 1)
+            {
+                return;
+            }
+
+            const string addColumnSql = """
+                IF OBJECT_ID(N'dbo.tProject', N'U') IS NULL
+                    RETURN;
+
+                IF COL_LENGTH(N'dbo.tProject', N'WorkStatus') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.tProject ADD WorkStatus VARCHAR(20) NULL;
+                END;
+                """;
+
+            await _db.ExecuteTextAsync(addColumnSql, cancellationToken: cancellationToken);
+
+            const string backfillSql = """
+                IF OBJECT_ID(N'dbo.tProject', N'U') IS NULL
+                    OR COL_LENGTH(N'dbo.tProject', N'WorkStatus') IS NULL
+                    RETURN;
+
+                UPDATE dbo.tProject
+                   SET WorkStatus = CASE
+                           WHEN ISNULL(IsOnline, 0) = 1 THEN N'In Progress'
+                           WHEN RenewalDate > CAST(SYSDATETIME() AS date) THEN N'Planned'
+                           WHEN RenewalDate < CAST(SYSDATETIME() AS date) THEN N'Closed'
+                           WHEN RenewalDate = CAST(SYSDATETIME() AS date) THEN N'In Progress'
+                           ELSE N'Planned'
+                       END
+                 WHERE WorkStatus IS NULL
+                    OR LTRIM(RTRIM(WorkStatus)) = N'';
+
+                UPDATE dbo.tProject
+                   SET IsOnline = CASE WHEN WorkStatus = N'In Progress' THEN 1 ELSE 0 END
+                 WHERE ISNULL(IsOnline, 0) <> CASE WHEN WorkStatus = N'In Progress' THEN 1 ELSE 0 END;
+                """;
+
+            await _db.ExecuteTextAsync(backfillSql, cancellationToken: cancellationToken);
+
+            const string constraintsSql = """
+                IF OBJECT_ID(N'dbo.tProject', N'U') IS NULL
+                    OR COL_LENGTH(N'dbo.tProject', N'WorkStatus') IS NULL
+                    RETURN;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                      FROM sys.default_constraints
+                     WHERE name = N'DF_tProject_WorkStatus'
+                       AND parent_object_id = OBJECT_ID(N'dbo.tProject')
+                )
+                BEGIN
+                    ALTER TABLE dbo.tProject
+                        ADD CONSTRAINT DF_tProject_WorkStatus DEFAULT (N'Planned') FOR WorkStatus;
+                END;
+
+                IF EXISTS (
+                    SELECT 1
+                      FROM sys.columns
+                     WHERE object_id = OBJECT_ID(N'dbo.tProject')
+                       AND name = N'WorkStatus'
+                       AND is_nullable = 1
+                )
+                BEGIN
+                    ALTER TABLE dbo.tProject ALTER COLUMN WorkStatus VARCHAR(20) NOT NULL;
+                END;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                      FROM sys.check_constraints
+                     WHERE name = N'CK_tProject_WorkStatus'
+                       AND parent_object_id = OBJECT_ID(N'dbo.tProject')
+                )
+                BEGIN
+                    ALTER TABLE dbo.tProject
+                        ADD CONSTRAINT CK_tProject_WorkStatus
+                        CHECK (WorkStatus IN (N'Planned', N'In Progress', N'Closed'));
+                END;
+                """;
+
+            await _db.ExecuteTextAsync(constraintsSql, cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            WorkStatusSchemaGate.Release();
+        }
     }
 
     public async Task EnsureProjectFeeBasedRevenueSchemaAsync(CancellationToken cancellationToken = default)
@@ -1851,6 +1972,7 @@ public sealed class ProjectRepository : IProjectRepository
 
     private async Task<Project?> QueryProjectAsync(int projectId, CancellationToken cancellationToken)
     {
+        await EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         var sql = ProjectSelectSql + " WHERE p.ProjectID = @ProjectID;";
         var rows = await _db.QueryTextAsync(sql, MapProject,
         [
@@ -2010,19 +2132,22 @@ public sealed class ProjectRepository : IProjectRepository
         SqlConnection connection,
         SqlTransaction tx,
         int projectId,
+        string? workStatus,
         bool isOnline,
         CancellationToken cancellationToken)
     {
+        var status = ProjectWorkStatus.Normalize(workStatus, isOnline);
         await ExecuteTextAsync(connection, tx,
             """
             UPDATE dbo.tProject
-               SET IsOnline = @IsOnline,
+               SET WorkStatus = @WorkStatus,
+                   IsOnline = CASE WHEN @WorkStatus = N'In Progress' THEN 1 ELSE 0 END,
                    ModifiedDate = SYSUTCDATETIME()
              WHERE ProjectID = @ProjectID;
             """,
         [
             SqlParameterFactory.Int("@ProjectID", projectId),
-            SqlParameterFactory.Bit("@IsOnline", isOnline)
+            SqlParameterFactory.VarChar("@WorkStatus", 20, status)
         ], cancellationToken);
     }
 
@@ -2257,6 +2382,7 @@ public sealed class ProjectRepository : IProjectRepository
         StatusCode = r.TryGetNullableString("StatusCode"),
         StatusDescription = r.TryGetNullableString("StatusDescription"),
         IsOnline = r.TryGetNullableBoolean("IsOnline") ?? false,
+        WorkStatus = ProjectWorkStatus.Normalize(r.TryGetNullableString("WorkStatus"), r.TryGetNullableBoolean("IsOnline") ?? false),
         IsFeeBasedRevenue = r.TryGetNullableBoolean("IsFeeBasedRevenue") ?? false,
         IsDeleted = r.TryGetNullableBoolean("IsDeleted") ?? false,
         CreatedDate = r.TryGetNullableDateTime("CreatedDate"),

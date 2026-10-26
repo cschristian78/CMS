@@ -14,10 +14,12 @@ public sealed class HomeRepository : IHomeRepository
         """;
 
     private readonly IDbExecutor _db;
+    private readonly IProjectRepository _projects;
 
-    public HomeRepository(IDbExecutor db)
+    public HomeRepository(IDbExecutor db, IProjectRepository projects)
     {
         _db = db;
+        _projects = projects;
     }
 
     public async Task<HomeSummary> GetHomeSummaryAsync(
@@ -26,10 +28,11 @@ public sealed class HomeRepository : IHomeRepository
         string? clientNameSearch = null,
         string? businessClassName = null,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default)
     {
+        await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         var totalsSql = new StringBuilder(
             """
             WITH filtered AS (
@@ -50,7 +53,7 @@ public sealed class HomeRepository : IHomeRepository
             clientNameSearch,
             businessClassName,
             projectTypeName,
-            isOnline,
+            workStatus,
             analyticsLeadNames: analyticsLeadNames);
 
         totalsSql.Append(
@@ -136,7 +139,7 @@ public sealed class HomeRepository : IHomeRepository
                     FROM dbo.vProject_Current AS v
                     INNER JOIN dbo.tProject AS p ON p.ProjectID = v.ProjectID
                     WHERE v.ProjectID IS NOT NULL
-                      AND ISNULL(p.IsOnline, 0) = 1
+                      AND p.WorkStatus = N'In Progress'
                       AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
                       AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
                 ) AS int) AS OnlineProjectCount,
@@ -145,7 +148,7 @@ public sealed class HomeRepository : IHomeRepository
                     FROM dbo.vProject_Current AS v
                     INNER JOIN dbo.tProject AS p ON p.ProjectID = v.ProjectID
                     WHERE v.ProjectID IS NOT NULL
-                      AND ISNULL(p.IsOnline, 0) = 1
+                      AND p.WorkStatus = N'In Progress'
                       AND v.LatestRevenue IS NOT NULL
                       AND LTRIM(RTRIM(CAST(v.[StatusDescription] AS NVARCHAR(50)))) = N'Active'
                       AND LTRIM(RTRIM(CAST(v.[ProjectStatus] AS NVARCHAR(50)))) = N'Active'
@@ -187,7 +190,7 @@ public sealed class HomeRepository : IHomeRepository
             clientNameSearch,
             businessClassName,
             projectTypeName,
-            isOnline,
+            workStatus,
             analyticsLeadNames: analyticsLeadNames);
 
         byTypeSql.Append(

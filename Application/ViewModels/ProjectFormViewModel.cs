@@ -76,8 +76,11 @@ public sealed class ProjectFormViewModel : IJsonOnDeserialized
     [Display(Name = "Status")]
     public int StatusID { get; set; }
 
-    /// <summary>When true, the project is Online / currently in progress (green-dot on Home).</summary>
-    [Display(Name = "Online")]
+    /// <summary>Planned, In Progress, or Closed.</summary>
+    [Display(Name = "Project status")]
+    public string WorkStatus { get; set; } = ProjectWorkStatus.Planned;
+
+    /// <summary>True when <see cref="WorkStatus"/> is In Progress (green icon).</summary>
     public bool IsOnline { get; set; }
 
     /// <summary>When true, project revenue is fee-based.</summary>

@@ -24,6 +24,9 @@ public interface IProjectService
     /// <summary>Sets whether the project is Online / currently in progress.</summary>
     Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets Planned, In Progress, or Closed.</summary>
+    Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<SelectListItem>> GetUserGroupSelectListForClientAsync(int clientId, CancellationToken cancellationToken = default);
 
     /// <summary>Active services from <c>dbo.tService</c> joined to <c>dbo.tServiceCategory</c>

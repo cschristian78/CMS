@@ -25,6 +25,9 @@ export function clientProjectListColumnHeaderForDisplay(columnName: string): str
   if (compact === 'businessclassname') {
     return 'Business Class';
   }
+  if (compact === 'workstatus') {
+    return 'Project status';
+  }
   return columnName;
 }
 

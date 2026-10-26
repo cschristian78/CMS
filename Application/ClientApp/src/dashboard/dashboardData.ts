@@ -33,6 +33,7 @@ export interface DashColIndex {
   projectStatus: number;
   ptDescription: number;
   isOnline: number;
+  workStatus: number;
   revenueTier: number;
   latestRevenue: number;
   latestRevenueDate: number;
@@ -116,6 +117,7 @@ export function buildColIndex(columns: string[]): DashColIndex {
     projectStatus: findDashColumn(columns, 'ProjectStatus'),
     ptDescription: findDashColumn(columns, 'PTDescription'),
     isOnline,
+    workStatus: findDashColumn(columns, 'WorkStatus'),
     revenueTier: findDashColumn(columns, 'RevenueTier'),
     latestRevenue: findDashColumn(columns, 'LatestRevenue', 'RevenueAmount'),
     latestRevenueDate: findDashColumn(columns, 'LatestRevenueEffectiveDate'),
@@ -451,7 +453,17 @@ export function groupMetrics(
 }
 
 export function onlineLabel(row: DashCell[], col: DashColIndex): string {
-  return cellBool(row, col.isOnline) ? 'Online' : 'Offline';
+  const text = cellText(row, col.workStatus).trim().toLowerCase();
+  if (text === 'planned') {
+    return 'Planned';
+  }
+  if (text === 'in progress' || text === 'inprogress' || text === 'online') {
+    return 'In Progress';
+  }
+  if (text === 'closed') {
+    return 'Closed';
+  }
+  return cellBool(row, col.isOnline) ? 'In Progress' : 'Planned';
 }
 
 export function monthKey(ymd: string): string {

@@ -394,20 +394,20 @@ export function DashboardRevenueRenewalTimeline({
     ? [
         ['Period', selected.label],
         ['Projects', formatNumber(selected.renewalCount)],
-        ['Online projects', formatNumber(selected.onlineRenewalCount)],
+        ['In Progress projects', formatNumber(selected.onlineRenewalCount)],
         ['% of projects', formatPercent(selected.renewalCount, totalRenewalCount)],
         ['Total revenue', formatUsd(selected.revenue)],
-        ['Online revenue', formatUsd(selected.onlineRevenue)],
+        ['In Progress revenue', formatUsd(selected.onlineRevenue)],
         ['% of revenue', formatPercent(selected.revenue, totalRevenue)],
         ['Min revenue', formatUsd(selected.minRevenue)],
         ['Max revenue', formatUsd(selected.maxRevenue)],
         ['Average revenue', formatUsd(selected.avgRevenue)],
         [
-          'Online share (projects)',
+          'In Progress share (projects)',
           formatPercent(selected.onlineRenewalCount, selected.renewalCount),
         ],
         [
-          'Online share (revenue)',
+          'In Progress share (revenue)',
           formatPercent(selected.onlineRevenue, selected.revenue),
         ],
       ]
@@ -550,8 +550,8 @@ export function DashboardRevenueRenewalTimeline({
                 </tbody>
               </table>
               <p className="field-help pm-timeline-online-totals">
-                Across timeline: {formatNumber(totalOnlineCount)} online projects ·{' '}
-                {formatUsdThousands(totalOnlineRevenue)} online revenue ($000)
+                Across timeline: {formatNumber(totalOnlineCount)} in progress projects ·{' '}
+                {formatUsdThousands(totalOnlineRevenue)} in progress revenue ($000)
               </p>
             </aside>
           : null}

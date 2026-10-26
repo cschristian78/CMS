@@ -505,11 +505,12 @@ function PortfolioTab({
 }) {
   const byType = groupMetrics(rows, col, col.ptDescription, '(No type)');
   const byClientStatus = groupMetrics(rows, col, col.statusDescription, '(No status)');
-  const onlineMetrics = ['Online', 'Offline'].map((label) => ({
+  const workStatuses = ['Planned', 'In Progress', 'Closed'] as const;
+  const onlineMetrics = workStatuses.map((label) => ({
     label,
     count: rows.filter((r) => onlineLabel(r, col) === label).length,
   }));
-  const crossed = ['Online', 'Offline'].flatMap((on) =>
+  const crossed = workStatuses.flatMap((on) =>
     groupMetrics(rows.filter((r) => onlineLabel(r, col) === on), col, col.projectStatus, 'Active').map((m) => ({
       label: `${on} Â· ${m.label}`,
       value: m.count,
@@ -544,16 +545,24 @@ function PortfolioTab({
           onSelect={(item) => onDrill(`Client status ${item.label}`, rows.filter((r) => blankLabel(cellText(r, col.statusDescription), '(No status)') === item.label))}
         />
         <DashboardDonutChart
-          title="In-Progress vs Offline"
-          ariaLabel="Count of projects by IsOnline"
-          items={onlineMetrics.map((m) => ({ label: m.label, value: m.count, fill: m.label === 'Online' ? '#30d880' : '#5a7080' }))}
+          title="Project status"
+          ariaLabel="Count of projects by Planned, In Progress, and Closed"
+          items={onlineMetrics.map((m) => ({
+            label: m.label,
+            value: m.count,
+            fill: m.label === 'In Progress' ? '#30d880' : m.label === 'Planned' ? '#3d8bfd' : '#5a7080',
+          }))}
           onSelect={(label) => onDrill(label, rows.filter((r) => onlineLabel(r, col) === label))}
         />
         <DashboardBarChart
-          title="Online / Offline Ã— Project Status"
-          ariaLabel="IsOnline crossed with ProjectStatus"
+          title="Project status × Active / Inactive"
+          ariaLabel="Project status crossed with ProjectStatus"
           orientation="horizontal"
-          items={crossed.map((m) => ({ label: m.label, value: m.value, fill: m.label.startsWith('Online') ? '#30d880' : '#5a7080' }))}
+          items={crossed.map((m) => ({
+            label: m.label,
+            value: m.value,
+            fill: m.label.startsWith('In Progress') ? '#30d880' : m.label.startsWith('Planned') ? '#3d8bfd' : '#5a7080',
+          }))}
           onSelect={(item) => {
             const [on, status] = item.label.split(' Â· ');
             onDrill(item.label, rows.filter((r) => onlineLabel(r, col) === on && blankLabel(cellText(r, col.projectStatus), 'Active') === status));

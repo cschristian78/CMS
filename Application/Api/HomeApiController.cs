@@ -38,7 +38,7 @@ public sealed class HomeApiController : ControllerBase
                 clientName,
                 businessClassName,
                 projectTypeName,
-                ParseOnlineStatus(onlineStatus),
+                ParseWorkStatus(onlineStatus),
                 NormalizeAnalyticsLeadNames(analyticsLeadName),
                 cancellationToken);
             return Ok(summary);
@@ -96,7 +96,7 @@ public sealed class HomeApiController : ControllerBase
                 clientName,
                 businessClassName,
                 projectTypeName,
-                ParseOnlineStatus(onlineStatus),
+                ParseWorkStatus(onlineStatus),
                 NormalizeAnalyticsLeadNames(analyticsLeadName),
                 cancellationToken);
             return Ok(model);
@@ -196,7 +196,7 @@ public sealed class HomeApiController : ControllerBase
         return names.Count == 0 ? null : names;
     }
 
-    private static bool? ParseOnlineStatus(string? onlineStatus)
+    private static string? ParseWorkStatus(string? onlineStatus)
     {
         if (string.IsNullOrWhiteSpace(onlineStatus))
         {
@@ -204,12 +204,23 @@ public sealed class HomeApiController : ControllerBase
         }
 
         var value = onlineStatus.Trim();
-        if (value.Equals("Online", StringComparison.OrdinalIgnoreCase)
+        if (value.Equals(ProjectWorkStatus.InProgress, StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Online", StringComparison.OrdinalIgnoreCase)
             || value.Equals("true", StringComparison.OrdinalIgnoreCase)
             || value.Equals("1", StringComparison.OrdinalIgnoreCase)
             || value.Equals("yes", StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            return ProjectWorkStatus.InProgress;
+        }
+
+        if (value.Equals(ProjectWorkStatus.Planned, StringComparison.OrdinalIgnoreCase))
+        {
+            return ProjectWorkStatus.Planned;
+        }
+
+        if (value.Equals(ProjectWorkStatus.Closed, StringComparison.OrdinalIgnoreCase))
+        {
+            return ProjectWorkStatus.Closed;
         }
 
         if (value.Equals("Offline", StringComparison.OrdinalIgnoreCase)
@@ -217,7 +228,7 @@ public sealed class HomeApiController : ControllerBase
             || value.Equals("0", StringComparison.OrdinalIgnoreCase)
             || value.Equals("no", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return null;
         }
 
         return null;

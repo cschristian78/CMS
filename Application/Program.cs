@@ -225,6 +225,7 @@ try
     projects.EnsureProjectNoteSchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectCalendarSchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectFeeBasedRevenueSchemaAsync().GetAwaiter().GetResult();
+    projects.EnsureProjectWorkStatusSchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectFileCategorySchemaAsync().GetAwaiter().GetResult();
     projects.EnsureProjectFileApprovalSchemaAsync().GetAwaiter().GetResult();
     var catAiConversations = scope.ServiceProvider.GetRequiredService<ICatAiConversationRepository>();

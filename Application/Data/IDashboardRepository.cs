@@ -46,7 +46,7 @@ public interface IDashboardRepository
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 

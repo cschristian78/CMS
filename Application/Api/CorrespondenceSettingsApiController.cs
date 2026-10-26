@@ -90,7 +90,7 @@ public sealed class CorrespondenceSettingsApiController : ControllerBase
             new
             {
                 value = CorrespondenceSettings.CommunicationCatMemberProjectStatus,
-                text = "CAT member project status (Online assigned projects, tasks, % complete, time tracking)",
+                text = "CAT member project status (In Progress assigned projects, tasks, % complete, time tracking)",
             },
         },
         dayOfWeekOptions = Enum.GetNames<DayOfWeek>(),

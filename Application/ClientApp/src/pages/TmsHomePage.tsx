@@ -37,6 +37,7 @@ type ProjectBlock = {
   projectID: number;
   projectName: string;
   clientName?: string | null;
+  workStatus?: string;
   isOnline?: boolean;
   tasks: TaskRow[];
   entries: TimeEntry[];
@@ -161,6 +162,20 @@ function projectDisplayTitle(project: Pick<ProjectBlock, 'clientName' | 'project
   return client ? `${client} — ${project.projectName}` : project.projectName;
 }
 
+function projectWorkStatus(project: Pick<ProjectBlock, 'workStatus' | 'isOnline'>): string {
+  const text = (project.workStatus ?? '').trim().toLowerCase();
+  if (text === 'planned') {
+    return 'Planned';
+  }
+  if (text === 'in progress' || text === 'inprogress' || text === 'online') {
+    return 'In Progress';
+  }
+  if (text === 'closed') {
+    return 'Closed';
+  }
+  return project.isOnline ? 'In Progress' : 'Planned';
+}
+
 function compareProjectsAlpha(a: ProjectBlock, b: ProjectBlock): number {
   return projectDisplayTitle(a).localeCompare(projectDisplayTitle(b), undefined, { sensitivity: 'base' });
 }
@@ -195,15 +210,14 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
     [catUsers, selectedUserId],
   );
 
-  const onlineProjects = useMemo(
-    () => projects.filter((p) => p.isOnline).sort(compareProjectsAlpha),
-    [projects],
-  );
-
-  const offlineProjects = useMemo(
-    () => projects.filter((p) => !p.isOnline).sort(compareProjectsAlpha),
-    [projects],
-  );
+  const projectsByStatus = useMemo(() => {
+    const statusOf = (p: ProjectBlock) => projectWorkStatus(p);
+    return {
+      inProgress: projects.filter((p) => statusOf(p) === 'In Progress').sort(compareProjectsAlpha),
+      planned: projects.filter((p) => statusOf(p) === 'Planned').sort(compareProjectsAlpha),
+      closed: projects.filter((p) => statusOf(p) === 'Closed').sort(compareProjectsAlpha),
+    };
+  }, [projects]);
 
   const availableAddCategories = useMemo(
     () => otherCategories.filter((c) => !visibleOtherCategories.includes(c)),
@@ -330,6 +344,9 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
           projectID: Number(p.projectID),
           projectName: (p.projectName ?? '').trim() || `Project ${p.projectID}`,
           clientName: p.clientName ?? null,
+          workStatus: String(
+            (p as ProjectBlock).workStatus ?? (p as { WorkStatus?: string }).WorkStatus ?? '',
+          ),
           isOnline: Boolean(
             (p as ProjectBlock).isOnline ?? (p as { IsOnline?: boolean }).IsOnline,
           ),
@@ -345,8 +362,10 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
           entries: p.entries ?? [],
         }))
         .sort((a, b) => {
-          if (a.isOnline !== b.isOnline) {
-            return a.isOnline ? -1 : 1;
+          const rank = (status: string) => (status === 'In Progress' ? 0 : status === 'Planned' ? 1 : 2);
+          const statusDelta = rank(projectWorkStatus(a)) - rank(projectWorkStatus(b));
+          if (statusDelta !== 0) {
+            return statusDelta;
           }
           return compareProjectsAlpha(a, b);
         });
@@ -726,8 +745,9 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
               {!loadingWeek &&
                 (
                   [
-                    { key: 'online', title: 'Online Projects', online: true, items: onlineProjects },
-                    { key: 'offline', title: 'Offline Projects', online: false, items: offlineProjects },
+                    { key: 'in-progress', title: 'In Progress', green: true, items: projectsByStatus.inProgress },
+                    { key: 'planned', title: 'Planned', green: false, items: projectsByStatus.planned },
+                    { key: 'closed', title: 'Closed', green: false, items: projectsByStatus.closed },
                   ] as const
                 ).map((section) =>
                   section.items.length === 0 ? null : (
@@ -736,7 +756,7 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
                         <span
                           className={
                             'home-online-dot' +
-                            (section.online ? ' home-online-dot--on' : ' home-online-dot--off')
+                            (section.green ? ' home-online-dot--on' : ' home-online-dot--off')
                           }
                           aria-hidden="true"
                         />
@@ -769,10 +789,12 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
                                 <span
                                   className={
                                     'home-online-dot' +
-                                    (project.isOnline ? ' home-online-dot--on' : ' home-online-dot--off')
+                                    (projectWorkStatus(project) === 'In Progress' ?
+                                      ' home-online-dot--on'
+                                    : ' home-online-dot--off')
                                   }
-                                  title={project.isOnline ? 'Online' : 'Offline'}
-                                  aria-label={project.isOnline ? 'Online' : 'Offline'}
+                                  title={projectWorkStatus(project)}
+                                  aria-label={projectWorkStatus(project)}
                                 />
                                 <span className="tms-project-block-title">{title}</span>
                                 <span className="tms-project-collapse-meta">

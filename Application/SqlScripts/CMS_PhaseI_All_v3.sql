@@ -2649,6 +2649,85 @@ BEGIN
     END CATCH
 END;
 GO
+CREATE OR ALTER PROCEDURE dbo.usp_User_Delete
+    @UserID INT,
+    @ActingUserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @UserID)
+        THROW 50001, 'tUser not found.', 1;
+
+    DECLARE @Keeper INT = @ActingUserID;
+    IF @Keeper = @UserID OR NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @Keeper)
+        SELECT TOP (1) @Keeper = UserID FROM dbo.tUser WHERE UserID <> @UserID ORDER BY UserID;
+    IF @Keeper IS NULL
+        THROW 50002, 'Cannot delete the only user because some records must keep an owner.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        DECLARE @AddressIds TABLE (AddressID INT PRIMARY KEY);
+        INSERT INTO @AddressIds (AddressID)
+        SELECT r.AddressID
+          FROM dbo.tUserAddressRef AS r
+         WHERE r.UserID = @UserID
+           AND NOT EXISTS (
+                SELECT 1
+                  FROM dbo.tUserAddressRef AS other
+                 WHERE other.AddressID = r.AddressID
+                   AND other.UserID <> @UserID);
+
+        EXEC dbo.usp_ActivityLog_Insert
+            @EntityType = 'User',
+            @EntityID = @UserID,
+            @UserID = @Keeper,
+            @Action = 'Remove';
+
+        UPDATE dbo.tClient SET AccountExecutiveUserID = NULL WHERE AccountExecutiveUserID = @UserID;
+        UPDATE dbo.tClient SET AnalyticsLeadUserID = NULL WHERE AnalyticsLeadUserID = @UserID;
+        UPDATE dbo.tProjectNote SET CreatedByUserID = NULL WHERE CreatedByUserID = @UserID;
+
+        DECLARE @UserIdText NVARCHAR(20) = CONVERT(NVARCHAR(20), @UserID);
+        DECLARE @KeeperText NVARCHAR(20) = CONVERT(NVARCHAR(20), @Keeper);
+
+        IF OBJECT_ID(N'dbo.tProjectCalendarItem', N'U') IS NOT NULL
+            EXEC(N'UPDATE dbo.tProjectCalendarItem SET OwnerUserID = NULL WHERE OwnerUserID = ' + @UserIdText);
+        IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
+        BEGIN
+            EXEC(N'UPDATE dbo.tProjectFile SET UploadedByUserID = ' + @KeeperText + N' WHERE UploadedByUserID = ' + @UserIdText);
+            EXEC(N'UPDATE dbo.tProjectFile SET ApprovalUpdatedByUserID = NULL WHERE ApprovalUpdatedByUserID = ' + @UserIdText);
+        END;
+        IF OBJECT_ID(N'dbo.tProjectRevenue', N'U') IS NOT NULL
+            EXEC(N'UPDATE dbo.tProjectRevenue SET RecordedBy = ' + @KeeperText + N' WHERE RecordedBy = ' + @UserIdText);
+        IF OBJECT_ID(N'dbo.tProjectTimeEntry', N'U') IS NOT NULL
+            EXEC(N'DELETE FROM dbo.tProjectTimeEntry WHERE UserID = ' + @UserIdText);
+        IF OBJECT_ID(N'dbo.tUserTimeEntry', N'U') IS NOT NULL
+            EXEC(N'DELETE FROM dbo.tUserTimeEntry WHERE UserID = ' + @UserIdText);
+        IF OBJECT_ID(N'dbo.tCatAiMessage', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.tCatAiConversation', N'U') IS NOT NULL
+            EXEC(N'DELETE m FROM dbo.tCatAiMessage AS m INNER JOIN dbo.tCatAiConversation AS c ON c.ConversationID = m.ConversationID WHERE c.UserID = ' + @UserIdText);
+        IF OBJECT_ID(N'dbo.tCatAiConversation', N'U') IS NOT NULL
+            EXEC(N'DELETE FROM dbo.tCatAiConversation WHERE UserID = ' + @UserIdText);
+
+        DELETE FROM dbo.tUserGroupRef WHERE UserID = @UserID;
+        DELETE FROM dbo.tActivityLog WHERE UserID = @UserID;
+        DELETE FROM dbo.tUser WHERE UserID = @UserID;
+
+        DELETE a
+          FROM dbo.tAddress AS a
+          INNER JOIN @AddressIds AS i ON i.AddressID = a.AddressID
+         WHERE NOT EXISTS (SELECT 1 FROM dbo.tUserAddressRef AS r WHERE r.AddressID = a.AddressID);
+
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END;
+GO
 
 --tAddress
 CREATE OR ALTER PROCEDURE usp_CreateTable_tAddress

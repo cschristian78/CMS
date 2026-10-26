@@ -15,7 +15,10 @@ public sealed class TmsUserProject
     public int ProjectRefID { get; set; }
     public string ProjectName { get; set; } = string.Empty;
     public string? ClientName { get; set; }
-    /// <summary>True when the project is Online / currently in progress.</summary>
+    /// <summary>Planned, In Progress, or Closed.</summary>
+    public string WorkStatus { get; set; } = ProjectWorkStatus.Planned;
+
+    /// <summary>True when <see cref="WorkStatus"/> is In Progress.</summary>
     public bool IsOnline { get; set; }
     public IReadOnlyList<ProjectCalendarItem> Tasks { get; set; } = [];
     public IReadOnlyList<ProjectTimeEntry> Entries { get; set; } = [];

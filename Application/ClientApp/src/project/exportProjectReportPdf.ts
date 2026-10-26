@@ -15,6 +15,20 @@ function formatHours(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
+function reportWorkStatus(project: { workStatus?: string | null; isOnline?: boolean }): string {
+  const text = (project.workStatus ?? '').trim().toLowerCase();
+  if (text === 'planned') {
+    return 'Planned';
+  }
+  if (text === 'in progress' || text === 'inprogress') {
+    return 'In Progress';
+  }
+  if (text === 'closed') {
+    return 'Closed';
+  }
+  return project.isOnline ? 'In Progress' : 'Planned';
+}
+
 function blank(value: string | null | undefined, fallback = '—'): string {
   const t = (value ?? '').trim();
   return t.length > 0 ? t : fallback;
@@ -69,6 +83,7 @@ export type ProjectReportProject = {
   userGroup?: string | null;
   status?: string | null;
   isOnline?: boolean;
+  workStatus?: string | null;
   renewalDate?: string | null;
   dueDate?: string | null;
   latestRevenue?: number | null;
@@ -288,7 +303,7 @@ export async function createProjectReportPdfBlob(input: ProjectReportInput): Pro
     ['Project type', blank(input.project.projectType)],
     ['User group', blank(input.project.userGroup)],
     ['Status', blank(input.project.status)],
-    ['Online', input.project.isOnline ? 'Online' : 'Offline'],
+    ['Project status', reportWorkStatus(input.project)],
     [
       'Renewal date',
       blank(formatCalendarDateDisplay(input.project.renewalDate ?? undefined) || input.project.renewalDate),
@@ -419,7 +434,7 @@ export function exportProjectReportPdf(input: ProjectReportInput): void {
           ${dlRow('Project type', blank(input.project.projectType))}
           ${dlRow('User group', blank(input.project.userGroup))}
           ${dlRow('Status', blank(input.project.status))}
-          ${dlRow('Online', input.project.isOnline ? 'Online' : 'Offline')}
+          ${dlRow('Project status', reportWorkStatus(input.project))}
           ${dlRow('Renewal date', blank(formatCalendarDateDisplay(input.project.renewalDate ?? undefined) || input.project.renewalDate))}
           ${dlRow('Due date', blank(formatCalendarDateDisplay(input.project.dueDate ?? undefined) || input.project.dueDate))}
           ${dlRow(

@@ -116,7 +116,8 @@ public sealed class ProjectsApiController : ControllerBase
 
     public sealed class SetOnlineRequest
     {
-        public bool IsOnline { get; set; }
+        public string? WorkStatus { get; set; }
+        public bool? IsOnline { get; set; }
     }
 
     [HttpPost("{id:int}/online")]
@@ -125,12 +126,16 @@ public sealed class ProjectsApiController : ControllerBase
         [FromBody] SetOnlineRequest body,
         CancellationToken cancellationToken)
     {
-        await _projectService.SetOnlineAsync(id, body.IsOnline, cancellationToken);
+        var status = ProjectWorkStatus.NormalizeOrNull(body.WorkStatus)
+            ?? (body.IsOnline == true ? ProjectWorkStatus.InProgress : ProjectWorkStatus.Closed);
+        await _projectService.SetWorkStatusAsync(id, status, cancellationToken);
+        var isOnline = ProjectWorkStatus.IsInProgress(status);
         return Ok(new
         {
             projectId = id,
-            isOnline = body.IsOnline,
-            message = body.IsOnline ? "Project is now Online." : "Project is now Offline."
+            workStatus = status,
+            isOnline,
+            message = $"Project status is now {status}."
         });
     }
 

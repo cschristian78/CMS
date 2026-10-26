@@ -11,7 +11,7 @@ public interface IHomeService
         string? clientNameSearch = null,
         string? businessClassName = null,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 
@@ -22,7 +22,7 @@ public interface IHomeService
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 

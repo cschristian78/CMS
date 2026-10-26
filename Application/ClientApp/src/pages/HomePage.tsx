@@ -74,6 +74,36 @@ function isOnlineStatusColumn(columnName: string): boolean {
   return n === 'projectonline' || n === 'isonline';
 }
 
+const PROJECT_WORK_STATUSES = ['Planned', 'In Progress', 'Closed'] as const;
+
+function normalizeWorkStatus(value: string, isOnline: boolean): string {
+  const text = value.trim().toLowerCase();
+  if (text === 'planned') {
+    return 'Planned';
+  }
+  if (text === 'in progress' || text === 'inprogress' || text === 'online') {
+    return 'In Progress';
+  }
+  if (text === 'closed') {
+    return 'Closed';
+  }
+  return isOnline ? 'In Progress' : 'Planned';
+}
+
+function nextWorkStatus(current: string): string {
+  if (current === 'Planned') {
+    return 'In Progress';
+  }
+  if (current === 'In Progress') {
+    return 'Closed';
+  }
+  return 'Planned';
+}
+
+function findWorkStatusColumnIndex(columns: string[]): number {
+  return findGridColumnIndex(columns, 'WorkStatus');
+}
+
 function cellIsTruthy(raw: string | number | boolean | null | undefined): boolean {
   if (typeof raw === 'boolean') {
     return raw;
@@ -356,8 +386,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   const [list, setList] = useState<ClientProjectListModel | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
-  /** Local online overrides so the green dot updates immediately even if the grid column is missing. */
-  const [onlineOverrides, setOnlineOverrides] = useState<Record<number, boolean>>({});
+  /** Local status overrides so the green dot updates immediately. */
+  const [workStatusOverrides, setWorkStatusOverrides] = useState<Record<number, string>>({});
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [projectContextMenu, setProjectContextMenu] = useState<{
     projectId: number;
@@ -429,7 +459,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         try {
           const data = await apiGet<ClientProjectListModel>(listUrl);
           setList(normalizeClientProjectListModel(data));
-          setOnlineOverrides({});
+          setWorkStatusOverrides({});
           setSelectedRowIndex(null);
         } catch (e) {
           setList(null);
@@ -557,6 +587,13 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       return -1;
     }
     return findIsOnlineColumnIndex(list.columns);
+  }, [list?.columns]);
+
+  const workStatusColumnIndex = useMemo(() => {
+    if (!list?.columns?.length) {
+      return -1;
+    }
+    return findWorkStatusColumnIndex(list.columns);
   }, [list?.columns]);
 
   /** Data columns shown in the grid (online flags are the leading green-dot; IDs and service pivots stay in the payload). */
@@ -757,21 +794,22 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
   }, [flash, hardDeleteBusy, hardDeleteConfirmed, hardDeletePrompt, loadProjectList]);
 
   const handleToggleOnline = useCallback(
-    async (e: MouseEvent, projectId: number, currentlyOnline: boolean) => {
+    async (e: MouseEvent, projectId: number, currentStatus: string) => {
       e.preventDefault();
       e.stopPropagation();
       if (projectId <= 0) {
         return;
       }
-      const nextOnline = !currentlyOnline;
-      setOnlineOverrides((prev) => ({ ...prev, [projectId]: nextOnline }));
+      const nextStatus = nextWorkStatus(currentStatus);
+      setWorkStatusOverrides((prev) => ({ ...prev, [projectId]: nextStatus }));
       try {
-        const result = await apiPostJson<{ message: string; isOnline: boolean }>(
+        const result = await apiPostJson<{ message: string; workStatus?: string }>(
           `/api/projects/${projectId}/online`,
-          { isOnline: nextOnline },
+          { workStatus: nextStatus },
         );
+        const saved = result.workStatus || nextStatus;
         setList((prev) => {
-          if (!prev || isOnlineColumnIndex < 0) {
+          if (!prev) {
             return prev;
           }
           const rows = prev.rows.map((row) => {
@@ -784,18 +822,23 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               return row;
             }
             const next = [...row];
-            next[isOnlineColumnIndex] = nextOnline;
+            if (isOnlineColumnIndex >= 0) {
+              next[isOnlineColumnIndex] = saved === 'In Progress';
+            }
+            if (workStatusColumnIndex >= 0) {
+              next[workStatusColumnIndex] = saved;
+            }
             return next;
           });
           return { ...prev, rows };
         });
-        flash('success', result.message ?? (nextOnline ? 'Project is now Online.' : 'Project is now Offline.'));
+        flash('success', result.message ?? `Project status is now ${saved}.`);
       } catch (err) {
-        setOnlineOverrides((prev) => ({ ...prev, [projectId]: currentlyOnline }));
-        flash('error', err instanceof ApiError ? err.message : 'Could not update online status.');
+        setWorkStatusOverrides((prev) => ({ ...prev, [projectId]: currentStatus }));
+        flash('error', err instanceof ApiError ? err.message : 'Could not update project status.');
       }
     },
-    [flash, isOnlineColumnIndex, projectIdColumnIndex],
+    [flash, isOnlineColumnIndex, projectIdColumnIndex, workStatusColumnIndex],
   );
 
   const runHomeProjectReport = useCallback(
@@ -1098,15 +1141,15 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
           <span className="tile-stat-value">{summary != null ? revenueLabel : '...'}</span>
           <span className="tile-stat-detail">All Active projects</span>
         </div>
-        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Online Projects">
-          <span className="tile-title">Online Projects</span>
+        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="In Progress Projects">
+          <span className="tile-title">In Progress</span>
           <span className="tile-stat-value">{onlineProjectCountLabel}</span>
-          <span className="tile-stat-detail">Currently online</span>
+          <span className="tile-stat-detail">Currently in progress</span>
         </div>
-        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Online Revenue">
-          <span className="tile-title">Online Revenue</span>
+        <div className="workflow-tile workflow-tile--stat" role="region" aria-label="In Progress Revenue">
+          <span className="tile-title">In Progress Revenue</span>
           <span className="tile-stat-value">{summary != null ? onlineRevenueLabel : '...'}</span>
-          <span className="tile-stat-detail">Online projects</span>
+          <span className="tile-stat-detail">In Progress projects</span>
         </div>
       </section>
 
@@ -1199,7 +1242,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               </select>
             </div>
             <div className="dashboard-filter-field dashboard-filter-field--online">
-              <label htmlFor="home-filter-online">Online</label>
+              <label htmlFor="home-filter-online">Project status</label>
               <select
                 id="home-filter-online"
                 className="home-filter-select--fit"
@@ -1208,8 +1251,11 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 disabled={listLoading}
               >
                 <option value="">All</option>
-                <option value="Online">Online</option>
-                <option value="Offline">Offline</option>
+                {PROJECT_WORK_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="dashboard-filter-field dashboard-filter-field--analytics-lead">
@@ -1299,7 +1345,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                 className="secondary-button"
                 disabled={listLoading}
                 onClick={clearAllFilters}
-                title="Reset to All clients with Online status Online"
+                title="Reset to All clients with project status In Progress"
               >
                 Clear all
               </button>
@@ -1328,8 +1374,8 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
               <table className="dashboard-data-table dashboard-data-table--full home-client-project-table">
                 <thead>
                   <tr>
-                    <th className="home-online-col" scope="col" title="Online / in progress">
-                      <span className="sr-only">Online</span>
+                    <th className="home-online-col" scope="col" title="Green when the project is In Progress">
+                      <span className="sr-only">In Progress</span>
                     </th>
                     {visibleColumnIndexes.map((ci) => {
                       const c = list.columns[ci] ?? '';
@@ -1370,14 +1416,19 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                   {displayRows.map((row, ri) => {
                     const rowProjectId =
                       projectIdColumnIndex >= 0 ? parseProjectIdFromRow(row, projectIdColumnIndex) : null;
-                    const fromRow =
+                    const fromOnline =
                       isOnlineColumnIndex >= 0 && isOnlineColumnIndex < row.length ?
                         cellIsTruthy(row[isOnlineColumnIndex])
                       : false;
-                    const isOnline =
-                      rowProjectId !== null && Object.prototype.hasOwnProperty.call(onlineOverrides, rowProjectId) ?
-                        onlineOverrides[rowProjectId]
-                      : fromRow;
+                    const fromStatus =
+                      workStatusColumnIndex >= 0 && workStatusColumnIndex < row.length ?
+                        String(row[workStatusColumnIndex] ?? '')
+                      : '';
+                    const workStatus =
+                      rowProjectId !== null && Object.prototype.hasOwnProperty.call(workStatusOverrides, rowProjectId) ?
+                        workStatusOverrides[rowProjectId]
+                      : normalizeWorkStatus(fromStatus, fromOnline);
+                    const isOnline = workStatus === 'In Progress';
                     const rowKey =
                       rowProjectId !== null ? `project-${rowProjectId}` : `row-${ri}-${String(row[0] ?? '')}`;
                     return (
@@ -1411,27 +1462,21 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                           }
                           disabled={rowProjectId === null}
                           aria-pressed={isOnline}
-                          aria-label={
-                            isOnline ?
-                              'Online - click to set Offline'
-                            : 'Offline - click to set online'
-                          }
-                          title={
-                            isOnline ?
-                              'Online (in progress) - click to set Offline'
-                            : 'Offline - click to set online'
-                          }
+                          aria-label={`${workStatus}. Click to change project status.`}
+                          title={`${workStatus}. Click to change.`}
                           onClick={(e) => {
                             if (rowProjectId === null) {
                               return;
                             }
-                            void handleToggleOnline(e, rowProjectId, isOnline);
+                            void handleToggleOnline(e, rowProjectId, workStatus);
                           }}
                         />
                       </td>
                       {visibleColumnIndexes.map((ci) => (
                         <td key={ci} className={homeProjectListCellClass(list.columns[ci] ?? '')}>
-                          {formatTableCell(row[ci], list.columns[ci])}
+                          {normalizeColumnName(list.columns[ci] ?? '') === 'workstatus' ?
+                            workStatus
+                          : formatTableCell(row[ci], list.columns[ci])}
                         </td>
                       ))}
                     </tr>

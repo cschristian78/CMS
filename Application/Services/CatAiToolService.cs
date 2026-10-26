@@ -101,10 +101,10 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 }),
             Tool(
                 "list_all_projects",
-                "List CMS projects. By default returns ALL projects regardless of status (active and inactive, online and offline). "
-                    + "Optional filters: activeFilter (all|active|inactive) and onlineFilter (all|online|offline). "
-                    + "Use when the user asks for a list of all projects, then filter if they ask for active/inactive or online/offline. "
-                    + "When presenting results, always include ProjectID, ProjectNumber, isActive, and isOnline for each project.",
+                "List CMS projects. By default returns ALL projects regardless of active flag and project status (Planned, In Progress, Closed). "
+                    + "Optional filters: activeFilter (all|active|inactive) and onlineFilter (all|planned|in progress|closed). "
+                    + "In Progress is the current work; the green icon means In Progress. Do not describe projects as Online or Offline. "
+                    + "When presenting results, always include ProjectID, ProjectNumber, isActive, and workStatus for each project.",
                 new
                 {
                     type = "object",
@@ -118,7 +118,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                         onlineFilter = new
                         {
                             type = "string",
-                            description = "all (default) = no filter; online = IsOnline true only; offline = IsOnline false only."
+                            description = "all (default) = no filter; planned, in progress, or closed. Legacy online means in progress."
                         }
                     }
                 }),
@@ -867,7 +867,8 @@ public sealed partial class CatAiToolService : ICatAiToolService
             renewalDate = project.RenewalDate,
             dueDate = project.DueDate,
             isDeleted = project.IsDeleted,
-            isOnline = project.IsOnline,
+            isOnline = ProjectWorkStatus.IsInProgress(project.WorkStatus),
+            workStatus = project.WorkStatus,
             userGroupId = project.UGID > 0 ? project.UGID : (int?)null,
             userGroupName = project.UGName,
             latestRevenue = project.LatestRevenue,
@@ -898,7 +899,8 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 st.StatusDescription,
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
                 IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
-                pt.ProjectTypeCode
+                pt.ProjectTypeCode,
+                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END)
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
              INNER JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
@@ -923,6 +925,9 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 isActive = !r.IsDBNull(5) && r.GetBoolean(5),
                 isOnline = !r.IsDBNull(6) && r.GetBoolean(6),
                 projectTypeCode = r.IsDBNull(7) ? null : r.GetString(7),
+                workStatus = r.IsDBNull(8)
+                    ? ProjectWorkStatus.Normalize(null, !r.IsDBNull(6) && r.GetBoolean(6))
+                    : ProjectWorkStatus.Normalize(r.GetString(8), !r.IsDBNull(6) && r.GetBoolean(6)),
             },
             [
                 SqlParameterFactory.Int("@ClientID", clientId),
@@ -965,6 +970,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 st.StatusDescription,
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
                 IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
+                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END),
                 p.RenewalDate
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
@@ -973,7 +979,13 @@ public sealed partial class CatAiToolService : ICatAiToolService
               LEFT JOIN dbo.tProjectType AS pt ON pt.ProjectTypeID = pr.ProjectTypeID
               LEFT JOIN dbo.tStatus AS st ON st.StatusID = pr.StatusID
              WHERE (@FilterActive = -1 OR p.IsActive = @FilterActive)
-               AND (@FilterOnline = -1 OR CAST(ISNULL(p.IsOnline, 0) AS INT) = @FilterOnline)
+               AND (
+                    @FilterOnline = -1
+                    OR (@FilterOnline = 1 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) = N'In Progress')
+                    OR (@FilterOnline = 0 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) <> N'In Progress')
+                    OR (@FilterOnline = 2 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) = N'Planned')
+                    OR (@FilterOnline = 3 AND ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) = N'Closed')
+               )
              ORDER BY c.ClientName, p.ProjectName, p.ProjectID;
             """;
 
@@ -987,6 +999,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 var clientName = r.IsDBNull(3) ? null : r.GetString(3);
                 var isActive = !r.IsDBNull(7) && r.GetBoolean(7);
                 var isOnline = !r.IsDBNull(8) && r.GetBoolean(8);
+                var workStatus = r.IsDBNull(9) ? ProjectWorkStatus.Normalize(null, isOnline) : ProjectWorkStatus.Normalize(r.GetString(9), isOnline);
                 return new
                 {
                     projectId,
@@ -999,12 +1012,13 @@ public sealed partial class CatAiToolService : ICatAiToolService
                         ? (r.IsDBNull(5) ? null : r.GetString(5))
                         : r.GetString(6),
                     isActive,
-                    isOnline,
+                    isOnline = ProjectWorkStatus.IsInProgress(workStatus),
+                    workStatus,
                     activeLabel = isActive ? "active" : "inactive",
-                    onlineLabel = isOnline ? "online" : "offline",
-                    renewalDate = r.IsDBNull(9) ? null : r.GetDateTime(9).ToString("yyyy-MM-dd"),
+                    onlineLabel = workStatus,
+                    renewalDate = r.IsDBNull(10) ? null : r.GetDateTime(10).ToString("yyyy-MM-dd"),
                     listLine =
-                        $"{clientName ?? "(no client)"} | ProjectID {projectId} | ProjectNumber {projectNumber ?? "(none)"} | {projectName ?? "(unnamed)"} | {(isActive ? "active" : "inactive")} | {(isOnline ? "online" : "offline")}",
+                        $"{clientName ?? "(no client)"} | ProjectID {projectId} | ProjectNumber {projectNumber ?? "(none)"} | {projectName ?? "(unnamed)"} | {(isActive ? "active" : "inactive")} | {workStatus}",
                 };
             },
             [
@@ -1021,7 +1035,7 @@ public sealed partial class CatAiToolService : ICatAiToolService
             truncated = rows.Count >= rowLimit,
             projects = rows,
             presentationHint =
-                "Include ProjectID, ProjectNumber, active/inactive, and online/offline for every project when listing to the user.",
+                "Include ProjectID, ProjectNumber, active/inactive, and workStatus (Planned, In Progress, or Closed) for every project when listing to the user.",
             message = $"Listed {rows.Count} project(s) (activeFilter={activeLabel}, onlineFilter={onlineLabel}).",
         };
     }
@@ -1073,11 +1087,27 @@ public sealed partial class CatAiToolService : ICatAiToolService
         }
 
         if (t.Equals("online", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("in progress", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("inprogress", StringComparison.OrdinalIgnoreCase)
             || t.Equals("true", StringComparison.OrdinalIgnoreCase)
             || t.Equals("1", StringComparison.OrdinalIgnoreCase))
         {
             filterValue = 1;
-            label = "online";
+            label = ProjectWorkStatus.InProgress;
+            return true;
+        }
+
+        if (t.Equals("planned", StringComparison.OrdinalIgnoreCase))
+        {
+            filterValue = 2;
+            label = ProjectWorkStatus.Planned;
+            return true;
+        }
+
+        if (t.Equals("closed", StringComparison.OrdinalIgnoreCase))
+        {
+            filterValue = 3;
+            label = ProjectWorkStatus.Closed;
             return true;
         }
 
@@ -1086,11 +1116,11 @@ public sealed partial class CatAiToolService : ICatAiToolService
             || t.Equals("0", StringComparison.OrdinalIgnoreCase))
         {
             filterValue = 0;
-            label = "offline";
+            label = "not in progress";
             return true;
         }
 
-        error = "onlineFilter must be all, online, or offline.";
+        error = "onlineFilter must be all, planned, in progress, or closed.";
         return false;
     }
 
@@ -1120,7 +1150,8 @@ public sealed partial class CatAiToolService : ICatAiToolService
                 pt.ProjectTypeCode,
                 st.StatusCode,
                 IsActive = CAST(CASE WHEN p.IsActive = 1 THEN 1 ELSE 0 END AS BIT),
-                IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT)
+                IsOnline = CAST(ISNULL(p.IsOnline, 0) AS BIT),
+                WorkStatus = ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), CASE WHEN ISNULL(p.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END)
               FROM dbo.tProject AS p
              INNER JOIN dbo.tProjectRef AS pr ON pr.ProjectID = p.ProjectID AND pr.IsActive = 1
               LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
@@ -1156,6 +1187,9 @@ public sealed partial class CatAiToolService : ICatAiToolService
                     statusCode = r.IsDBNull(6) ? null : r.GetString(6),
                     isActive = !r.IsDBNull(7) && r.GetBoolean(7),
                     isOnline = !r.IsDBNull(8) && r.GetBoolean(8),
+                    workStatus = r.IsDBNull(9)
+                        ? ProjectWorkStatus.Normalize(null, !r.IsDBNull(8) && r.GetBoolean(8))
+                        : ProjectWorkStatus.Normalize(r.GetString(9), !r.IsDBNull(8) && r.GetBoolean(8)),
                     // Preformatted line so ProjectID / ProjectNumber are hard to omit when listing.
                     listLine = $"{clientName ?? "(no client)"} | ProjectID {projectId} | ProjectNumber {projectNumber ?? "(none)"} | {projectName ?? "(unnamed)"} | Renews {renewalDate ?? "(none)"}",
                 };

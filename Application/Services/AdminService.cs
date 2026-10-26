@@ -142,6 +142,36 @@ public sealed class AdminService : IAdminService
         return userId;
     }
 
+    public async Task SaveUserBioAsync(int userId, string? bio, CancellationToken cancellationToken = default)
+    {
+        if (userId <= 0)
+        {
+            throw new InvalidOperationException("Save the user first, then add a bio.");
+        }
+
+        if (!await _admin.UserExistsAsync(userId, cancellationToken))
+        {
+            throw new InvalidOperationException($"User {userId} was not found.");
+        }
+
+        var stored = string.IsNullOrWhiteSpace(bio) ? null : bio.Trim();
+        EnsureFieldLength(stored, "Bio", UserBioMaxChars);
+        if (CountWords(stored) > UserBioMaxWords)
+        {
+            throw new InvalidOperationException($"Bio must be {UserBioMaxWords} words or fewer.");
+        }
+
+        await _admin.SaveUserBioAsync(userId, stored, cancellationToken);
+        try
+        {
+            await _admin.LogActivityAsync("User", userId, "Update", "Bio", null, stored, cancellationToken);
+        }
+        catch
+        {
+            // Activity log is best-effort.
+        }
+    }
+
     public async Task SaveUserPhotoAsync(int userId, Stream stream, long? declaredLength, CancellationToken cancellationToken = default)
     {
         if (userId <= 0)
@@ -169,6 +199,13 @@ public sealed class AdminService : IAdminService
             // Activity log is best-effort.
         }
 
+        await RefreshHomeListAsync(cancellationToken);
+    }
+
+    public async Task DeleteUserAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        await _admin.DeleteUserAsync(userId, cancellationToken);
+        _userPhotos.DeletePhotos(userId);
         await RefreshHomeListAsync(cancellationToken);
     }
 

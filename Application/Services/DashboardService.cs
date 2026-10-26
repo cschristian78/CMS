@@ -51,7 +51,7 @@ public sealed class DashboardService : IDashboardService
             clientNameSearch: null,
             businessClassName: null,
             projectTypeName: null,
-            isOnline: null,
+            workStatus: null,
             analyticsLeadNames: null,
             cancellationToken: cancellationToken);
 

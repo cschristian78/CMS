@@ -99,6 +99,7 @@ public sealed class TmsService : ITmsService
                 ProjectName = header.ProjectName,
                 ClientName = header.ClientName,
                 IsOnline = header.IsOnline,
+                WorkStatus = header.WorkStatus,
                 Tasks = tasks,
                 Entries = entries,
             });

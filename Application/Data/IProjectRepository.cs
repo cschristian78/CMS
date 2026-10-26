@@ -101,6 +101,12 @@ public interface IProjectRepository
     /// <summary>Sets <c>dbo.tProject.IsOnline</c> without rewriting services or refs.</summary>
     Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets Planned, In Progress, or Closed and keeps <c>IsOnline</c> in sync.</summary>
+    Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds <c>WorkStatus</c> and backfills existing projects once.</summary>
+    Task EnsureProjectWorkStatusSchemaAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Sets the active project ref's UserGroupID without replacing services.</summary>
     Task AssignUserGroupAsync(int projectId, int userGroupId, CancellationToken cancellationToken = default);
 

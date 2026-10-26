@@ -115,6 +115,7 @@ public sealed class ProjectService : IProjectService
             DueDate = project.DueDate,
             StatusID = project.StatusID,
             IsOnline = project.IsOnline,
+            WorkStatus = project.WorkStatus,
             IsFeeBasedRevenue = project.IsFeeBasedRevenue,
             ClientBusinessUnitID = project.BusinessUnitID,
             ClientBusinessUnitName = project.BusinessUnitName,
@@ -186,7 +187,8 @@ public sealed class ProjectService : IProjectService
             RenewalDate = model.RenewalDate,
             DueDate = model.DueDate,
             StatusID = model.StatusID > 0 ? model.StatusID : 1,
-            IsOnline = model.IsOnline,
+            WorkStatus = ProjectWorkStatus.Normalize(model.WorkStatus, model.IsOnline),
+            IsOnline = ProjectWorkStatus.IsInProgress(ProjectWorkStatus.Normalize(model.WorkStatus, model.IsOnline)),
             IsFeeBasedRevenue = model.IsFeeBasedRevenue
         };
 
@@ -298,9 +300,14 @@ public sealed class ProjectService : IProjectService
         return result;
     }
 
-    public async Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default)
+    public Task SetOnlineAsync(int projectId, bool isOnline, CancellationToken cancellationToken = default) =>
+        SetWorkStatusAsync(projectId, isOnline ? ProjectWorkStatus.InProgress : ProjectWorkStatus.Closed, cancellationToken);
+
+    public async Task SetWorkStatusAsync(int projectId, string workStatus, CancellationToken cancellationToken = default)
     {
-        await _projects.SetOnlineAsync(projectId, isOnline, cancellationToken);
+        var status = ProjectWorkStatus.Normalize(workStatus);
+        await _projects.SetWorkStatusAsync(projectId, status, cancellationToken);
+        var isOnline = ProjectWorkStatus.IsInProgress(status);
         try
         {
             await _admin.LogActivityAsync(

@@ -1,4 +1,5 @@
 using System.Text;
+using ClientManagementSystem.Models;
 using Microsoft.Data.SqlClient;
 
 namespace ClientManagementSystem.Data;
@@ -7,7 +8,7 @@ namespace ClientManagementSystem.Data;
 /// (BU / BC / status description / online / client / project-type).
 /// Client status on Main is <c>StatusDescription</c> from
 /// <c>tClientRef.StatusID → tStatus</c> (not <c>tClient.ClientStatus</c> / <c>IsActive</c>).
-/// Online status comes from <c>dbo.tProject.IsOnline</c>.</summary>
+/// Project phase comes from <c>dbo.tProject.WorkStatus</c> (Planned, In Progress, Closed).</summary>
 internal static class ClientProjectListFilterSql
 {
     public static void AppendFilters(
@@ -18,7 +19,7 @@ internal static class ClientProjectListFilterSql
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         string projectIdColumn = "[ProjectID]",
         IReadOnlyList<string>? analyticsLeadNames = null,
         string analyticsLeadColumn = "[Analytics Lead]")
@@ -44,19 +45,20 @@ internal static class ClientProjectListFilterSql
             parameters.Add(SqlParameterFactory.NVarChar("@StatusDescription", 500, statusName.Trim()));
         }
 
-        if (isOnline.HasValue)
+        var phase = ProjectWorkStatus.NormalizeOrNull(workStatus);
+        if (phase is not null)
         {
             // Correlate by ProjectID so this works both on bare vProject_Current and on
             // aliased joins (pass projectIdColumn: "v.ProjectID" when ProjectID is ambiguous).
             sql.Append(
                 $"""
-                 AND CAST(ISNULL((
-                    SELECT TOP (1) pOnline.IsOnline
-                    FROM dbo.tProject AS pOnline
-                    WHERE pOnline.ProjectID = {projectIdColumn}
-                 ), 0) AS BIT) = @IsOnline
+                 AND ISNULL((
+                    SELECT TOP (1) NULLIF(LTRIM(RTRIM(pPhase.WorkStatus)), N'')
+                    FROM dbo.tProject AS pPhase
+                    WHERE pPhase.ProjectID = {projectIdColumn}
+                 ), N'') = @WorkStatus
                 """);
-            parameters.Add(SqlParameterFactory.Bit("@IsOnline", isOnline.Value));
+            parameters.Add(SqlParameterFactory.NVarChar("@WorkStatus", 20, phase));
         }
 
         if (!string.IsNullOrWhiteSpace(clientNameSearch))

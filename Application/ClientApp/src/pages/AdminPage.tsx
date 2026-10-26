@@ -803,7 +803,7 @@ const DEFAULT_CORRESPONDENCE_DRAFT: CorrespondenceDraft = {
   communicationOptions: [
     {
       value: 'CatMemberProjectStatus',
-      text: 'CAT member project status (Online assigned projects, tasks, % complete, time tracking)',
+      text: 'CAT member project status (In Progress assigned projects, tasks, % complete, time tracking)',
     },
   ],
   dayOfWeekOptions: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
@@ -1399,6 +1399,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const userPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [userBioDialogOpen, setUserBioDialogOpen] = useState(false);
   const [userBioDraft, setUserBioDraft] = useState('');
+  const [userBioSaving, setUserBioSaving] = useState(false);
   const [copyEmail, setCopyEmail] = useState('');
   const [userRemoveDialogOpen, setUserRemoveDialogOpen] = useState(false);
   const [buDeleteBlockedMessage, setBuDeleteBlockedMessage] = useState<string | null>(null);
@@ -1831,9 +1832,38 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
 
   const closeUserBioDialog = () => setUserBioDialogOpen(false);
 
-  const applyUserBioDraft = () => {
-    setUserForm((form) => ({ ...form, bio: clampUserBio(userBioDraft) }));
-    setUserBioDialogOpen(false);
+  const saveUserBio = async () => {
+    if (userBioSaving) {
+      return;
+    }
+    if (userForm.userID <= 0) {
+      flash('error', 'Save the user first, then add a bio.');
+      return;
+    }
+
+    const bio = clampUserBio(userBioDraft).trim();
+    setUserBioSaving(true);
+    try {
+      const result = await apiPostJson<{ message?: string }>(`/api/admin/users/${userForm.userID}/bio`, { bio });
+      const stored = bio.length > 0 ? bio : '';
+      setUserForm((form) => ({ ...form, bio: stored }));
+      setAdmin((current) =>
+        current
+          ? {
+              ...current,
+              users: current.users.map((user) =>
+                user.userID === userForm.userID ? { ...user, bio: stored } : user,
+              ),
+            }
+          : current,
+      );
+      setUserBioDialogOpen(false);
+      flash('success', result.message ?? 'Bio saved.');
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not save the bio.');
+    } finally {
+      setUserBioSaving(false);
+    }
   };
 
   const userBioWordCount = countBioWords(userBioDraft);
@@ -2002,7 +2032,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     const userID = selectedUserId;
     setUserRemoveDialogOpen(false);
     try {
-      await apiPostJson(`/api/admin/users/${userID}/soft-delete`, {});
+      await apiPostJson(`/api/admin/users/${userID}/delete`, {});
       flash('success', 'User deleted from the database.');
       if (userForm.userID === userID) {
         clearUserForm();
@@ -4440,7 +4470,7 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             <p id="corr-time-help" className="field-help">
               Default schedule: every <strong>Monday</strong> at <strong>7:30 AM Eastern</strong>, weekly, addressed to{' '}
               <strong>Each Cat Member</strong>, with you on CC. The email body will cover{' '}
-              <strong>Online</strong> assigned projects only (tasks, completion %, time tracking) and will be added in a
+              <strong>In Progress</strong> assigned projects only (tasks, completion %, time tracking) and will be added in a
               follow-up change; saving here only stores the schedule and options under <code>App_Data</code>.
             </p>
           </form>
@@ -4717,8 +4747,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     >
                       Upload picture
                     </button>
-                    <button type="button" className="admin-user-bio-link" onClick={openUserBioDialog}>
-                      Add Bio
+                    <button type="button" className="secondary-button" onClick={openUserBioDialog}>
+                      {userForm.bio.trim() ? 'View Bio' : 'Add Bio'}
                     </button>
                   </div>
                   <button
@@ -6915,10 +6945,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
             }}
           >
             <h2 id="admin-user-bio-title" className="home-modal-title">
-              Add Bio
+              {userForm.bio.trim() ? 'View Bio' : 'Add Bio'}
             </h2>
             <p className="home-modal-body">
-              Write a short biography for this user. The bio is stored when you save the user.
+              Write a short biography for this user. Save stores it on the user record.
             </p>
             <textarea
               id="admin-user-bio"
@@ -6939,10 +6969,10 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
               {userBioWordCount} / {USER_BIO_WORD_LIMIT} words
             </p>
             <div className="home-modal-actions">
-              <button type="button" className="primary-button" onClick={applyUserBioDraft}>
-                Done
+              <button type="button" className="primary-button" disabled={userBioSaving} onClick={() => void saveUserBio()}>
+                {userBioSaving ? 'Saving…' : 'Save'}
               </button>
-              <button type="button" className="secondary-button" onClick={closeUserBioDialog}>
+              <button type="button" className="secondary-button" disabled={userBioSaving} onClick={closeUserBioDialog}>
                 Cancel
               </button>
             </div>
@@ -7106,9 +7136,8 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           <div className="bulk-import-panel card">
             <h2 id="user-remove-choice-title">Remove user</h2>
             <p className="field-help">
-              <strong>Deactivate</strong> keeps the user record and uses the existing deactivate procedure (same as
-              before). <strong>Delete from database</strong> runs <code>dbo.usp_User_Delete</code> and permanently removes
-              the user per your database implementation.
+              <strong>Deactivate</strong> keeps the user record and marks it inactive. <strong>Delete from database</strong> runs
+              <code>dbo.usp_User_Delete</code> and removes that user row.
             </p>
             <div className="button-row bulk-import-actions">
               <button type="button" className="secondary-button" onClick={closeRemoveUserDialog}>

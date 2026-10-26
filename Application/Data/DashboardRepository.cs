@@ -11,10 +11,12 @@ public sealed class DashboardRepository : IDashboardRepository
     private const string AnalyticsLeadColumn = "Analytics Lead";
 
     private readonly IDbExecutor _db;
+    private readonly IProjectRepository _projects;
 
-    public DashboardRepository(IDbExecutor db)
+    public DashboardRepository(IDbExecutor db, IProjectRepository projects)
     {
         _db = db;
+        _projects = projects;
     }
 
     public Task<IReadOnlyList<string>> GetDistinctAnalyticsLeadNamesAsync(
@@ -488,19 +490,22 @@ public sealed class DashboardRepository : IDashboardRepository
             cancellationToken);
     }
 
-    public Task<RawSqlTableResult> GetClientProjectListTableAsync(
+    public async Task<RawSqlTableResult> GetClientProjectListTableAsync(
         string? businessUnitName,
         string? statusName,
         string? clientNameSearch,
         string? businessClassName,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default)
     {
+        await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         var sql = new StringBuilder("""
             SELECT
                 CAST(ISNULL(tp.IsOnline, 0) AS BIT) AS ProjectOnline,
+                ISNULL(NULLIF(LTRIM(RTRIM(tp.WorkStatus)), N''),
+                    CASE WHEN ISNULL(tp.IsOnline, 0) = 1 THEN N'In Progress' ELSE N'Planned' END) AS WorkStatus,
                 v.*,
                 CAST(ISNULL((
                     SELECT SUM(te.Hours)
@@ -524,12 +529,12 @@ public sealed class DashboardRepository : IDashboardRepository
             clientNameSearch,
             businessClassName,
             projectTypeName,
-            isOnline,
+            workStatus,
             projectIdColumn: "v.ProjectID",
             analyticsLeadNames: analyticsLeadNames,
             analyticsLeadColumn: "v.[Analytics Lead]");
 
-        return _db.QueryTextAsTableAsync(sql.ToString(), parameters, cancellationToken);
+        return await _db.QueryTextAsTableAsync(sql.ToString(), parameters, cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardInactiveProject>> GetInactiveProjectsAsync(

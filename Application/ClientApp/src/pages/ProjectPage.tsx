@@ -111,7 +111,9 @@ interface ProjectFormModel {
   renewalDate?: string | null;
   dueDate?: string | null;
   statusID: number;
-  /** When true, project is Online / currently in progress (green-dot on Home). */
+  /** Planned, In Progress, or Closed. Green icon when In Progress. */
+  workStatus?: string;
+  /** When true, project is In Progress (green-dot on Home). */
   isOnline?: boolean;
   /** When true, project revenue is fee-based. */
   isFeeBasedRevenue?: boolean;
@@ -3678,39 +3680,52 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   maxLength={50}
                 />
                 <span className="project-online-toggle">
-                  <input
-                    id="isOnline"
-                    type="checkbox"
-                    checked={!!model.isOnline}
+                  <span
+                    className={
+                      'home-online-dot' +
+                      ((model.workStatus ?? (model.isOnline ? 'In Progress' : 'Planned')) === 'In Progress' ?
+                        ' home-online-dot--on'
+                      : ' home-online-dot--off')
+                    }
+                    aria-hidden="true"
+                  />
+                  <label htmlFor="workStatus" className="project-online-toggle-label">
+                    Project status
+                  </label>
+                  <select
+                    id="workStatus"
+                    value={model.workStatus ?? (model.isOnline ? 'In Progress' : 'Planned')}
                     onChange={(e) => {
-                      const next = e.target.checked;
-                      setModel({ ...model, isOnline: next });
+                      const previous = model.workStatus ?? (model.isOnline ? 'In Progress' : 'Planned');
+                      const next = e.target.value;
+                      setModel({ ...model, workStatus: next, isOnline: next === 'In Progress' });
                       if (isEdit && projectId !== undefined) {
                         void (async () => {
                           try {
                             const r = await apiPostJson<{ message: string }>(
                               `/api/projects/${projectId}/online`,
-                              { isOnline: next },
+                              { workStatus: next },
                             );
-                            flash('success', r.message ?? (next ? 'Project is now Online.' : 'Project is now Offline.'));
+                            flash('success', r.message ?? `Project status is now ${next}.`);
                           } catch (err) {
-                            setModel({ ...model, isOnline: !next });
+                            setModel({
+                              ...model,
+                              workStatus: previous,
+                              isOnline: previous === 'In Progress',
+                            });
                             flash(
                               'error',
-                              err instanceof ApiError ? err.message : 'Could not update online status.',
+                              err instanceof ApiError ? err.message : 'Could not update project status.',
                             );
                           }
                         })();
                       }
                     }}
-                  />{' '}
-                  <span
-                    className={'home-online-dot' + (model.isOnline ? ' home-online-dot--on' : ' home-online-dot--off')}
-                    aria-hidden="true"
-                  />{' '}
-                  <label htmlFor="isOnline" className="project-online-toggle-label">
-                    {model.isOnline ? 'Online (in progress)' : 'Offline'}
-                  </label>
+                  >
+                    <option value="Planned">Planned</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Closed">Closed</option>
+                  </select>
                 </span>
               </div>
 

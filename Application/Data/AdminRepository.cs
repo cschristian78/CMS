@@ -16,6 +16,87 @@ public sealed class AdminRepository : IAdminRepository
         _connections = connections;
     }
 
+    private const string UserDeleteSql = """
+        CREATE OR ALTER PROCEDURE dbo.usp_User_Delete
+            @UserID INT,
+            @ActingUserID INT
+        AS
+        BEGIN
+            SET NOCOUNT ON;
+            SET XACT_ABORT ON;
+
+            IF NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @UserID)
+                THROW 50001, 'tUser not found.', 1;
+
+            DECLARE @Keeper INT = @ActingUserID;
+            IF @Keeper = @UserID OR NOT EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @Keeper)
+                SELECT TOP (1) @Keeper = UserID FROM dbo.tUser WHERE UserID <> @UserID ORDER BY UserID;
+            IF @Keeper IS NULL
+                THROW 50002, 'Cannot delete the only user because some records must keep an owner.', 1;
+
+            BEGIN TRY
+                BEGIN TRAN;
+
+                DECLARE @AddressIds TABLE (AddressID INT PRIMARY KEY);
+                INSERT INTO @AddressIds (AddressID)
+                SELECT r.AddressID
+                  FROM dbo.tUserAddressRef AS r
+                 WHERE r.UserID = @UserID
+                   AND NOT EXISTS (
+                        SELECT 1
+                          FROM dbo.tUserAddressRef AS other
+                         WHERE other.AddressID = r.AddressID
+                           AND other.UserID <> @UserID);
+
+                EXEC dbo.usp_ActivityLog_Insert
+                    @EntityType = 'User',
+                    @EntityID = @UserID,
+                    @UserID = @Keeper,
+                    @Action = 'Remove';
+
+                UPDATE dbo.tClient SET AccountExecutiveUserID = NULL WHERE AccountExecutiveUserID = @UserID;
+                UPDATE dbo.tClient SET AnalyticsLeadUserID = NULL WHERE AnalyticsLeadUserID = @UserID;
+                UPDATE dbo.tProjectNote SET CreatedByUserID = NULL WHERE CreatedByUserID = @UserID;
+
+                DECLARE @UserIdText NVARCHAR(20) = CONVERT(NVARCHAR(20), @UserID);
+                DECLARE @KeeperText NVARCHAR(20) = CONVERT(NVARCHAR(20), @Keeper);
+
+                IF OBJECT_ID(N'dbo.tProjectCalendarItem', N'U') IS NOT NULL
+                    EXEC(N'UPDATE dbo.tProjectCalendarItem SET OwnerUserID = NULL WHERE OwnerUserID = ' + @UserIdText);
+                IF OBJECT_ID(N'dbo.tProjectFile', N'U') IS NOT NULL
+                BEGIN
+                    EXEC(N'UPDATE dbo.tProjectFile SET UploadedByUserID = ' + @KeeperText + N' WHERE UploadedByUserID = ' + @UserIdText);
+                    EXEC(N'UPDATE dbo.tProjectFile SET ApprovalUpdatedByUserID = NULL WHERE ApprovalUpdatedByUserID = ' + @UserIdText);
+                END;
+                IF OBJECT_ID(N'dbo.tProjectRevenue', N'U') IS NOT NULL
+                    EXEC(N'UPDATE dbo.tProjectRevenue SET RecordedBy = ' + @KeeperText + N' WHERE RecordedBy = ' + @UserIdText);
+                IF OBJECT_ID(N'dbo.tProjectTimeEntry', N'U') IS NOT NULL
+                    EXEC(N'DELETE FROM dbo.tProjectTimeEntry WHERE UserID = ' + @UserIdText);
+                IF OBJECT_ID(N'dbo.tUserTimeEntry', N'U') IS NOT NULL
+                    EXEC(N'DELETE FROM dbo.tUserTimeEntry WHERE UserID = ' + @UserIdText);
+                IF OBJECT_ID(N'dbo.tCatAiMessage', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.tCatAiConversation', N'U') IS NOT NULL
+                    EXEC(N'DELETE m FROM dbo.tCatAiMessage AS m INNER JOIN dbo.tCatAiConversation AS c ON c.ConversationID = m.ConversationID WHERE c.UserID = ' + @UserIdText);
+                IF OBJECT_ID(N'dbo.tCatAiConversation', N'U') IS NOT NULL
+                    EXEC(N'DELETE FROM dbo.tCatAiConversation WHERE UserID = ' + @UserIdText);
+
+                DELETE FROM dbo.tUserGroupRef WHERE UserID = @UserID;
+                DELETE FROM dbo.tActivityLog WHERE UserID = @UserID;
+                DELETE FROM dbo.tUser WHERE UserID = @UserID;
+
+                DELETE a
+                  FROM dbo.tAddress AS a
+                  INNER JOIN @AddressIds AS i ON i.AddressID = a.AddressID
+                 WHERE NOT EXISTS (SELECT 1 FROM dbo.tUserAddressRef AS r WHERE r.AddressID = a.AddressID);
+
+                COMMIT TRAN;
+            END TRY
+            BEGIN CATCH
+                IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+                THROW;
+            END CATCH
+        END;
+        """;
+
     public Task<bool> UserExistsAsync(int userId, CancellationToken cancellationToken = default)
     {
         const string sql = "SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.tUser WHERE UserID = @UserID AND IsActive = 1) THEN 1 ELSE 0 END AS INT);";
@@ -356,6 +437,7 @@ public sealed class AdminRepository : IAdminRepository
 
         await _db.ExecuteTextAsync(userCreateSql, cancellationToken: cancellationToken);
         await _db.ExecuteTextAsync(userUpdateSql, cancellationToken: cancellationToken);
+        await _db.ExecuteTextAsync(UserDeleteSql, cancellationToken: cancellationToken);
     }
 
     public async Task<int> SaveUserAsync(User user, CancellationToken cancellationToken = default)
@@ -386,6 +468,44 @@ public sealed class AdminRepository : IAdminRepository
         ], "@NewUserID", cancellationToken);
 
         return Convert.ToInt32(output.Value);
+    }
+
+    public async Task SaveUserBioAsync(int userId, string? bio, CancellationToken cancellationToken = default)
+    {
+        if (userId <= 0)
+        {
+            throw new InvalidOperationException("Save the user first, then add a bio.");
+        }
+
+        const string addColumnSql = """
+            IF OBJECT_ID(N'dbo.tUser', N'U') IS NULL
+                RETURN;
+
+            IF COL_LENGTH(N'dbo.tUser', N'Bio') IS NULL
+            BEGIN
+                ALTER TABLE dbo.tUser ADD Bio NVARCHAR(4000) NULL;
+            END;
+            """;
+
+        await _db.ExecuteTextAsync(addColumnSql, cancellationToken: cancellationToken);
+
+        const string sql = """
+            UPDATE dbo.tUser
+               SET Bio = @Bio,
+                   ModifiedDate = SYSUTCDATETIME()
+             WHERE UserID = @UserID;
+
+            IF @@ROWCOUNT = 0
+                THROW 50001, 'tUser not found.', 1;
+            """;
+
+        await _db.ExecuteTextAsync(
+            sql,
+            [
+                SqlParameterFactory.Int("@UserID", userId),
+                SqlParameterFactory.NVarChar("@Bio", 4000, bio),
+            ],
+            cancellationToken);
     }
 
     public async Task<int> CreateUserWithPrimaryAddressAsync(User user, UserAddress? primaryAddress, CancellationToken cancellationToken = default)
@@ -438,6 +558,23 @@ public sealed class AdminRepository : IAdminRepository
     public Task<int> SoftDeleteUserAsync(int userId, CancellationToken cancellationToken = default)
     {
         return SoftDeleteUserInternalAsync(userId, cancellationToken);
+    }
+
+    public async Task DeleteUserAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        await _db.ExecuteTextAsync(UserDeleteSql, cancellationToken: cancellationToken);
+        try
+        {
+            await _db.ExecuteAsync("dbo.usp_User_Delete",
+            [
+                SqlParameterFactory.Int("@UserID", userId),
+                SqlParameterFactory.Int("@ActingUserID", CmsDefaults.ActingUserId)
+            ], cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number is 50001 or 50002)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
+        }
     }
 
     private async Task<int> SoftDeleteUserInternalAsync(int userId, CancellationToken cancellationToken)

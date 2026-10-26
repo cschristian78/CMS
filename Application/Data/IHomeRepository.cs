@@ -12,7 +12,7 @@ public interface IHomeRepository
         string? clientNameSearch = null,
         string? businessClassName = null,
         string? projectTypeName = null,
-        bool? isOnline = null,
+        string? workStatus = null,
         IReadOnlyList<string>? analyticsLeadNames = null,
         CancellationToken cancellationToken = default);
 }

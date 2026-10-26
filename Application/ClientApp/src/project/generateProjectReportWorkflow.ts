@@ -184,6 +184,7 @@ async function loadProjectReportInput(projectId: number): Promise<{
     projectTypeID?: number;
     statusID?: number;
     isOnline?: boolean;
+    workStatus?: string | null;
     renewalDate?: string | null;
     dueDate?: string | null;
     revenueAmount?: number | null;
@@ -338,6 +339,12 @@ async function loadProjectReportInput(projectId: number): Promise<{
       userGroup: groupOptions.find((o) => o.value === String(ugid))?.text ?? (ugid > 0 ? `User Group ${ugid}` : ''),
       status: statusOptions.find((o) => o.value === String(form.statusID ?? ''))?.text ?? '',
       isOnline: !!form.isOnline,
+      workStatus:
+        typeof form.workStatus === 'string' && form.workStatus.trim() ?
+          form.workStatus
+        : form.isOnline ?
+          'In Progress'
+        : 'Planned',
       renewalDate: form.renewalDate,
       dueDate: form.dueDate,
       latestRevenue: form.revenueAmount == null ? null : Number(form.revenueAmount),

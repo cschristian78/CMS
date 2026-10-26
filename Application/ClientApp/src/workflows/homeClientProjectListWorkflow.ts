@@ -4,7 +4,7 @@
 
 export const HOME_CLIENT_PROJECT_LIST_OPTIONS_URL = '/api/home/client-project-list/options';
 
-const HOME_LIST_FILTERS_STORAGE_KEY = 'cms.home.listFilters.v3';
+const HOME_LIST_FILTERS_STORAGE_KEY = 'cms.home.listFilters.v4';
 
 export type HomeListFilters = {
   businessUnit: string;
@@ -16,12 +16,12 @@ export type HomeListFilters = {
   analyticsLeads: string[];
 };
 
-/** Default Main list view: all clients, Online projects only (other filters cleared). */
+/** Default Main list view: all clients, In Progress projects only (other filters cleared). */
 export const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
   businessUnit: '',
   businessClass: '',
   status: '',
-  online: 'Online',
+  online: 'In Progress',
   client: '',
   projectType: '',
   analyticsLeads: [],
@@ -29,6 +29,20 @@ export const DEFAULT_HOME_LIST_FILTERS: HomeListFilters = {
 
 export function createDefaultHomeListFilters(): HomeListFilters {
   return { ...DEFAULT_HOME_LIST_FILTERS, analyticsLeads: [] };
+}
+
+function normalizeStoredProjectStatus(value: string): string {
+  const text = value.trim().toLowerCase();
+  if (text === 'online' || text === 'in progress' || text === 'inprogress') {
+    return 'In Progress';
+  }
+  if (text === 'planned') {
+    return 'Planned';
+  }
+  if (text === 'closed') {
+    return 'Closed';
+  }
+  return '';
 }
 
 function asFilterString(value: unknown, fallback: string): string {
@@ -58,7 +72,7 @@ export function loadHomeListFilters(): HomeListFilters {
       businessUnit: asFilterString(parsed.businessUnit, DEFAULT_HOME_LIST_FILTERS.businessUnit),
       businessClass: asFilterString(parsed.businessClass, DEFAULT_HOME_LIST_FILTERS.businessClass),
       status: asFilterString(parsed.status, DEFAULT_HOME_LIST_FILTERS.status),
-      online: asFilterString(parsed.online, DEFAULT_HOME_LIST_FILTERS.online),
+      online: normalizeStoredProjectStatus(asFilterString(parsed.online, DEFAULT_HOME_LIST_FILTERS.online)),
       client: asFilterString(parsed.client, DEFAULT_HOME_LIST_FILTERS.client),
       projectType: asFilterString(parsed.projectType, DEFAULT_HOME_LIST_FILTERS.projectType),
       analyticsLeads: asFilterStringArray(parsed.analyticsLeads),
