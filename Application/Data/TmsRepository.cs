@@ -112,25 +112,36 @@ public sealed class TmsRepository : ITmsRepository
     {
         await _projects.EnsureProjectWorkStatusSchemaAsync(cancellationToken);
         const string sql = """
-            SELECT DISTINCT
-                p.ProjectID,
-                pr.ProjectRefID,
-                ISNULL(p.ProjectName, N'') AS ProjectName,
-                c.ClientName,
-                ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') AS WorkStatus
-              FROM dbo.tUserGroupRef AS ugr
-              INNER JOIN dbo.tProjectRef AS pr
-                ON pr.UserGroupID = ugr.UserGroupID
-               AND pr.IsActive = 1
-              INNER JOIN dbo.tProject AS p
-                ON p.ProjectID = pr.ProjectID
-               AND p.IsActive = 1
-              LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
-              LEFT JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
-             WHERE ugr.UserID = @UserID
-             ORDER BY CASE ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned')
-                          WHEN N'In Progress' THEN 0 WHEN N'Planned' THEN 1 ELSE 2 END,
-                      c.ClientName, ProjectName, p.ProjectID;
+            SELECT
+                ProjectID,
+                ProjectRefID,
+                ProjectName,
+                ClientName,
+                WorkStatus
+              FROM (
+                SELECT DISTINCT
+                    p.ProjectID,
+                    pr.ProjectRefID,
+                    ISNULL(p.ProjectName, N'') AS ProjectName,
+                    c.ClientName,
+                    ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned') AS WorkStatus,
+                    CASE ISNULL(NULLIF(LTRIM(RTRIM(p.WorkStatus)), N''), N'Planned')
+                        WHEN N'In Progress' THEN 0
+                        WHEN N'Planned' THEN 1
+                        ELSE 2
+                    END AS WorkStatusSort
+                  FROM dbo.tUserGroupRef AS ugr
+                  INNER JOIN dbo.tProjectRef AS pr
+                    ON pr.UserGroupID = ugr.UserGroupID
+                   AND pr.IsActive = 1
+                  INNER JOIN dbo.tProject AS p
+                    ON p.ProjectID = pr.ProjectID
+                   AND p.IsActive = 1
+                  LEFT JOIN dbo.tClientRef AS cr ON cr.ClientRefID = pr.ClientRefID
+                  LEFT JOIN dbo.tClient AS c ON c.ClientID = cr.ClientID
+                 WHERE ugr.UserID = @UserID
+              ) AS projects
+             ORDER BY WorkStatusSort, ClientName, ProjectName, ProjectID;
             """;
 
         return await _db.QueryTextAsync(
