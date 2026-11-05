@@ -2,6 +2,7 @@ bin/
 obj/
 .vs/
 App_Data/connectionsettings.protected.json
+App_Data/cataisettings.protected.json
 App_Data/DataProtectionKeys/
 *.user
 *.suo

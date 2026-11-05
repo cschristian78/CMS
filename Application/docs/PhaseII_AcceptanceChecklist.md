@@ -46,6 +46,7 @@
 
 - [ ] No SQL credentials are hardcoded in source code.
 - [ ] No connection string is stored in `appsettings.json`.
+- [ ] `OpenAI:ApiKey` and `AzureBlob:SasToken` are empty in tracked appsettings files (repository `docs/SecretsConfiguration.md`).
 - [ ] Encrypted settings file is excluded from source control.
 - [ ] Application identity has execute-only stored procedure permissions.
 - [ ] Admin pages are protected before production deployment.

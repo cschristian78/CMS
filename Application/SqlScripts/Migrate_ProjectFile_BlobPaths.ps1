@@ -1,11 +1,16 @@
 # One-time migration: move tProjectFile blobs to
 # projects/{ClientShortName}/{RenewalYear}/{ProjectID}/{ProjectFileID}/{safeFileName}
 # and update BlobPath / BlobUrl. Safe to re-run (skips already-migrated paths).
+# The container SAS is read from AzureBlob__SasToken. Do not hard-code it.
 
 $ErrorActionPreference = 'Stop'
 
 $baseUrl = 'https://stacanalyticstdltest.blob.core.windows.net/cms'
-$sas = 'sv=2020-02-10&spr=https&st=2026-08-12T16%3A53%3A43Z&se=2045-08-13T16%3A53%3A00Z&sr=c&sp=racwlm&sig=kZ1IpbUlPoeR%2Fe%2F4InYoGZJO0bayTL30pu1j2uI8i%2Bc%3D'
+$sas = $env:AzureBlob__SasToken
+if ([string]::IsNullOrWhiteSpace($sas)) {
+    throw 'AzureBlob__SasToken is not set. Supply the container SAS in that environment variable. Do not commit it.'
+}
+$sas = $sas.Trim().TrimStart('?')
 $sqlServer = 'vmus-sql-099'
 $sqlDb = 'BMS_CMS'
 
@@ -54,6 +59,11 @@ function Normalize-BlobPath([string]$pathOrUrl) {
     return $v.TrimStart('/')
 }
 
+function Hide-SecretQuery([string]$message) {
+    if ([string]::IsNullOrEmpty($message)) { return $message }
+    return [regex]::Replace($message, '\?[^\s''"]+', '?REDACTED')
+}
+
 function Copy-Blob([string]$oldPath, [string]$newPath) {
     $src = "$baseUrl/$oldPath`?$sas"
     $dest = "$baseUrl/$newPath`?$sas"
@@ -83,7 +93,7 @@ function Delete-Blob([string]$path) {
     try {
         Invoke-WebRequest -Method Delete -Uri $uri -Headers @{ 'x-ms-version' = '2020-04-08' } -UseBasicParsing | Out-Null
     } catch {
-        Write-Warning "Could not delete old blob $path : $($_.Exception.Message)"
+        Write-Warning "Could not delete old blob $path : $(Hide-SecretQuery $_.Exception.Message)"
     }
 }
 
@@ -173,7 +183,7 @@ UPDATE dbo.tProjectFile
         Write-Host "  OK ProjectFileID $($r.ProjectFileID)"
         $migrated++
     } catch {
-        Write-Host "  FAIL ProjectFileID $($r.ProjectFileID): $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  FAIL ProjectFileID $($r.ProjectFileID): $(Hide-SecretQuery $_.Exception.Message)" -ForegroundColor Red
         $failed++
     }
 }
