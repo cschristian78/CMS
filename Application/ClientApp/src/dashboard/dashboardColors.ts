@@ -1,8 +1,8 @@
 /** Consistent palette for ProjectStatus and RevenueTier across dashboard tabs. */
 
 export const PROJECT_STATUS_COLORS: Record<string, string> = {
-  active: '#30d880',
-  inactive: '#5a7080',
+  active: '#48086f',
+  inactive: '#7f7f7f',
 };
 
 export const REVENUE_TIER_ORDER = [
@@ -17,26 +17,17 @@ export const REVENUE_TIER_ORDER = [
 ];
 
 export const REVENUE_TIER_COLORS: Record<string, string> = {
-  unknown: '#5a7080',
-  lessthan250k: '#6b7280',
-  lessthan500k: '#3b82f6',
-  lessthan10m: '#8b5cf6',
-  lessthan25m: '#20d4e8',
-  lessthan50m: '#f59e0b',
-  lessthan100m: '#f08700',
+  unknown: '#7f7f7f',
+  lessthan250k: '#000000',
+  lessthan500k: '#2f2c31',
+  lessthan10m: '#48086f',
+  lessthan25m: '#7f7f7f',
+  lessthan50m: '#2f2c31',
+  lessthan100m: '#000000',
   needsreviewed: '#ef4444',
 };
 
-const SERIES_FALLBACK = [
-  '#20d4e8',
-  '#f08700',
-  '#30d880',
-  '#3b82f6',
-  '#8b5cf6',
-  '#f59e0b',
-  '#ef4444',
-  '#14b8a6',
-];
+const SERIES_FALLBACK = ['#48086f', '#2f2c31', '#7f7f7f', '#000000'];
 
 function compactKey(value: string): string {
   return value.replace(/[\s_\-.$]/g, '').toLowerCase();
@@ -106,15 +97,15 @@ export function agingBucketColor(bucket: string): string {
     return '#ef4444';
   }
   if (k === 'duethismonth') {
-    return '#f59e0b';
+    return '#48086f';
   }
   if (k === 'duethisquarter') {
-    return '#f08700';
+    return '#2f2c31';
   }
   if (k === 'later') {
-    return '#20d4e8';
+    return '#7f7f7f';
   }
-  return '#5a7080';
+  return '#7f7f7f';
 }
 
 export function formatUsd(n: number): string {

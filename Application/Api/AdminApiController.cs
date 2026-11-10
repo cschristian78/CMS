@@ -76,6 +76,17 @@ public sealed class AdminApiController : ControllerBase
             return Ok(new { message = "Bio saved." });
         });
 
+    [HttpPost("users/bio-deck")]
+    public Task<ActionResult> BuildUserBioDeckAsync([FromBody] UserBioDeckRequest body, CancellationToken cancellationToken)
+        => RunAsync(async () =>
+        {
+            var bytes = await _adminService.BuildUserBioDeckAsync(body?.UserIds ?? [], cancellationToken);
+            return File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "User bios.pptx");
+        });
+
     [HttpPost("users/{userId:int}/soft-delete")]
     public Task<ActionResult> SoftDeleteUserAsync(int userId, CancellationToken cancellationToken)
         => RunAsync(async () =>
@@ -613,6 +624,11 @@ public sealed class AdminApiController : ControllerBase
     public sealed class SaveUserBioRequest
     {
         public string? Bio { get; set; }
+    }
+
+    public sealed class UserBioDeckRequest
+    {
+        public List<int> UserIds { get; set; } = [];
     }
 
     private async Task<ActionResult> RunAsync(Func<Task<ActionResult>> operation)

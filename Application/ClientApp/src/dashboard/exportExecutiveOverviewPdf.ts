@@ -169,13 +169,13 @@ export function exportExecutiveOverviewPdf(options: {
     * { box-sizing: border-box; }
     body {
       font-family: "Segoe UI", Calibri, Arial, sans-serif;
-      color: #1a2332;
+      color: #2f2c31;
       margin: 0;
       font-size: 10.5pt;
       line-height: 1.35;
     }
     header {
-      border-bottom: 2.5px solid #0b3d5c;
+      border-bottom: 2.5px solid #7f7f7f;
       padding-bottom: 0.55rem;
       margin-bottom: 1rem;
       display: flex;
@@ -187,21 +187,21 @@ export function exportExecutiveOverviewPdf(options: {
       margin: 0;
       font-size: 1.55rem;
       font-weight: 650;
-      color: #0b3d5c;
+      color: #2f2c31;
       letter-spacing: 0.01em;
     }
     header .meta {
       text-align: right;
-      color: #4a5a6a;
+      color: #7f7f7f;
       font-size: 0.85rem;
     }
     .filters {
-      background: #f3f6f9;
-      border: 1px solid #d5dde6;
+      background: #ffffff;
+      border: 1px solid #7f7f7f;
       border-radius: 4px;
       padding: 0.45rem 0.65rem;
       margin-bottom: 1rem;
-      color: #334;
+      color: #2f2c31;
       font-size: 0.88rem;
     }
     .kpi-row {
@@ -211,23 +211,25 @@ export function exportExecutiveOverviewPdf(options: {
       margin-bottom: 1.1rem;
     }
     .kpi {
-      border: 1px solid #cfd8e3;
+      border: 1px solid #000000;
       border-radius: 6px;
       padding: 0.65rem 0.8rem;
-      background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+      background: #ebeef0;
     }
     .kpi span {
       display: block;
       font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #5a6b7c;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #48086f;
+      font-weight: 700;
       margin-bottom: 0.2rem;
     }
+    .kpi span::after { content: " :"; }
     .kpi strong {
       font-size: 1.35rem;
-      color: #0b3d5c;
-      font-weight: 650;
+      color: #000000;
+      font-weight: 400;
     }
     .grid-2 {
       display: grid;
@@ -242,8 +244,8 @@ export function exportExecutiveOverviewPdf(options: {
     h2 {
       margin: 0 0 0.4rem;
       font-size: 0.98rem;
-      color: #0b3d5c;
-      border-bottom: 1px solid #d5dde6;
+      color: #2f2c31;
+      border-bottom: 1px solid #7f7f7f;
       padding-bottom: 0.25rem;
     }
     table {
@@ -252,25 +254,30 @@ export function exportExecutiveOverviewPdf(options: {
       font-size: 0.82rem;
     }
     th, td {
-      border: 1px solid #d5dde6;
+      border: 1px solid #7f7f7f;
       padding: 0.28rem 0.4rem;
       text-align: left;
       vertical-align: top;
     }
     th {
-      background: #0b3d5c;
-      color: #fff;
-      font-weight: 600;
+      background: #48086f;
+      color: #ffffff;
+      font-weight: 400;
     }
-    tfoot tr.total td { background: #0b3d5c; color: #fff; font-weight: 650; }
+    tfoot tr.total td {
+      background: #f4f0f6;
+      color: #2f2c31;
+      font-weight: 700;
+      border-top: 1px solid #48086f;
+    }
     td.num, th.num { text-align: right; white-space: nowrap; }
     table.projects th, table.projects td { font-size: 0.76rem; }
-    .note { color: #5a6b7c; font-size: 0.8rem; margin: 0.35rem 0 0; }
+    .note { color: #7f7f7f; font-size: 0.8rem; margin: 0.35rem 0 0; }
     footer {
       margin-top: 1.25rem;
       padding-top: 0.45rem;
-      border-top: 1px solid #d5dde6;
-      color: #5a6b7c;
+      border-top: 1px solid #7f7f7f;
+      color: #7f7f7f;
       font-size: 0.75rem;
     }
     @media print {

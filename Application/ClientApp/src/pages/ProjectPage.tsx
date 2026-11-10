@@ -111,9 +111,9 @@ interface ProjectFormModel {
   renewalDate?: string | null;
   dueDate?: string | null;
   statusID: number;
-  /** Planned, In Progress, or Closed. Green icon when In Progress. */
+  /** Planned, In Progress, or Closed. Amber, green, or gray dot. */
   workStatus?: string;
-  /** Derived from work status. The green icon follows In Progress. */
+  /** Derived from work status. The green dot follows In Progress. */
   isOnline?: boolean;
   /** When true, project revenue is fee-based. */
   isFeeBasedRevenue?: boolean;
@@ -3683,9 +3683,9 @@ export default function ProjectPage({ flash }: { flash: FlashFn }) {
                   <span
                     className={
                       'home-online-dot' +
-                      ((model.workStatus === 'In Progress') ?
-                        ' home-online-dot--on'
-                      : ' home-online-dot--off')
+                      (model.workStatus === 'In Progress' ? ' home-online-dot--progress'
+                      : model.workStatus === 'Closed' ? ' home-online-dot--closed'
+                      : ' home-online-dot--planned')
                     }
                     aria-hidden="true"
                   />

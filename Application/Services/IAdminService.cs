@@ -12,6 +12,7 @@ public interface IAdminService
     // ---- Users -----------------------------------------------------------
     Task<int> SaveUserAsync(User user, CancellationToken cancellationToken = default);
     Task SaveUserBioAsync(int userId, string? bio, CancellationToken cancellationToken = default);
+    Task<byte[]> BuildUserBioDeckAsync(IReadOnlyList<int> userIds, CancellationToken cancellationToken = default);
     Task SaveUserPhotoAsync(int userId, Stream stream, long? declaredLength, CancellationToken cancellationToken = default);
     Task SoftDeleteUserAsync(int userId, CancellationToken cancellationToken = default);
     Task DeleteUserAsync(int userId, CancellationToken cancellationToken = default);

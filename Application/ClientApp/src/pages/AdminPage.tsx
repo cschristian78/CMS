@@ -1,7 +1,7 @@
 ﻿import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import type { FlashFn } from '../App';
-import { ApiError, apiDelete, apiGet, apiPostFormData, apiPostJson, apiPutJson } from '../api';
+import { ApiError, apiDelete, apiGet, apiPostBlob, apiPostFormData, apiPostJson, apiPutJson } from '../api';
 import { fetchAuthSession } from '../authSession';
 import {
   downloadDataAuditReportPdf,
@@ -451,27 +451,11 @@ const clientRefTag = (c: AdminClient): { label: string; kind: ClientRefTagKind }
   return { label: 'Need Update', kind: 'needupdate' };
 };
 
-// Distinct, readable colors assigned to departments by their sorted position. Reused by the
-// header count chips and the per-row department badge so a department is always the same color.
-const DEPT_PALETTE: { bg: string; fg: string }[] = [
-  { bg: 'rgba(32, 212, 232, 0.18)', fg: '#20d4e8' },
-  { bg: 'rgba(48, 216, 128, 0.16)', fg: '#30d880' },
-  { bg: 'rgba(240, 135, 0, 0.18)', fg: '#f08700' },
-  { bg: 'rgba(99, 102, 241, 0.2)', fg: '#a5b4fc' },
-  { bg: 'rgba(244, 63, 94, 0.18)', fg: '#fb7185' },
-  { bg: 'rgba(14, 165, 233, 0.18)', fg: '#38bdf8' },
-  { bg: 'rgba(168, 85, 247, 0.18)', fg: '#c084fc' },
-  { bg: 'rgba(239, 68, 68, 0.18)', fg: '#f87171' },
-  { bg: 'rgba(16, 185, 129, 0.16)', fg: '#34d399' },
-  { bg: 'rgba(245, 158, 11, 0.18)', fg: '#fbbf24' },
-  { bg: 'rgba(99, 102, 241, 0.22)', fg: '#818cf8' },
-  { bg: 'rgba(249, 115, 22, 0.18)', fg: '#fb923c' },
-];
+// Department chips stay on the light-gray surface. Text is dark purple, or dark gray when no department is set.
+const DEPT_COLOR = { bg: '#ebeef0', fg: '#48086f' };
+const NO_DEPT_COLOR = { bg: '#ebeef0', fg: '#7f7f7f' };
 
-const NO_DEPT_COLOR = { bg: 'rgba(90, 112, 128, 0.2)', fg: '#8aa0b0' };
-
-const deptColorByIndex = (index: number) =>
-  index < 0 ? NO_DEPT_COLOR : DEPT_PALETTE[index % DEPT_PALETTE.length];
+const deptColorByIndex = (index: number) => (index < 0 ? NO_DEPT_COLOR : DEPT_COLOR);
 
 interface UserComboProps {
   id: string;
@@ -1400,6 +1384,9 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
   const [userBioDialogOpen, setUserBioDialogOpen] = useState(false);
   const [userBioDraft, setUserBioDraft] = useState('');
   const [userBioSaving, setUserBioSaving] = useState(false);
+  const [userBioDeckBusy, setUserBioDeckBusy] = useState(false);
+  const [bioExportUserIds, setBioExportUserIds] = useState<Set<number>>(() => new Set());
+  const [bioExportNoticeOpen, setBioExportNoticeOpen] = useState(false);
   const [copyEmail, setCopyEmail] = useState('');
   const [userRemoveDialogOpen, setUserRemoveDialogOpen] = useState(false);
   const [buDeleteBlockedMessage, setBuDeleteBlockedMessage] = useState<string | null>(null);
@@ -2866,6 +2853,43 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
     });
   }, [admin, userActiveTab, userDepartmentFilter, userDirectorySearch]);
 
+  const selectAllUsersForBioExport = () => {
+    setBioExportUserIds(new Set(filteredUsersForDirectory.map((user) => user.userID).filter((id) => id > 0)));
+  };
+
+  const exportUserBioDeck = async () => {
+    if (userBioDeckBusy) {
+      return;
+    }
+    const ids = filteredUsersForDirectory
+      .map((user) => user.userID)
+      .filter((id) => id > 0 && bioExportUserIds.has(id));
+    if (ids.length === 0) {
+      setBioExportNoticeOpen(true);
+      return;
+    }
+
+    setUserBioDeckBusy(true);
+    try {
+      const blob = await apiPostBlob('/api/admin/users/bio-deck', { userIds: ids });
+      const department = userDepartmentFilter.trim();
+      const fileName = department ? `${department} users.pptx` : 'User bios.pptx';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      flash('success', `Created a slide for ${ids.length} user${ids.length === 1 ? '' : 's'}.`);
+    } catch (err) {
+      flash('error', err instanceof ApiError ? err.message : 'Could not create the PowerPoint.');
+    } finally {
+      setUserBioDeckBusy(false);
+    }
+  };
+
   const userActiveCounts = useMemo(() => {
     const counts = { total: 0, active: 0, inactive: 0 };
     if (!admin) {
@@ -2891,6 +2915,14 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
       setSelectedUserId('');
     }
   }, [filteredUsersForDirectory, selectedUserId, admin]);
+
+  useEffect(() => {
+    const visible = new Set(filteredUsersForDirectory.map((user) => user.userID));
+    setBioExportUserIds((current) => {
+      const next = new Set([...current].filter((id) => visible.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [filteredUsersForDirectory]);
 
   // In this schema dbo.tBusinessClass is global (no BU column); the BU/BC/Type association lives on
   // dbo.tClientRef. So Business Class is NOT scoped to a Business Unit - show every class.
@@ -4635,10 +4667,29 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                   </button>
                 ))}
               </div>
+              <div className="admin-users-deck-row">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={filteredUsersForDirectory.length === 0}
+                  onClick={selectAllUsersForBioExport}
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={userBioDeckBusy}
+                  onClick={() => void exportUserBioDeck()}
+                >
+                  {userBioDeckBusy ? 'Building…' : 'Export Bio'}
+                </button>
+              </div>
               <div
                 id="admin-user-pick-list"
                 className="admin-user-pick-list"
                 role="listbox"
+                aria-multiselectable="true"
                 aria-label={`${userActiveTab} users`}
                 aria-activedescendant={selectedUserId === '' ? undefined : `admin-user-row-${selectedUserId}`}
               >
@@ -4659,17 +4710,37 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
                     const isInactive = u.isDeleted === true;
                     const dept = (u.department ?? '').trim();
                     const deptColor = deptColorByIndex(dept ? departmentColorIndex.get(dept.toLowerCase()) ?? -1 : -1);
+                    const pickedForExport = bioExportUserIds.has(u.userID);
                     return (
                       <button
                         key={u.userID}
                         id={`admin-user-row-${u.userID}`}
                         type="button"
                         role="option"
-                        aria-selected={selectedUserId === u.userID}
-                        className={'admin-user-pick-row' + (selectedUserId === u.userID ? ' selected' : '')}
-                        onClick={() => setSelectedUserId(u.userID)}
+                        aria-selected={pickedForExport}
+                        className={'admin-user-pick-row' + (pickedForExport ? ' selected' : '')}
+                        onClick={() => {
+                          setSelectedUserId(u.userID);
+                          setBioExportUserIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(u.userID)) {
+                              next.delete(u.userID);
+                            } else {
+                              next.add(u.userID);
+                            }
+                            return next;
+                          });
+                        }}
                         onDoubleClick={() => {
                           setSelectedUserId(u.userID);
+                          setBioExportUserIds((current) => {
+                            if (current.has(u.userID)) {
+                              return current;
+                            }
+                            const next = new Set(current);
+                            next.add(u.userID);
+                            return next;
+                          });
                           void applyUserToForm(u);
                         }}
                       >
@@ -6921,6 +6992,40 @@ export default function AdminPage({ flash }: { flash: FlashFn }) {
           </div>
         </div>
       </section>
+
+      {bioExportNoticeOpen ? (
+        <div
+          className="home-modal-overlay"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setBioExportNoticeOpen(false);
+            }
+          }}
+        >
+          <div
+            className="home-modal-dialog admin-bio-export-notice"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-bio-export-notice"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setBioExportNoticeOpen(false);
+              }
+            }}
+          >
+            <p id="admin-bio-export-notice" className="admin-bio-export-notice-text">
+              Please select a name to continue.
+            </p>
+            <div className="home-modal-actions admin-bio-export-notice-actions">
+              <button type="button" className="primary-button" autoFocus onClick={() => setBioExportNoticeOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {userBioDialogOpen ? (
         <div

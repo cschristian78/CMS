@@ -445,7 +445,7 @@ function ExecutiveTab({
             label: m.label,
             value: m.count,
             revenue: m.revenue,
-            fill: m.label === DASH_OTHER_LABEL ? '#8a96a3' : seriesColor(i, m.label),
+            fill: m.label === DASH_OTHER_LABEL ? '#7f7f7f' : seriesColor(i, m.label),
           }))}
           onSelect={(label) => {
             if (label === DASH_OTHER_LABEL) {
@@ -478,7 +478,7 @@ function ExecutiveTab({
             value: m.revenue,
             count: m.count,
             displayValue: formatUsdThousands(m.revenue),
-            fill: m.label === DASH_OTHER_LABEL ? '#8a96a3' : '#20d4e8',
+            fill: m.label === DASH_OTHER_LABEL ? '#7f7f7f' : '#48086f',
           }))}
           onSelect={(item) => {
             const name = item.label.replace(/\s+\(\d+\)$/, '');
@@ -550,7 +550,7 @@ function PortfolioTab({
           items={onlineMetrics.map((m) => ({
             label: m.label,
             value: m.count,
-            fill: m.label === 'In Progress' ? '#30d880' : m.label === 'Planned' ? '#3d8bfd' : '#5a7080',
+            fill: m.label === 'In Progress' ? '#48086f' : m.label === 'Planned' ? '#2f2c31' : '#7f7f7f',
           }))}
           onSelect={(label) => onDrill(label, rows.filter((r) => onlineLabel(r, col) === label))}
         />
@@ -561,7 +561,7 @@ function PortfolioTab({
           items={crossed.map((m) => ({
             label: m.label,
             value: m.value,
-            fill: m.label.startsWith('In Progress') ? '#30d880' : m.label.startsWith('Planned') ? '#3d8bfd' : '#5a7080',
+            fill: m.label.startsWith('In Progress') ? '#48086f' : m.label.startsWith('Planned') ? '#2f2c31' : '#7f7f7f',
           }))}
           onSelect={(item) => {
             const [on, status] = item.label.split(' Â· ');
@@ -573,7 +573,7 @@ function PortfolioTab({
             title="New Project Starts"
             ariaLabel="Count of projects by CreatedDate month"
             orientation="vertical"
-            items={starts.map((m) => ({ label: formatMonthLabel(m.label), value: m.count, fill: '#f08700' }))}
+            items={starts.map((m) => ({ label: formatMonthLabel(m.label), value: m.count, fill: '#48086f' }))}
             onSelect={(item) => {
               const key = starts.find((t) => formatMonthLabel(t.label) === item.label)?.label ?? '';
               onDrill(`Starts ${item.label}`, rows.filter((r) => monthKey(cellYmd(r, col.createdDate)) === key));

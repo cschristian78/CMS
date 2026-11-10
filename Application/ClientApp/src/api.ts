@@ -166,6 +166,23 @@ export async function apiPostFormData<T>(path: string, formData: FormData): Prom
   return JSON.parse(raw) as T;
 }
 
+export async function apiPostBlob(path: string, body: unknown): Promise<Blob> {
+  const token = await refreshCsrf();
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-XSRF-TOKEN': token,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw await ApiError.fromResponse(res);
+  }
+  return await res.blob();
+}
+
 /** Fetch binary content (e.g. project file download for email attachment). */
 export async function apiGetBlob(path: string): Promise<Blob> {
   const res = await fetch(path, {

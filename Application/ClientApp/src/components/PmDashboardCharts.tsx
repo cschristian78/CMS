@@ -3,8 +3,8 @@ import type { BarChartItem } from './DashboardBarChart';
 import { formatNumber, formatPercent, formatUsd, formatUsdThousands, seriesColor } from '../dashboard/dashboardColors';
 import type { NamedMetric, RenewalTimelinePeriod, TimelineGrain } from '../dashboard/dashboardData';
 
-const TIMELINE_REVENUE_FILL = '#20d4e8';
-const TIMELINE_COUNT_FILL = '#f08700';
+const TIMELINE_REVENUE_FILL = '#48086f';
+const TIMELINE_COUNT_FILL = '#2f2c31';
 
 function scaleBarPx(value: number, max: number, plotH: number): number {
   if (!Number.isFinite(value) || value <= 0) {
@@ -210,16 +210,16 @@ export function DashboardLineChart({ title, items, ariaLabel, valueMode = 'numbe
       {items.length === 0 ?
         <p className="field-help" role="status">No data to display.</p>
       : <svg viewBox={`0 0 ${w} ${h}`} className="pm-line-svg" role="img" aria-label={ariaLabel}>
-          <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#223550" />
-          <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
-          {d ? <path d={d} fill="none" stroke="#20d4e8" strokeWidth="2.2" /> : null}
+          <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#7f7f7f" />
+          <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#7f7f7f" />
+          {d ? <path d={d} fill="none" stroke="#48086f" strokeWidth="2.2" /> : null}
           {pts.map((p) => (
             <g key={p.item.label}>
               <circle
                 cx={p.x}
                 cy={p.y}
                 r="4.5"
-                fill={p.item.fill ?? '#f08700'}
+                fill={p.item.fill ?? '#48086f'}
                 className={onSelect ? 'pm-chart-hit' : undefined}
                 onClick={() => onSelect?.(p.item)}
               />
@@ -261,8 +261,8 @@ export function DashboardScatterChart({ title, points, xLabel, yLabel, ariaLabel
       {points.length === 0 ?
         <p className="field-help" role="status">No data to display.</p>
       : <svg viewBox={`0 0 ${w} ${h}`} className="pm-line-svg" role="img" aria-label={ariaLabel}>
-          <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#223550" />
-          <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#223550" />
+          <line x1={pad.l} y1={pad.t} x2={pad.l} y2={h - pad.b} stroke="#7f7f7f" />
+          <line x1={pad.l} y1={h - pad.b} x2={w - pad.r} y2={h - pad.b} stroke="#7f7f7f" />
           {points.map((p, i) => {
             const x = pad.l + (maxX > 0 ? (p.x / maxX) * innerW : 0);
             const y = pad.t + innerH - (maxY > 0 ? (p.y / maxY) * innerH : 0);
@@ -336,13 +336,13 @@ export function DashboardParetoChart({ title, items, ariaLabel, onSelect }: Pare
                   y={pad.t + innerH - bh}
                   width={Math.max(4, barW - 4)}
                   height={bh}
-                  fill="#20d4e8"
+                  fill="#48086f"
                   className={onSelect ? 'pm-chart-hit' : undefined}
                   onClick={() => onSelect?.(p.item.label)}
                 />
               );
             })}
-            {line ? <path d={line} fill="none" stroke="#f08700" strokeWidth="2" /> : null}
+            {line ? <path d={line} fill="none" stroke="#2f2c31" strokeWidth="2" /> : null}
           </svg>
           <p className="field-help pm-pareto-caption">
             Bars = LatestRevenue. Line = cumulative share
@@ -627,7 +627,7 @@ export function DashboardComboBar({ title, items, ariaLabel, onSelect }: ComboPr
                     className="bar-fill"
                     style={{
                       width: `${maxCount > 0 ? (item.count / maxCount) * 100 : 0}%`,
-                      background: '#20d4e8',
+                      background: '#48086f',
                     }}
                   />
                 </div>
@@ -636,7 +636,7 @@ export function DashboardComboBar({ title, items, ariaLabel, onSelect }: ComboPr
                     className="bar-fill"
                     style={{
                       width: `${maxHours > 0 ? (item.hours / maxHours) * 100 : 0}%`,
-                      background: '#f08700',
+                      background: '#2f2c31',
                     }}
                   />
                 </div>

@@ -79,11 +79,11 @@ function markerIcon(point: UserMapPoint, offset?: { dx: number; dy: number }): L
     <svg class="admin-user-map-arrow" width="${size}" height="${size}" aria-hidden="true">
       <defs>
         <marker id="${markerId}" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-          <path d="M0,0 L7,3.5 L0,7 Z" fill="#16324f" />
+          <path d="M0,0 L7,3.5 L0,7 Z" fill="#48086f" />
         </marker>
       </defs>
       <line x1="${startX}" y1="${startY}" x2="${center}" y2="${center}" stroke="#ffffff" stroke-width="5" />
-      <line x1="${startX}" y1="${startY}" x2="${center}" y2="${center}" stroke="#16324f" stroke-width="2" marker-end="url(#${markerId})" />
+      <line x1="${startX}" y1="${startY}" x2="${center}" y2="${center}" stroke="#48086f" stroke-width="2" marker-end="url(#${markerId})" />
     </svg>`;
   return L.divIcon({
     className: 'leaflet-div-icon admin-user-map-marker admin-user-map-marker--callout',
@@ -323,7 +323,7 @@ export default function UserAddressMap({
             L.circleMarker([point.latitude!, point.longitude!], {
               radius: 4,
               weight: 2,
-              color: '#16324f',
+              color: '#48086f',
               fillColor: '#ffffff',
               fillOpacity: 1,
             }).addTo(layer);

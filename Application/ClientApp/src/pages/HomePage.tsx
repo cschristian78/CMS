@@ -19,7 +19,6 @@ import {
   type HomeListFilters,
 } from '../workflows/homeClientProjectListWorkflow';
 import { formatCalendarDateDisplay } from '../utils/dateInput';
-import { APP_BUILD_NUMBER } from '../appBuild';
 import { runProjectReportWorkflow, type ProjectReportRunMode } from '../project/generateProjectReportWorkflow';
 
 function normalizeColumnName(name: string): string {
@@ -1079,21 +1078,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
       : null}
 
       <section className="hero">
-        <h1>Client Management System</h1>
-        <p>
-          Manage clients, projects, advisory services, administrative data, and dashboard reporting.
-        </p>
-        <p className="home-build" aria-label="Application build">
-          Build {APP_BUILD_NUMBER}
-        </p>
-        <p className="hero-feedback">
-          <a
-            className="home-send-feedback-link"
-            href="mailto:scott.christian@bmsgroup.com?cc=catbottest%40bmsgroup.com&subject=CMS%20Feedback"
-          >
-            Send Feedback
-          </a>
-        </p>
+        <h1>Project List</h1>
       </section>
 
       {summaryError ? <div className="alert alert-error narrow-card">{summaryError}</div> : null}
@@ -1102,22 +1087,18 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Active Projects">
           <span className="tile-title">Active Projects</span>
           <span className="tile-stat-value">{summary != null ? summary.activeProjectCount : '...'}</span>
-          <span className="tile-stat-detail">All Active projects</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="Total Revenue (USD)">
           <span className="tile-title">Total Revenue (USD)</span>
           <span className="tile-stat-value">{summary != null ? revenueLabel : '...'}</span>
-          <span className="tile-stat-detail">All Active projects</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="In Progress Projects">
           <span className="tile-title">In Progress</span>
           <span className="tile-stat-value">{onlineProjectCountLabel}</span>
-          <span className="tile-stat-detail">Currently in progress</span>
         </div>
         <div className="workflow-tile workflow-tile--stat" role="region" aria-label="In Progress Revenue">
           <span className="tile-title">In Progress Revenue</span>
           <span className="tile-stat-value">{summary != null ? onlineRevenueLabel : '...'}</span>
-          <span className="tile-stat-detail">In Progress projects</span>
         </div>
       </section>
 
@@ -1392,7 +1373,10 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                       rowProjectId !== null && Object.prototype.hasOwnProperty.call(workStatusOverrides, rowProjectId) ?
                         workStatusOverrides[rowProjectId]
                       : normalizeWorkStatus(fromStatus);
-                    const inProgress = workStatus === 'In Progress';
+                    const statusDotClass =
+                      workStatus === 'In Progress' ? 'home-online-dot--progress'
+                      : workStatus === 'Closed' ? 'home-online-dot--closed'
+                      : 'home-online-dot--planned';
                     const rowKey =
                       rowProjectId !== null ? `project-${rowProjectId}` : `row-${ri}-${String(row[0] ?? '')}`;
                     return (
@@ -1421,8 +1405,7 @@ export default function HomePage({ flash }: { flash: FlashFn }) {
                         <button
                           type="button"
                           className={
-                            'home-online-dot' +
-                            (inProgress ? ' home-online-dot--on' : ' home-online-dot--off')
+                            'home-online-dot ' + statusDotClass
                           }
                           disabled={rowProjectId === null}
                           aria-label={`${workStatus}. Click to change project status.`}

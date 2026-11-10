@@ -1,38 +1,50 @@
 ﻿:root {
-    /* BMS / iVision tokens (dark industrial) */
+    /* Role-locked palette. Mid purple is hover only. Light purple is the modal backdrop only. */
     --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
     --font-display: 'Bebas Neue', Impact, sans-serif;
-    --black: #04070c;
-    --background: #04070c;
-    --surface: #0d1522;
-    --surface-deep: #080e18;
-    --card: #0d1522;
-    --border: #1a2d44;
-    --border2: #223550;
-    --text: #c8d8e8;
-    --muted: #5a7080;
-    --white: #e8f0f8;
-    --accent: #f08700;
-    --accent-dim: #b86500;
-    --accent-glow: rgba(240, 135, 0, 0.55);
-    --accent-soft: rgba(240, 135, 0, 0.09);
-    --cyan: #20d4e8;
-    --green: #30d880;
+    --cms-page: #ffffff;
+    --cms-body: #2f2c31;
+    --cms-light-gray: #ebeef0;
+    --cms-dark-gray: #7f7f7f;
+    --cms-dark-purple: #48086f;
+    --cms-deep-purple: #27003f;
+    --cms-mid-purple: #7f35b2;
+    --cms-light-purple: #c2a8f0;
+    --cms-grid-black: #000000;
+    --cms-error: #ef4444;
+    --cms-dialog: color-mix(in srgb, #7f7f7f 34%, #ebeef0);
+    --cms-total-wash: color-mix(in srgb, #48086f 6%, #ffffff);
+    --black: #000000;
+    --background: #ffffff;
+    --surface: #ebeef0;
+    --surface-deep: #ebeef0;
+    --card: #ffffff;
+    --border: #7f7f7f;
+    --border2: #7f7f7f;
+    --text: #2f2c31;
+    --muted: #7f7f7f;
+    --white: #ffffff;
+    --accent: #48086f;
+    --accent-dim: #48086f;
+    --accent-glow: transparent;
+    --accent-soft: color-mix(in srgb, #48086f 8%, transparent);
+    --cyan: #48086f;
+    --green: #2f2c31;
     --red: #ef4444;
-    --amber: #f59e0b;
-    --primary: #f08700;
-    --primary-hover: #ff9a1a;
+    --amber: #7f7f7f;
+    --primary: #48086f;
+    --primary-hover: #7f35b2;
     --danger: #ef4444;
-    --danger-hover: #dc2626;
-    --success-bg: rgba(48, 216, 128, 0.12);
-    --success-text: #30d880;
-    --error-bg: rgba(239, 68, 68, 0.12);
+    --danger-hover: #ef4444;
+    --success-bg: #ffffff;
+    --success-text: #2f2c31;
+    --error-bg: transparent;
     --error-text: #ef4444;
-    --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
     --app-sidebar-width: 5.25rem;
     --page-shell-inline-pad: 1.5rem;
-    --list-row-light: rgba(125, 186, 233, 0.18);
-    --list-row-dark: rgba(29, 90, 165, 0.28);
+    --list-row-light: #ebeef0;
+    --list-row-dark: #ebeef0;
     /* Fixed tab button size — matches Project "Client Info" tab */
     --cms-tab-width: 9.25rem;
     --cms-tab-min-height: 2.75rem;
@@ -286,7 +298,7 @@ main.page-shell.page-shell--hub-wide {
     flex-direction: column;
     align-items: center;
     gap: 0;
-    width: min(100%, 60rem);
+    width: 100%;
 }
 
 .app-hub-headline {
@@ -649,9 +661,12 @@ main.page-shell.page-shell--hub-wide {
 
 .app-hub-tiles {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 18rem));
+    grid-template-columns: repeat(3, minmax(14rem, 18rem));
+    justify-content: center;
     gap: 1.5rem;
-    width: min(100%, 60rem);
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
 }
 
 .app-hub-tile {
@@ -950,15 +965,17 @@ main.page-shell.page-shell--hub-wide {
 
 @media (max-width: 960px) {
     .app-hub-tiles {
-        grid-template-columns: repeat(2, minmax(0, 18rem));
-        width: min(100%, 40rem);
+        grid-template-columns: repeat(2, minmax(14rem, 18rem));
+        width: fit-content;
+        margin-inline: auto;
     }
 }
 
 @media (max-width: 720px) {
     .app-hub-tiles {
-        grid-template-columns: minmax(0, 1fr);
-        width: min(100%, 22rem);
+        grid-template-columns: minmax(0, 22rem);
+        width: fit-content;
+        margin-inline: auto;
     }
 }
 
@@ -1922,6 +1939,13 @@ textarea {
     font-weight: 800;
     color: var(--primary);
     margin-right: 0.35rem;
+}
+
+.admin-users-deck-row {
+    display: flex;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    margin: 0.15rem 0 0.45rem;
 }
 
 .admin-user-pick-list {
@@ -3883,22 +3907,33 @@ button.home-online-dot {
     background-image: none;
 }
 
-/* Planned or Closed = gray dot */
-.home-online-dot--off,
-button.home-online-dot.home-online-dot--off {
-    background: #9aa6b2 !important;
-    background-color: #9aa6b2 !important;
-    border-color: #7d8a97 !important;
-    box-shadow: none !important;
-}
-
-/* In Progress = green dot */
+/* In Progress = green, Planned = amber, Closed = gray */
 .home-online-dot--on,
-button.home-online-dot.home-online-dot--on {
+.home-online-dot--progress,
+button.home-online-dot.home-online-dot--on,
+button.home-online-dot.home-online-dot--progress {
     background: #22a045 !important;
     background-color: #22a045 !important;
     border-color: #1a7a34 !important;
-    box-shadow: 0 0 0 2px rgba(34, 160, 69, 0.28);
+    box-shadow: none !important;
+}
+
+.home-online-dot--planned,
+button.home-online-dot.home-online-dot--planned {
+    background: #f59e0b !important;
+    background-color: #f59e0b !important;
+    border-color: #d97706 !important;
+    box-shadow: none !important;
+}
+
+.home-online-dot--off,
+.home-online-dot--closed,
+button.home-online-dot.home-online-dot--off,
+button.home-online-dot.home-online-dot--closed {
+    background: #7f7f7f !important;
+    background-color: #7f7f7f !important;
+    border-color: #7f7f7f !important;
+    box-shadow: none !important;
 }
 
 .home-online-dot:disabled {
@@ -7147,7 +7182,7 @@ a.link-button:hover,
     width: 100%;
     margin: 0;
     border-radius: 3px 3px 0 0;
-    background: #20d4e8;
+    background: #48086f;
 }
 
 .pm-dash-simple-bars .bar-chart--vertical .bar-column-label,
@@ -7197,7 +7232,7 @@ a.link-button:hover,
 }
 
 .pm-dash-simple-bars .bar-column--button.is-selected .bar-column-fill {
-    background: #f08700;
+    background: #48086f;
 }
 
 /* Top Clients exhibit: keep all bars on one slide-width card (no horizontal scroll). */
@@ -7795,7 +7830,7 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
 }
 
 .pm-heat-on {
-    background: #30d880;
+    background: #48086f;
     min-width: 1.1rem;
     height: 1.1rem;
 }
@@ -8243,4 +8278,1058 @@ main.page-shell.page-shell--dashboard-wide .pm-dash-card .pm-timeline-fullbleed 
         padding-bottom: 0.75rem;
         min-height: 0;
     }
+}
+
+/* ============================================================================
+   Color system. Each color stays on the role assigned to it.
+   #root + !important beats earlier theme layers.
+   ========================================================================== */
+
+::selection {
+    background: var(--cms-light-gray);
+    color: var(--cms-body);
+}
+
+html,
+body {
+    background: var(--cms-page);
+    color: var(--cms-body);
+}
+
+#root,
+#root .app-content,
+#root .page-shell,
+#root .app-hub,
+#root .client-workflow-fill {
+    background: var(--cms-page) !important;
+    color: var(--cms-body) !important;
+}
+
+#root .bg-glow {
+    background:
+        radial-gradient(ellipse 70% 42% at 0% 0%, color-mix(in srgb, var(--cms-dark-purple) 16%, transparent) 0%, transparent 62%),
+        radial-gradient(ellipse 48% 36% at 100% 100%, color-mix(in srgb, var(--cms-dark-purple) 10%, transparent) 0%, transparent 58%) !important;
+}
+
+#root .bg-grid,
+#root .bg-scan {
+    background: none !important;
+    background-image: none !important;
+}
+
+#root .card,
+#root .dashboard-chart-card,
+#root .admin-edit-card,
+#root .admin-edit-card.project-panel-tab-card,
+#root .panel,
+#root .list-panel,
+#root .directory-panel,
+#root .filter-bar,
+#root .toolbar,
+#root .admin-panel,
+#root .admin-section,
+#root .activity-panel,
+#root .notes-panel,
+#root .services-panel,
+#root .lookup-panel,
+#root .catai-transcript,
+#root .catai-wizard-banner,
+#root .file-notes-approval {
+    background: var(--cms-page) !important;
+    color: var(--cms-body) !important;
+    border-color: var(--cms-dark-gray) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+
+/* Application header */
+#root .app-sidebar {
+    background: var(--cms-dark-purple) !important;
+    color: var(--cms-page) !important;
+    border-right: 1px solid var(--cms-dark-purple) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+
+#root .app-sidebar-brand,
+#root .app-sidebar-brand-link,
+#root .app-sidebar-brand-mark,
+#root .app-sidebar-brand-sub,
+#root .app-sidebar .logo-accent,
+#root .app-sidebar .logo-rest,
+#root .sidebar-nav-item,
+#root .sidebar-nav-label {
+    color: var(--cms-page) !important;
+    font-weight: 400 !important;
+    background: transparent;
+}
+
+#root .app-sidebar-brand {
+    border-bottom-color: color-mix(in srgb, var(--cms-page) 35%, transparent) !important;
+}
+
+#root .app-sidebar-brand-mark {
+    border-color: var(--cms-page) !important;
+}
+
+#root .sidebar-nav-item:hover,
+#root .sidebar-nav-item:focus-visible {
+    background: var(--cms-page) !important;
+    color: var(--cms-dark-purple) !important;
+    border-left-color: var(--cms-page) !important;
+}
+
+#root .sidebar-nav-item:hover .sidebar-nav-label,
+#root .sidebar-nav-item:focus-visible .sidebar-nav-label {
+    color: var(--cms-dark-purple) !important;
+}
+
+#root .sidebar-nav-item.active {
+    background: transparent !important;
+    color: var(--cms-page) !important;
+    border-left: 2px solid var(--cms-page) !important;
+}
+
+#root .app-sidebar .secondary-button,
+#root .tms-project-block-header .secondary-button {
+    background: transparent !important;
+    color: var(--cms-page) !important;
+    border: 1px solid var(--cms-page) !important;
+    font-weight: 400 !important;
+}
+
+#root .app-sidebar .secondary-button:hover,
+#root .tms-project-block-header .secondary-button:hover {
+    background: var(--cms-page) !important;
+    color: var(--cms-dark-purple) !important;
+    border-color: var(--cms-page) !important;
+}
+
+/* Page type */
+#root h1,
+#root h2,
+#root h3,
+#root .page-header h1,
+#root .page-header h1 .logo-accent,
+#root .page-header h1 .logo-rest,
+#root .card-heading,
+#root .dashboard-chart-title,
+#root .admin-subheading,
+#root .tms-project-status-heading,
+#root .project-workflow-card .admin-tab-panel > h2,
+#root .project-workflow-card .project-tab-title-row > h2,
+#root .project-workflow-card .project-data-tab-header h2 {
+    color: var(--cms-body) !important;
+}
+
+#root .page-header p,
+#root .field-help,
+#root .muted,
+#root label,
+#root .field-label,
+#root .form-label,
+#root .client-directory-filter-hint,
+#root .project-workflow-card .admin-edit-card label,
+#root .project-workflow-card .admin-edit-card .field-label,
+#root .project-workflow-card .admin-edit-card .form-label,
+#root .project-workflow-card .field-help {
+    color: var(--cms-dark-gray) !important;
+    font-weight: 400;
+}
+
+#root .app-hub-eyebrow {
+    color: var(--cms-deep-purple) !important;
+    font-weight: 400 !important;
+}
+
+#root .app-hub-eyebrow::before,
+#root .app-hub-eyebrow::after {
+    background: var(--cms-dark-gray) !important;
+}
+
+#root a,
+#root .table-link,
+#root .link-button,
+#root .inline-link,
+#root .home-send-feedback-link,
+#root .catai-link,
+#root .app-hub-help a,
+#root .project-file-download-url,
+#root .project-file-download-url:hover,
+#root .project-file-download-url:focus {
+    color: var(--cms-dark-purple) !important;
+}
+
+#root a:hover,
+#root .table-link:hover,
+#root .home-send-feedback-link:hover,
+#root .catai-link:hover,
+#root .app-hub-help a:hover {
+    color: var(--cms-dark-purple) !important;
+}
+
+#root label:has(+ input[required], + select[required], + textarea[required])::after,
+#root label:has(input[required], select[required], textarea[required])::after {
+    content: " *";
+    color: var(--cms-dark-purple);
+    font-weight: 400;
+}
+
+/* Page controls */
+#root .primary-button {
+    background: var(--cms-dark-purple) !important;
+    color: var(--cms-page) !important;
+    border: 1px solid var(--cms-dark-purple) !important;
+    font-weight: 400 !important;
+}
+
+#root .primary-button:hover:not(:disabled) {
+    background: var(--cms-mid-purple) !important;
+    color: var(--cms-page) !important;
+    border-color: var(--cms-mid-purple) !important;
+}
+
+#root .secondary-button {
+    background: transparent !important;
+    color: var(--cms-body) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+}
+
+#root .secondary-button:hover:not(:disabled) {
+    background: transparent !important;
+    color: var(--cms-dark-purple) !important;
+    border-color: var(--cms-dark-purple) !important;
+}
+
+#root .danger-button,
+#root .danger-button:hover:not(:disabled) {
+    background: transparent !important;
+    color: var(--cms-error) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+}
+
+#root .admin-tabs button,
+#root .tab-button,
+#root .analysis-profile-vendor-tabs button {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+}
+
+#root .admin-tabs button:hover:not(.active),
+#root .tab-button:hover:not(.active),
+#root .analysis-profile-vendor-tabs button:hover:not(.active) {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    border-color: var(--cms-dark-purple) !important;
+}
+
+#root .admin-tabs button.active,
+#root .tab-button.active,
+#root .analysis-profile-vendor-tabs button.active {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-dark-purple) !important;
+    border: 2px solid var(--cms-dark-purple) !important;
+    font-weight: 400 !important;
+}
+
+#root input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot),
+#root select,
+#root textarea,
+#root .form-control,
+#root .project-workflow-card .admin-edit-card input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot),
+#root .project-workflow-card .admin-edit-card select,
+#root .project-workflow-card .admin-edit-card textarea,
+#root .admin-edit-card.project-panel-tab-card input:not([type='checkbox']):not([type='radio']):not([type='file']):not(.home-online-dot),
+#root .admin-edit-card.project-panel-tab-card select,
+#root .admin-edit-card.project-panel-tab-card textarea {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    caret-color: var(--cms-body) !important;
+    box-shadow: none !important;
+}
+
+#root input:focus,
+#root select:focus,
+#root textarea:focus,
+#root input:focus-visible,
+#root select:focus-visible,
+#root textarea:focus-visible {
+    outline: 1px solid var(--cms-dark-purple) !important;
+    outline-offset: 1px;
+    border-color: var(--cms-dark-gray) !important;
+    box-shadow: none !important;
+}
+
+#root input[type='checkbox'],
+#root input[type='radio'] {
+    accent-color: auto !important;
+}
+
+#root option {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+}
+
+#root .user-combo-list,
+#root .combo-panel,
+#root .cms-listbox {
+    background: var(--cms-page) !important;
+    color: var(--cms-body) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+}
+
+#root .user-combo-option {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+}
+
+#root .user-combo-option:hover,
+#root .user-combo-option.selected {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-dark-purple) !important;
+    box-shadow: inset 2px 0 0 var(--cms-dark-purple);
+}
+
+/* Navigation tiles and year tiles */
+#root .app-hub-tile,
+#root a.workflow-tile,
+#root .year-tile {
+    background: var(--cms-light-gray) !important;
+    border: 2px solid var(--cms-dark-purple) !important;
+    color: var(--cms-dark-purple) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+
+#root .app-hub-tile .app-hub-tile-title,
+#root .app-hub-tile .app-hub-tile-desc,
+#root .app-hub-tile .app-hub-tile-cta,
+#root .app-hub-tile .logo-accent,
+#root .app-hub-tile .logo-rest,
+#root .year-tile {
+    color: var(--cms-dark-purple) !important;
+    font-weight: 400 !important;
+}
+
+#root .app-hub-tile:hover,
+#root .app-hub-tile:focus-visible,
+#root a.workflow-tile:hover,
+#root a.workflow-tile:focus-visible,
+#root .year-tile:hover,
+#root .year-tile:focus-visible,
+#root .app-hub-tile:hover .app-hub-tile-title,
+#root .app-hub-tile:hover .app-hub-tile-desc,
+#root .app-hub-tile:hover .app-hub-tile-cta,
+#root .app-hub-tile:hover .logo-accent,
+#root .app-hub-tile:hover .logo-rest,
+#root .app-hub-tile:focus-visible .app-hub-tile-title,
+#root .app-hub-tile:focus-visible .app-hub-tile-desc,
+#root .app-hub-tile:focus-visible .app-hub-tile-cta,
+#root .app-hub-tile:focus-visible .logo-accent,
+#root .app-hub-tile:focus-visible .logo-rest {
+    background: var(--cms-light-gray) !important;
+    border-color: var(--cms-mid-purple) !important;
+    color: var(--cms-mid-purple) !important;
+}
+
+#root .app-hub-brand-mark,
+#root .app-hub-brand-overlay .logo-accent,
+#root .app-hub-brand-overlay .app-hub-brand-rest {
+    color: var(--cms-page) !important;
+}
+
+/* Collapsible group header */
+#root .tms-project-block-header {
+    background: var(--cms-dark-purple) !important;
+    color: var(--cms-page) !important;
+    padding: 0.45rem 0.7rem;
+}
+
+#root .tms-project-collapse-toggle {
+    background: transparent !important;
+    color: var(--cms-page) !important;
+    border: 0 !important;
+}
+
+#root .tms-project-block-title,
+#root .tms-project-collapse-toggle:hover .tms-project-block-title,
+#root .tms-project-collapse-toggle:focus-visible .tms-project-block-title {
+    color: var(--cms-page) !important;
+    font-weight: 700 !important;
+}
+
+#root .tms-project-collapse-meta,
+#root .tms-project-collapse-chevron {
+    color: var(--cms-page) !important;
+    font-weight: 400 !important;
+}
+
+/* Light gray metric grids */
+#root .workflow-tile--stat,
+#root .pm-kpi,
+#root .tms-hours-summary-card,
+#root .summary-grid,
+#root .summary-grid dt,
+#root .summary-grid dd {
+    background: var(--cms-light-gray) !important;
+    border: 1px solid var(--cms-grid-black) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    transform: none !important;
+}
+
+#root .workflow-tile--stat,
+#root .pm-kpi,
+#root .tms-hours-summary-card {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    text-align: left !important;
+}
+
+#root .summary-grid {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr);
+}
+
+#root .workflow-tile--stat .tile-title,
+#root .pm-kpi span,
+#root .tms-hours-summary-label,
+#root .summary-grid dt {
+    color: var(--cms-dark-purple) !important;
+    font-weight: 700 !important;
+    text-align: left !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+#root .workflow-tile--stat .tile-title::after,
+#root .pm-kpi span::after,
+#root .tms-hours-summary-label::after,
+#root .summary-grid dt::after {
+    content: " :";
+    color: var(--cms-dark-purple);
+    font-weight: 700;
+}
+
+#root .workflow-tile--stat .tile-stat-value,
+#root .pm-kpi strong,
+#root .tms-hours-summary-value,
+#root .tms-hours-summary-unit,
+#root .summary-grid dd {
+    color: var(--cms-grid-black) !important;
+    font-weight: 400 !important;
+    text-align: right !important;
+    margin-left: auto;
+}
+
+#root .workflow-tile--stat .tile-stat-detail {
+    flex: 1 1 100%;
+    color: var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+    text-align: left !important;
+}
+
+#root .workflow-tile--stat:hover,
+#root .pm-kpi:hover,
+#root .tms-hours-summary-card:hover {
+    background: var(--cms-light-gray) !important;
+    border-color: var(--cms-grid-black) !important;
+}
+
+/* Main lists and schedule grids */
+#root .table-wrap,
+#root .project-tab-table-wrap,
+#root .dashboard-table-wrap,
+#root .home-project-list-scroll,
+#root .client-directory-scroll,
+#root table {
+    background: var(--cms-page) !important;
+    color: var(--cms-body) !important;
+    border-color: var(--cms-dark-gray) !important;
+}
+
+#root table thead th,
+#root table thead th button,
+#root .home-client-project-table__sort-btn,
+#root thead .project-time-day-date,
+#root thead .project-time-day-head {
+    background: var(--cms-dark-purple) !important;
+    color: var(--cms-page) !important;
+    font-weight: 400 !important;
+    border-color: var(--cms-dark-purple) !important;
+    box-shadow: none !important;
+}
+
+#root table tbody td,
+#root table tbody tr:nth-child(odd) td,
+#root table tbody tr:nth-child(even) td,
+#root table tbody tr:hover,
+#root table tbody tr:hover td {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    border-bottom: 1px solid var(--cms-dark-gray) !important;
+    font-weight: 400;
+    filter: none !important;
+}
+
+#root table tbody tr.is-selected td,
+#root table tbody tr.selected td,
+#root .client-directory-row-selected td,
+#root .home-project-list-row--selected td,
+#root .admin-user-pick-row.is-selected,
+#root .admin-user-pick-row[aria-selected='true'] {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    box-shadow: none !important;
+}
+
+#root table tbody tr.is-selected td:first-child,
+#root table tbody tr.selected td:first-child,
+#root .client-directory-row-selected td:first-child,
+#root .home-project-list-row--selected td:first-child {
+    box-shadow: inset 2px 0 0 var(--cms-dark-purple) !important;
+}
+
+#root .project-time-hours-input,
+#root .project-time-hours-input--allocated,
+#root .project-time-hours-input:focus,
+#root .project-time-hours-input:focus-visible,
+#root .project-calendar-cell-input,
+#root .project-calendar-cell-input:focus,
+#root .project-calendar-cell-input:focus-visible {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-grid-black) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    caret-color: var(--cms-body) !important;
+    font-style: normal !important;
+    font-weight: 400 !important;
+    box-shadow: none !important;
+    outline: 1px solid transparent !important;
+}
+
+#root .project-time-hours-input:focus,
+#root .project-time-hours-input:focus-visible,
+#root .project-calendar-cell-input:focus,
+#root .project-calendar-cell-input:focus-visible {
+    outline: 1px solid var(--cms-dark-purple) !important;
+}
+
+#root .pm-lead-table-total td,
+#root .pm-exhibit-total-row td,
+#root .project-time-day-totals td,
+#root tfoot tr.total td {
+    background: var(--cms-total-wash) !important;
+    color: var(--cms-body) !important;
+    font-weight: 700 !important;
+    border-top: 1px solid var(--cms-dark-purple) !important;
+    box-shadow: none !important;
+}
+
+#root tr.subtotal td,
+#root .subtotal td {
+    background: var(--cms-page) !important;
+    color: var(--cms-body) !important;
+    font-weight: 700 !important;
+    border-top: 1px solid var(--cms-dark-gray) !important;
+}
+
+/* Popups. Login card keeps the light-gray surface. */
+#root .home-modal-overlay,
+#root .login-gate-overlay,
+#root .bulk-import-overlay,
+#root .project-changes-dialog-backdrop {
+    background: color-mix(in srgb, var(--cms-light-purple) 50%, transparent) !important;
+    backdrop-filter: none !important;
+}
+
+#root .home-modal-dialog,
+#root .project-changes-dialog {
+    background: var(--cms-dialog) !important;
+    color: var(--cms-dark-purple) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12) !important;
+    backdrop-filter: none !important;
+}
+
+#root .home-modal-dialog.admin-bio-export-notice {
+    width: min(24rem, 92vw);
+    background: #c8c8c8 !important;
+    color: var(--cms-dark-purple) !important;
+    border: 3px solid var(--cms-dark-purple) !important;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18) !important;
+    text-align: center;
+}
+
+.admin-bio-export-notice-text {
+    margin: 0 0 1rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--cms-dark-purple);
+}
+
+.admin-bio-export-notice-actions {
+    justify-content: center;
+}
+
+#root .login-gate-dialog {
+    background: var(--cms-light-gray) !important;
+}
+
+#root .home-modal-dialog,
+#root .home-modal-dialog h2,
+#root .home-modal-dialog p,
+#root .home-modal-dialog label,
+#root .home-modal-dialog .home-modal-title,
+#root .home-modal-dialog .home-modal-body,
+#root .home-modal-dialog .home-modal-hint,
+#root .home-modal-dialog .field-help,
+#root .project-changes-dialog,
+#root .project-changes-dialog h2,
+#root .project-changes-dialog li,
+#root .login-gate-dialog,
+#root .login-gate-dialog .home-modal-title,
+#root .login-gate-dialog .home-modal-body,
+#root .login-gate-dialog label {
+    color: var(--cms-dark-purple) !important;
+    font-weight: 400;
+}
+
+#root .home-modal-title,
+#root .project-changes-dialog h2 {
+    font-weight: 700 !important;
+}
+
+#root .home-modal-dialog input:not([type='checkbox']):not([type='radio']):not([type='file']),
+#root .home-modal-dialog select,
+#root .home-modal-dialog textarea,
+#root .project-changes-dialog input:not([type='checkbox']):not([type='radio']):not([type='file']),
+#root .project-changes-dialog select,
+#root .project-changes-dialog textarea {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-dark-purple) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    caret-color: var(--cms-dark-purple) !important;
+    box-shadow: none !important;
+}
+
+#root .home-modal-dialog option,
+#root .project-changes-dialog option {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-dark-purple) !important;
+}
+
+#root .home-modal-dialog .secondary-button,
+#root .project-changes-dialog .secondary-button {
+    background: transparent !important;
+    color: var(--cms-dark-purple) !important;
+    border: 1px solid var(--cms-dark-purple) !important;
+}
+
+#root .home-modal-dialog .secondary-button:hover:not(:disabled),
+#root .project-changes-dialog .secondary-button:hover:not(:disabled) {
+    background: var(--cms-dark-purple) !important;
+    color: var(--cms-page) !important;
+    border-color: var(--cms-dark-purple) !important;
+}
+
+#root .home-modal-dialog .primary-button,
+#root .home-modal-dialog .primary-button:hover:not(:disabled),
+#root .project-changes-dialog .primary-button,
+#root .project-changes-dialog .primary-button:hover:not(:disabled) {
+    background: var(--cms-dark-purple) !important;
+    color: var(--cms-page) !important;
+    border-color: var(--cms-dark-purple) !important;
+}
+
+#root .home-modal-dialog .alert-error,
+#root .home-modal-dialog .field-validation,
+#root .home-modal-dialog .validation-summary,
+#root .login-gate-dialog .alert-error {
+    color: var(--cms-error) !important;
+    background: transparent !important;
+}
+
+#root .home-modal-dialog table thead th,
+#root .home-modal-dialog table thead th button,
+#root .home-modal-dialog table tbody td,
+#root .project-changes-dialog table thead th,
+#root .project-changes-dialog table tbody td {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-dark-purple) !important;
+    border-color: var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+}
+
+/* Errors, status, presence */
+#root .alert-error,
+#root .alert-danger,
+#root .validation-summary,
+#root .field-validation,
+#root .status-error,
+#root .text-danger,
+#root .home-hard-delete-confirm {
+    color: var(--cms-error) !important;
+    background: transparent !important;
+    border-color: var(--cms-dark-gray) !important;
+}
+
+#root .project-tab-dirty-hint {
+    color: var(--cms-dark-gray) !important;
+    background: transparent !important;
+}
+
+#root .alert-success,
+#root .status-ok,
+#root .text-success,
+#root .status-warn,
+#root .file-notes-live--on,
+#root .file-notes-live--reconnecting,
+#root .file-notes-live--off {
+    background: var(--cms-page) !important;
+    color: var(--cms-body) !important;
+    border-color: var(--cms-dark-gray) !important;
+}
+
+#root .file-notes-approval--pending,
+#root .file-notes-approval--approved,
+#root .file-notes-approval--changes {
+    border-color: var(--cms-dark-gray) !important;
+    background: var(--cms-page) !important;
+}
+
+#root .file-notes-approval--changes {
+    color: var(--cms-error) !important;
+}
+
+#root .admin-user-pick-status,
+#root .admin-user-pick-status--active,
+#root .admin-user-pick-status--inactive,
+#root .admin-user-pick-status--prospect,
+#root .admin-user-pick-status--needupdate {
+    background: var(--cms-light-gray) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    color: var(--cms-body) !important;
+}
+
+#root .admin-user-pick-status--active {
+    color: var(--cms-dark-purple) !important;
+}
+
+#root .admin-user-pick-status--inactive {
+    color: var(--cms-dark-gray) !important;
+}
+
+#root .admin-user-pick-status--needupdate {
+    color: var(--cms-error) !important;
+}
+
+#root .admin-client-count-chip,
+#root .admin-client-count-chip--active,
+#root .admin-client-count-chip--inactive,
+#root .admin-client-count-chip--prospect,
+#root .admin-dept-count-chip,
+#root .admin-user-pick-dept {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+}
+
+#root .admin-client-count-chip--active,
+#root .admin-dept-count-chip,
+#root .admin-user-pick-dept {
+    color: var(--cms-dark-purple) !important;
+}
+
+#root .admin-client-count-chip--inactive {
+    color: var(--cms-dark-gray) !important;
+}
+
+#root .admin-client-count-chip strong,
+#root .admin-dept-count-chip strong {
+    color: inherit !important;
+    font-weight: 400 !important;
+}
+
+#root .home-online-dot--on,
+#root .home-online-dot--progress,
+#root button.home-online-dot.home-online-dot--on,
+#root button.home-online-dot.home-online-dot--progress {
+    background: #22a045 !important;
+    background-color: #22a045 !important;
+    border-color: #1a7a34 !important;
+    box-shadow: none !important;
+}
+
+#root .home-online-dot--planned,
+#root button.home-online-dot.home-online-dot--planned {
+    background: #f59e0b !important;
+    background-color: #f59e0b !important;
+    border-color: #d97706 !important;
+    box-shadow: none !important;
+}
+
+#root .home-online-dot--off,
+#root .home-online-dot--closed,
+#root button.home-online-dot.home-online-dot--off,
+#root button.home-online-dot.home-online-dot--closed {
+    background: #7f7f7f !important;
+    background-color: #7f7f7f !important;
+    border-color: #7f7f7f !important;
+    box-shadow: none !important;
+}
+
+#root .presence-avatars__chip,
+#root .presence-avatars__chip--more {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-dark-purple) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    font-weight: 400 !important;
+}
+
+#root .presence-avatars__stack:hover,
+#root .presence-avatars__stack:focus-visible {
+    border-color: var(--cms-dark-purple) !important;
+}
+
+#root .bar-track,
+#root .bar-column-track {
+    background: var(--cms-light-gray) !important;
+}
+
+#root .bar-label,
+#root .bar-value,
+#root .bar-column-label,
+#root .bar-column-value,
+#root .pm-axis-label {
+    color: var(--cms-body) !important;
+}
+
+#root .pm-swatch--other {
+    background: var(--cms-dark-gray) !important;
+}
+
+#root *::-webkit-scrollbar-track {
+    background: var(--cms-light-gray);
+}
+
+#root *::-webkit-scrollbar-thumb {
+    background: var(--cms-dark-gray);
+}
+
+#root *::-webkit-scrollbar-thumb:hover {
+    background: var(--cms-dark-purple);
+}
+
+#root .admin-user-pick-row,
+#root .admin-user-pick-name,
+#root .admin-user-pick-name-text,
+#root .admin-user-pick-title,
+#root .admin-user-pick-meta,
+#root .admin-user-pick-empty,
+#root .user-combo-name,
+#root .user-combo-dept {
+    color: var(--cms-body) !important;
+}
+
+#root .admin-user-pick-row {
+    background: var(--cms-light-gray) !important;
+}
+
+#root .admin-user-pick-row.is-selected,
+#root .admin-user-pick-row.selected,
+#root .admin-user-pick-row[aria-selected='true'] {
+    background: var(--cms-light-gray) !important;
+    color: var(--cms-body) !important;
+    box-shadow: inset 2px 0 0 var(--cms-dark-purple) !important;
+}
+
+#root input::placeholder,
+#root textarea::placeholder {
+    color: var(--cms-dark-gray) !important;
+}
+
+#root .home-modal-dialog input::placeholder,
+#root .home-modal-dialog textarea::placeholder,
+#root .project-changes-dialog input::placeholder,
+#root .project-changes-dialog textarea::placeholder {
+    color: color-mix(in srgb, var(--cms-dark-purple) 55%, transparent) !important;
+}
+
+#root :focus-visible {
+    outline: 1px solid var(--cms-dark-purple);
+    outline-offset: 1px;
+}
+
+/* Login screen: floating earth, dark purple title, light gray sign-in box at the bottom. */
+#root .login-gate-overlay {
+    background: #ffffff !important;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 0;
+    overflow: auto;
+}
+
+#root .login-gate-screen {
+    width: 100%;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-sizing: border-box;
+    padding: 1.25rem 1rem 0.85rem;
+    background: #ffffff;
+}
+
+#root .login-gate-hero {
+    position: relative;
+    width: min(42vw, 280px);
+    height: min(42vw, 280px);
+    margin: 0.25rem auto 0;
+    border-radius: 50%;
+    overflow: hidden;
+    flex: 0 0 auto;
+    background: #ffffff;
+    box-shadow:
+        0 18px 28px rgba(47, 44, 49, 0.16),
+        0 4px 10px rgba(47, 44, 49, 0.08);
+}
+
+#root .login-gate-hero-image {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: cover;
+    object-position: center 54%;
+    transform: scale(1.18);
+    transform-origin: center 54%;
+    display: block;
+}
+
+#root .login-gate-hero-title {
+    position: static;
+    margin: 0 !important;
+    padding: 0 1rem;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--cms-dark-purple) !important;
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 4.5vw, 3rem);
+    font-weight: 400 !important;
+    letter-spacing: 0.04em;
+    line-height: 1.05;
+    text-shadow: none;
+}
+
+#root .login-gate-dialog {
+    background: var(--cms-light-gray) !important;
+    border: 1px solid var(--cms-dark-gray) !important;
+    box-shadow: none !important;
+    width: min(100%, 28rem);
+    margin: 0;
+    border-radius: 0.55rem;
+}
+
+#root .login-gate-dialog .home-modal-actions {
+    margin-bottom: 0;
+}
+
+#root .login-gate-dialog .primary-button {
+    width: 100%;
+}
+
+/* Client Management main page title and summary tiles. */
+#root .hero h1 {
+    color: var(--cms-dark-purple) !important;
+}
+
+#root .tile-grid--home .workflow-tile--stat,
+#root .tile-grid--home .workflow-tile--stat:hover {
+    background: var(--cms-dark-purple) !important;
+    border-color: var(--cms-dark-purple) !important;
+    color: #ffffff !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+}
+
+#root .tile-grid--home .workflow-tile--stat .tile-title,
+#root .tile-grid--home .workflow-tile--stat .tile-stat-value {
+    text-align: center !important;
+    margin-left: 0 !important;
+    width: 100%;
+}
+
+#root .tile-grid--home .workflow-tile--stat .tile-title,
+#root .tile-grid--home .workflow-tile--stat .tile-stat-value,
+#root .tile-grid--home .workflow-tile--stat .tile-stat-detail,
+#root .tile-grid--home .workflow-tile--stat .tile-title::after {
+    color: #ffffff !important;
+    font-weight: 400 !important;
+}
+
+#root .tile-grid--home .workflow-tile--stat .tile-title {
+    font-size: 1.35rem !important;
+}
+
+#root .tile-grid--home .workflow-tile--stat .tile-stat-value {
+    font-size: 2rem !important;
+}
+
+#root .tile-grid--home .workflow-tile--stat .tile-stat-detail {
+    font-size: 1.05rem !important;
+}
+
+#root .login-gate-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.35rem 1.25rem;
+    margin: 0.9rem 0 0;
+    text-align: center;
+}
+
+#root .login-gate-build {
+    color: var(--cms-dark-purple) !important;
+    font-size: 0.95rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+#root .tile-grid--home .workflow-tile--stat .tile-title::after {
+    content: none;
+}
+
+/* Project list grid: larger type for column headers and row values. */
+#root .home-client-project-table thead th,
+#root .home-client-project-table thead th .home-client-project-table__sort-btn,
+#root .home-client-project-table tbody td {
+    font-size: 1rem !important;
+}
+
+#root .home-client-project-table .home-client-project-table__sort-indicator {
+    font-size: 0.95rem;
+}
+
+#root .dashboard-tabular-filters--home select,
+#root .dashboard-tabular-filters--home select:hover,
+#root .dashboard-tabular-filters--home select:focus,
+#root .dashboard-tabular-filters--home select:focus-visible {
+    border: 1px solid var(--cms-dark-purple) !important;
 }

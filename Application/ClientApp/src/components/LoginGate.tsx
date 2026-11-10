@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
+import { APP_BUILD_NUMBER } from '../appBuild';
 import {
   fetchCatLoginUsers,
   loginWithEmail,
@@ -93,6 +94,15 @@ export default function LoginGate({ onAuthenticated }: LoginGateProps) {
 
   return (
     <div className="home-modal-overlay login-gate-overlay" role="presentation">
+      <div className="login-gate-screen">
+        <header className="login-gate-hero">
+          <img
+            src="/images/earth-north-pole.png"
+            alt=""
+            className="login-gate-hero-image"
+          />
+        </header>
+        <h1 className="login-gate-hero-title">Client Management System</h1>
       <div
         className="home-modal-dialog login-gate-dialog"
         role="dialog"
@@ -182,6 +192,18 @@ export default function LoginGate({ onAuthenticated }: LoginGateProps) {
             </button>
           </div>
         </form>
+        <p className="login-gate-meta">
+          <a
+            className="home-send-feedback-link"
+            href="mailto:scott.christian@bmsgroup.com?cc=catbottest%40bmsgroup.com&subject=CMS%20Feedback"
+          >
+            Send Feedback
+          </a>
+          <span className="login-gate-build" aria-label="Application build">
+            Build {APP_BUILD_NUMBER}
+          </span>
+        </p>
+      </div>
       </div>
     </div>
   );

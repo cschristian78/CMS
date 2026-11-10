@@ -1,11 +1,11 @@
-/** US Red, UK Blue, LatAM (LA) Green - matches dbo.tBusinessUnit seed codes. */
+/** Business-unit bars stay inside the interface palette. */
 export const REGION_BAR_COLORS = {
-  US: '#c41e3a',
-  UK: '#1e4a8c',
-  LatAM: '#2d8a3e',
+  US: '#48086f',
+  UK: '#2f2c31',
+  LatAM: '#7f7f7f',
 } as const;
 
-const DEFAULT_BAR_COLOR = '#20d4e8';
+const DEFAULT_BAR_COLOR = '#000000';
 
 /** Resolve bar fill from business unit code/name (US, UK, LA / LatAM). */
 export function regionBarColor(colorKey?: string | null): string {
@@ -20,7 +20,7 @@ export function regionBarColor(colorKey?: string | null): string {
     return REGION_BAR_COLORS.LatAM;
   }
   if (key === 'TIMELINE') {
-    return '#f08700';
+    return '#48086f';
   }
   return DEFAULT_BAR_COLOR;
 }

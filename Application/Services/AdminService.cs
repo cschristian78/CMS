@@ -172,6 +172,50 @@ public sealed class AdminService : IAdminService
         }
     }
 
+    public async Task<byte[]> BuildUserBioDeckAsync(IReadOnlyList<int> userIds, CancellationToken cancellationToken = default)
+    {
+        var orderedIds = userIds.Where(id => id > 0).Distinct().Take(300).ToList();
+        if (orderedIds.Count == 0)
+        {
+            throw new InvalidOperationException("The user list is empty.");
+        }
+
+        var users = await _admin.GetUsersByIdsAsync(orderedIds, cancellationToken);
+        var byId = users.ToDictionary(u => u.UserID);
+        var slides = new List<UserBioSlide>(orderedIds.Count);
+        foreach (var id in orderedIds)
+        {
+            if (!byId.TryGetValue(id, out var user))
+            {
+                continue;
+            }
+
+            byte[]? photo = null;
+            string? contentType = null;
+            if (_userPhotos.TryGetPhotoFile(id, out var path, out var type) && File.Exists(path))
+            {
+                photo = await File.ReadAllBytesAsync(path, cancellationToken);
+                contentType = type;
+            }
+
+            var name = string.Join(" ", new[] { user.FirstName, user.LastName }.Where(part => !string.IsNullOrWhiteSpace(part))).Trim();
+            slides.Add(new UserBioSlide(
+                string.IsNullOrWhiteSpace(name) ? $"User {id}" : name,
+                user.Title?.Trim() ?? "",
+                user.Phone?.Trim() ?? "",
+                user.Bio?.Trim() ?? "",
+                photo,
+                contentType));
+        }
+
+        if (slides.Count == 0)
+        {
+            throw new InvalidOperationException("None of the selected users were found.");
+        }
+
+        return UserBioDeckBuilder.Build(slides);
+    }
+
     public async Task SaveUserPhotoAsync(int userId, Stream stream, long? declaredLength, CancellationToken cancellationToken = default)
     {
         if (userId <= 0)

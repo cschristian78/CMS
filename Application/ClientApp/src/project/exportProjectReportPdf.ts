@@ -540,13 +540,13 @@ export function exportProjectReportPdf(input: ProjectReportInput): void {
     * { box-sizing: border-box; }
     body {
       font-family: "Segoe UI", Calibri, Arial, sans-serif;
-      color: #1a2332;
+      color: #2f2c31;
       margin: 0;
       font-size: 10.5pt;
       line-height: 1.35;
     }
     header.report-header {
-      border-bottom: 2.5px solid #0b3d5c;
+      border-bottom: 2.5px solid #7f7f7f;
       padding-bottom: 0.55rem;
       margin-bottom: 1rem;
       display: flex;
@@ -558,24 +558,24 @@ export function exportProjectReportPdf(input: ProjectReportInput): void {
       margin: 0;
       font-size: 1.45rem;
       font-weight: 650;
-      color: #0b3d5c;
+      color: #2f2c31;
     }
     header.report-header .subtitle {
       margin: 0.2rem 0 0;
-      color: #4a5a6a;
+      color: #7f7f7f;
       font-size: 0.95rem;
     }
     header.report-header .meta {
       text-align: right;
-      color: #4a5a6a;
+      color: #7f7f7f;
       font-size: 0.85rem;
     }
     .block { margin: 0 0 1.15rem; break-inside: avoid; }
     .block h2 {
       margin: 0 0 0.45rem;
       font-size: 1.05rem;
-      color: #0b3d5c;
-      border-bottom: 1px solid #d5dde6;
+      color: #2f2c31;
+      border-bottom: 1px solid #7f7f7f;
       padding-bottom: 0.2rem;
     }
     table {
@@ -586,36 +586,43 @@ export function exportProjectReportPdf(input: ProjectReportInput): void {
     table.kv th {
       width: 28%;
       text-align: left;
-      color: #4a5a6a;
-      font-weight: 600;
+      color: #48086f;
+      font-weight: 700;
       padding: 0.28rem 0.45rem 0.28rem 0;
       vertical-align: top;
+      background: #ebeef0;
+      border: 1px solid #000000;
     }
     table.kv td {
-      padding: 0.28rem 0;
+      padding: 0.28rem 0.45rem;
       vertical-align: top;
+      color: #000000;
+      font-weight: 400;
+      text-align: right;
+      background: #ebeef0;
+      border: 1px solid #000000;
     }
     table:not(.kv) th,
     table:not(.kv) td {
-      border: 1px solid #d5dde6;
+      border: 1px solid #7f7f7f;
       padding: 0.3rem 0.4rem;
       text-align: left;
       vertical-align: top;
     }
     table:not(.kv) thead th {
-      background: #eef3f8;
-      color: #0b3d5c;
-      font-weight: 650;
+      background: #48086f;
+      color: #ffffff;
+      font-weight: 400;
     }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .note { color: #4a5a6a; font-size: 0.9rem; margin: 0.35rem 0 0; }
-    .empty { color: #4a5a6a; margin: 0; }
+    .note { color: #7f7f7f; font-size: 0.9rem; margin: 0.35rem 0 0; }
+    .empty { color: #7f7f7f; margin: 0; }
     .note-card {
-      border: 1px solid #d5dde6;
+      border: 1px solid #7f7f7f;
       border-radius: 0.3rem;
       padding: 0.55rem 0.65rem;
       margin: 0 0 0.55rem;
-      background: #f8fafc;
+      background: #ffffff;
       break-inside: avoid;
     }
     .note-card header {
@@ -625,15 +632,15 @@ export function exportProjectReportPdf(input: ProjectReportInput): void {
       align-items: baseline;
       margin-bottom: 0.35rem;
     }
-    .note-type { font-weight: 700; color: #0b3d5c; }
+    .note-type { font-weight: 700; color: #48086f; }
     .pinned {
       font-size: 0.75rem;
       font-weight: 700;
-      color: #9a3412;
+      color: #48086f;
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }
-    .note-meta { color: #4a5a6a; font-size: 0.85rem; }
+    .note-meta { color: #7f7f7f; font-size: 0.85rem; }
     .note-text { white-space: pre-wrap; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

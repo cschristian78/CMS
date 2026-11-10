@@ -745,9 +745,9 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
               {!loadingWeek &&
                 (
                   [
-                    { key: 'in-progress', title: 'In Progress', green: true, items: projectsByStatus.inProgress },
-                    { key: 'planned', title: 'Planned', green: false, items: projectsByStatus.planned },
-                    { key: 'closed', title: 'Closed', green: false, items: projectsByStatus.closed },
+                    { key: 'in-progress', title: 'In Progress', dot: 'home-online-dot--progress', items: projectsByStatus.inProgress },
+                    { key: 'planned', title: 'Planned', dot: 'home-online-dot--planned', items: projectsByStatus.planned },
+                    { key: 'closed', title: 'Closed', dot: 'home-online-dot--closed', items: projectsByStatus.closed },
                   ] as const
                 ).map((section) =>
                   section.items.length === 0 ? null : (
@@ -755,8 +755,7 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
                       <h2 className="tms-project-status-heading">
                         <span
                           className={
-                            'home-online-dot' +
-                            (section.green ? ' home-online-dot--on' : ' home-online-dot--off')
+                            'home-online-dot ' + section.dot
                           }
                           aria-hidden="true"
                         />
@@ -788,10 +787,10 @@ export default function TmsHomePage({ flash }: { flash: FlashFn }) {
                                 </span>
                                 <span
                                   className={
-                                    'home-online-dot' +
-                                    (projectWorkStatus(project) === 'In Progress' ?
-                                      ' home-online-dot--on'
-                                    : ' home-online-dot--off')
+                                    'home-online-dot ' +
+                                    (projectWorkStatus(project) === 'In Progress' ? 'home-online-dot--progress'
+                                    : projectWorkStatus(project) === 'Closed' ? 'home-online-dot--closed'
+                                    : 'home-online-dot--planned')
                                   }
                                   title={projectWorkStatus(project)}
                                   aria-label={projectWorkStatus(project)}

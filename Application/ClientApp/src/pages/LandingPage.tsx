@@ -5,25 +5,6 @@ import { setCatAppMode } from '../catAppMode';
 export default function LandingPage() {
   return (
     <div className="app-hub">
-      <header className="app-hub-brand">
-        <h1 className="app-hub-headline">
-          <div className="app-hub-earth-wrap">
-            <img
-              src="/images/earth-north-pole.png"
-              alt=""
-              className="app-hub-earth"
-              aria-hidden="true"
-            />
-            <div className="app-hub-brand-overlay">
-              <span className="app-hub-brand-mark" aria-label="Cat Management System">
-                <span className="logo-accent">Cat</span>
-                <span className="app-hub-brand-rest"> Management System</span>
-              </span>
-            </div>
-          </div>
-        </h1>
-      </header>
-
       <div className="app-hub-apps">
         <p className="app-hub-eyebrow">Select Application</p>
         <nav className="app-hub-tiles" aria-label="Applications">

@@ -16,16 +16,7 @@ interface PresenceSnapshot {
 const HEARTBEAT_MS = 25_000;
 const MAX_VISIBLE = 5;
 
-const AVATAR_COLORS = [
-  '#1a6b8a',
-  '#c45c26',
-  '#2a7a52',
-  '#8a4a6b',
-  '#4a5f8a',
-  '#a67c2a',
-  '#3d6b5c',
-  '#7a3d3d',
-];
+const AVATAR_COLORS = ['#ebeef0'];
 
 function initialsFor(name: string, email: string): string {
   const trimmed = name.trim();

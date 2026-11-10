@@ -385,7 +385,7 @@ function CatDepartmentHoursExhibit() {
               value: u.totalHours,
               count: u.projectCount,
               displayValue: formatNumber(u.totalHours, 1),
-              fill: selectedUserId === u.userID ? '#f08700' : '#20d4e8',
+              fill: selectedUserId === u.userID ? '#48086f' : '#7f7f7f',
             }))}
             onSelect={(item) => {
               const found = staff.find((u) => u.userFullName === item.label);

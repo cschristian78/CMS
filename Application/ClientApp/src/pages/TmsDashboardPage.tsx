@@ -541,7 +541,7 @@ export default function TmsDashboardPage() {
                   label: m.label,
                   value: m.totalHours,
                   displayValue: formatNumber(m.totalHours, 1),
-                  fill: '#5a7080',
+                  fill: '#7f7f7f',
                 }))}
               />
             </div>

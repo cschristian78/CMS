@@ -508,6 +508,50 @@ public sealed class AdminRepository : IAdminRepository
             cancellationToken);
     }
 
+    public async Task<IReadOnlyList<User>> GetUsersByIdsAsync(IReadOnlyList<int> userIds, CancellationToken cancellationToken = default)
+    {
+        var ids = userIds.Where(id => id > 0).Distinct().Take(300).ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var parameters = new List<SqlParameter>(ids.Count);
+        var names = new List<string>(ids.Count);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var name = "@UserId" + i;
+            names.Add(name);
+            parameters.Add(SqlParameterFactory.Int(name, ids[i]));
+        }
+
+        var sql = $"""
+            SELECT
+                u.UserID,
+                u.FirstName,
+                u.LastName,
+                u.Title,
+                u.Phone,
+                u.Bio
+            FROM dbo.tUser AS u
+            WHERE u.UserID IN ({string.Join(", ", names)});
+            """;
+
+        return await _db.QueryTextAsync(
+            sql,
+            static reader => new User
+            {
+                UserID = reader.GetInt32OrDefault("UserID"),
+                FirstName = reader.TryGetNullableString("FirstName"),
+                LastName = reader.TryGetNullableString("LastName"),
+                Title = reader.TryGetNullableString("Title"),
+                Phone = reader.TryGetNullableString("Phone"),
+                Bio = reader.TryGetNullableString("Bio"),
+            },
+            parameters,
+            cancellationToken);
+    }
+
     public async Task<int> CreateUserWithPrimaryAddressAsync(User user, UserAddress? primaryAddress, CancellationToken cancellationToken = default)
     {
         await EnsureUserTypeOptionsAsync(cancellationToken);
