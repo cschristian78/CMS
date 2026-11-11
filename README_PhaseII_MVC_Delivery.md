@@ -173,7 +173,9 @@ usp_RefreshClientProjectList
 ## Security notes
 
 - Do not commit `App_Data/connectionsettings.protected.json`.
+- Do not commit `App_Data/cataisettings.protected.json` (CatAI admin override, including the API key).
 - Do not commit `App_Data/DataProtectionKeys/`.
+- `OpenAI:ApiKey` and `AzureBlob:SasToken` are empty in tracked `appsettings.json` and `appsettings.Development.json`. Supply them with user secrets or environment variables. See [docs/SecretsConfiguration.md](docs/SecretsConfiguration.md). Do not paste those values back into tracked JSON, `web.config`, or scripts.
 - Grant the application identity execute permission through the Phase I `app_CMS_Execute` role.
 - Avoid granting the web application identity direct table access. Note that **`usp_RefreshClientProjectList`** runs as **`dbo`** and internally **`DROP`s / recreates `dbo.tClientProjectList`**; callers only need **`EXECUTE`** on the procedure, not ad hoc DDL rights on the account.
 - Add authentication and authorization before production deployment. The AdminController is isolated so an `[Authorize]` attribute or policy can be applied when the firm's identity provider is selected.

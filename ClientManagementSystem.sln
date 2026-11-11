@@ -4,6 +4,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientManagementSystem", "Application\ClientManagementSystem.csproj", "{6A6A6BF2-F395-B3DA-8A6A-FB46C07CD37F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrackedSecretConfiguration.Tests", "tests\TrackedSecretConfiguration.Tests\TrackedSecretConfiguration.Tests.csproj", "{C4A1E8B7-2D44-4F1A-9B6E-7A0D3E5F12C8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -14,6 +16,10 @@ Global
 		{6A6A6BF2-F395-B3DA-8A6A-FB46C07CD37F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6A6A6BF2-F395-B3DA-8A6A-FB46C07CD37F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6A6A6BF2-F395-B3DA-8A6A-FB46C07CD37F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4A1E8B7-2D44-4F1A-9B6E-7A0D3E5F12C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4A1E8B7-2D44-4F1A-9B6E-7A0D3E5F12C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4A1E8B7-2D44-4F1A-9B6E-7A0D3E5F12C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4A1E8B7-2D44-4F1A-9B6E-7A0D3E5F12C8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

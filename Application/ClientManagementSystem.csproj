@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ClientManagementSystem</RootNamespace>
     <AssemblyName>ClientManagementSystem</AssemblyName>
+    <UserSecretsId>9de316c2-610a-410e-abd4-6c50d333d11c</UserSecretsId>
     <SpaRoot>ClientApp\</SpaRoot>
   </PropertyGroup>
 
